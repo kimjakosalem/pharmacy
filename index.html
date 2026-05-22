@@ -270,6 +270,37 @@ select option{background:var(--bg3)}
   .m4{grid-template-columns:1fr 1fr}
   .variant-grid{grid-template-columns:1fr}
 }
+
+/* ═══ ORDER LIST & IMPORT/EXPORT ═══ */
+.po-item{display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--bg3);border-radius:7px;border:1px solid var(--border);margin-bottom:5px}
+.po-item input[type=checkbox]{width:15px;height:15px;accent-color:var(--teal);cursor:pointer;flex-shrink:0}
+.po-info{flex:1;min-width:0}
+.po-name{font-size:12px;font-weight:500}
+.po-meta{font-size:10px;color:var(--text3);margin-top:1px}
+.po-qty-wrap{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.po-qty{width:60px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 7px;border-radius:6px;outline:none;text-align:center}
+.po-qty:focus{border-color:var(--teal)}
+.po-price{font-family:var(--mono);font-size:11px;color:var(--amber);flex-shrink:0;min-width:70px;text-align:right}
+.supplier-section{margin-bottom:14px}
+.supplier-header{font-size:11px;font-weight:600;color:var(--purple);text-transform:uppercase;letter-spacing:.07em;padding:6px 10px;background:var(--purple-dim);border-radius:6px;margin-bottom:6px;border:1px solid var(--purple-dim)}
+.po-preview{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:16px;font-family:var(--mono);font-size:11px;line-height:1.8}
+.po-preview-header{text-align:center;border-bottom:1px dashed var(--border2);padding-bottom:10px;margin-bottom:10px}
+.po-preview-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px}
+.po-preview-sub{font-size:10px;color:var(--text3)}
+.po-tbl{width:100%;border-collapse:collapse;margin-top:8px}
+.po-tbl th{font-size:10px;color:var(--text3);padding:5px 7px;border-bottom:1px solid var(--border);text-align:left}
+.po-tbl td{font-size:11px;padding:5px 7px;border-bottom:1px solid var(--border)}
+.po-tbl td:last-child,.po-tbl th:last-child{text-align:right}
+.po-tbl tr:last-child td{border-bottom:none}
+.import-drop{border:2px dashed var(--border2);border-radius:var(--r2);padding:28px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:10px}
+.import-drop:hover,.import-drop.drag{border-color:var(--teal);background:var(--teal-dim)}
+.import-drop i{font-size:28px;color:var(--text3);display:block;margin-bottom:6px}
+.import-drop p{font-size:12px;color:var(--text2)}
+.import-drop input{display:none}
+.chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;margin:1px}
+.chip-low{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber2)}
+.chip-out{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}
+.chip-ok{background:var(--green-dim);color:var(--green);border:1px solid var(--green)}
 </style>
 </head>
 <body>
@@ -335,7 +366,7 @@ select option{background:var(--bg3)}
       <div class="logo-icon"><i class="ti ti-pill"></i></div>
       <div class="logo-text">
         <h1>Dr. Kim Pharmacy</h1>
-        <p>Cashflow &amp; POS System</p>
+        <p>Cashflow &amp; POS System &nbsp;<span style="background:var(--teal-dim);color:var(--teal);border:1px solid var(--teal-mid);border-radius:4px;font-size:9px;font-weight:700;padding:1px 6px;letter-spacing:.05em;vertical-align:middle">v3.0</span></p>
       </div>
     </div>
     <div class="hright">
@@ -348,6 +379,7 @@ select option{background:var(--bg3)}
     <button class="tab active" onclick="switchTab('shift')" id="tab-shift"><i class="ti ti-clock"></i><span> Shift</span></button>
     <button class="tab" onclick="switchTab('pos')" id="tab-pos"><i class="ti ti-shopping-cart"></i><span> POS</span></button>
     <button class="tab" onclick="switchTab('products')" id="tab-products"><i class="ti ti-package"></i><span> Products</span></button>
+    <button class="tab" onclick="switchTab('orders')" id="tab-orders"><i class="ti ti-clipboard-list"></i><span> Orders</span></button>
     <button class="tab" onclick="switchTab('daily')" id="tab-daily"><i class="ti ti-layout-dashboard"></i><span> Daily</span></button>
     <button class="tab" onclick="switchTab('payables')" id="tab-payables"><i class="ti ti-building-bank"></i><span> Payables</span></button>
     <button class="tab" onclick="openReports()" id="tab-reports"><i class="ti ti-chart-bar"></i><span> Reports</span></button>
@@ -479,6 +511,23 @@ select option{background:var(--bg3)}
 
   <!-- ═══ PRODUCTS ═══ -->
   <div class="panel" id="panel-products">
+    <!-- Import/Export toolbar -->
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title"><i class="ti ti-database-import"></i> Import / Export</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()"><i class="ti ti-download"></i> Download Template</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('csvFileInput').click()"><i class="ti ti-upload"></i> Import CSV</button>
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importCSV(this)">
+        <button class="btn btn-ghost btn-sm" onclick="exportCSV()"><i class="ti ti-file-spreadsheet"></i> Export to CSV</button>
+        <span id="importMsg" style="font-size:11px;margin-left:4px"></span>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.7">
+        <strong style="color:var(--text2)">CSV columns:</strong> sku, name, category, suppliers, cost, price, inventory, lowStock, variants<br>
+        <strong style="color:var(--text2)">Variants format:</strong> size:packaging:price|size:packaging:price &nbsp;·&nbsp;
+        <strong style="color:var(--text2)">Suppliers format:</strong> Supplier A,Supplier B
+      </div>
+    </div>
+  
     <div class="card">
       <div class="card-title"><i class="ti ti-plus"></i> <span id="prodFormTitle">Add New Product</span></div>
       <div class="fg fg3">
@@ -490,6 +539,7 @@ select option{background:var(--bg3)}
         <div class="field"><label>Margin / Markup</label><input type="text" id="pMargin" placeholder="auto-calculated" readonly style="color:var(--teal)"></div>
         <div class="field"><label>Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
         <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
+        <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(comma-separated, e.g. Zuellig,Mediline)</span></label><input type="text" id="pSuppliers" placeholder="Supplier A, Supplier B"></div>
       </div>
       <div class="sep"></div>
       <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.07em;margin-bottom:8px">VARIANTS <span style="font-weight:400;color:var(--text3)">(optional — leave blank if no variants)</span></div>
@@ -520,6 +570,47 @@ select option{background:var(--bg3)}
           </tr></thead>
           <tbody id="prodTbody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- ═══ ORDERS ═══ -->
+  <div class="panel" id="panel-orders">
+    <div class="card">
+      <div class="card-title"><i class="ti ti-settings"></i> Order Settings</div>
+      <div class="fg fg3">
+        <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001"></div>
+        <div class="field"><label>Order Date</label><input type="date" id="poDate"></div>
+        <div class="field"><label>Notes / Terms</label><input type="text" id="poNotes" placeholder="e.g. Please deliver within 3 days"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> Low / Out of Stock <span id="lowStockCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
+        <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="checkAllLow()">Check All</button>
+        <button class="btn btn-ghost btn-xs" onclick="uncheckAll()">Uncheck All</button>
+      </div>
+      <div id="lowStockList"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><i class="ti ti-plus"></i> Add Any Product to Order</div>
+      <div class="fg fg2">
+        <div class="field"><label>Search Product</label><input type="text" id="orderSearch" placeholder="Type name or SKU..." oninput="renderOrderSearch()"></div>
+        <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="renderOrderSearch()"><i class="ti ti-search"></i> Search</button></div>
+      </div>
+      <div id="orderSearchResults" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><i class="ti ti-shopping-bag"></i> Order List <span id="orderItemCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span></div>
+      <div id="orderList"></div>
+      <div id="orderEmpty" class="empty" style="display:none"><i class="ti ti-clipboard-list"></i>No items in order yet</div>
+    </div>
+    <div class="card card-accent" id="poPreviewCard" style="display:none">
+      <div class="card-title ct-teal"><i class="ti ti-file-text"></i> Purchase Order Preview</div>
+      <div id="poPreview"></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-teal btn-sm" onclick="exportPO()"><i class="ti ti-download"></i> Export PO as CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / Save PDF</button>
       </div>
     </div>
   </div>
@@ -675,10 +766,10 @@ window.changePin=async function(){
 };
 
 // ── Tabs ──
-const TABS=['shift','pos','products','daily','payables','reports','settings'];
+const TABS=['shift','pos','products','orders','daily','payables','reports','settings'];
 window.switchTab=function(tab){
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='daily')renderDaily(); if(tab==='reports')renderReports(); if(tab==='payables')renderPayables(); if(tab==='products')loadProducts();
+  if(tab==='daily')renderDaily(); if(tab==='reports')renderReports(); if(tab==='payables')renderPayables(); if(tab==='products')loadProducts(); if(tab==='orders')initOrderTab();
 };
 
 // ── SHIFT ──
@@ -860,6 +951,7 @@ window.saveProduct=async function(){
   const id=editingProdId||'prod_'+Date.now();
   const data={
     sku:document.getElementById('pSku').value.trim(),
+    suppliers:document.getElementById('pSuppliers').value.trim(),
     name,
     category:document.getElementById('pCategory').value.trim(),
     cost:parseFloat(document.getElementById('pCost').value)||0,
@@ -880,6 +972,7 @@ window.editProduct=async function(id){
   editingProdId=id;
   document.getElementById('prodFormTitle').textContent='Edit Product';
   document.getElementById('pSku').value=p.sku||'';
+  document.getElementById('pSuppliers').value=p.suppliers||'';
   document.getElementById('pName').value=p.name||'';
   document.getElementById('pCategory').value=p.category||'';
   document.getElementById('pCost').value=p.cost||'';
@@ -895,7 +988,7 @@ window.editProduct=async function(id){
 window.cancelEditProduct=function(){
   editingProdId=null;
   document.getElementById('prodFormTitle').textContent='Add New Product';
-  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pMargin'].forEach(id=>document.getElementById(id).value='');
+  ['pSku','pName','pCategory','pSuppliers','pCost','pPrice','pInventory','pLowStock','pMargin'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('variantList').innerHTML=''; variantRows=[];
 };
 
@@ -1202,6 +1295,331 @@ async function init(){
   setTimeout(()=>{ document.getElementById('loadingScreen').style.opacity='0'; setTimeout(()=>document.getElementById('loadingScreen').style.display='none',400); },1500);
 }
 init();
+
+// ═══════════════════════════════════════════════════
+// ── CSV IMPORT / EXPORT ──
+// ═══════════════════════════════════════════════════
+
+window.downloadTemplate = function() {
+  const header = 'sku,name,category,suppliers,cost,price,inventory,lowStock,variants';
+  const example = 'MED-001,Amoxicillin 500mg,Antibiotics,"Zuellig,Mediline",8.50,12.00,100,20,500mg:Capsule:12.00|500mg:Tablet:11.00';
+  const csv = header + '\n' + example;
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'drkimpharmacy_products_template.csv';
+  a.click();
+  toast('Template downloaded','ok');
+};
+
+window.exportCSV = function() {
+  if(!allProducts.length){toast('No products to export','err');return;}
+  const header = 'sku,name,category,suppliers,cost,price,inventory,lowStock,variants';
+  const rows = allProducts.map(p => {
+    const variants = (p.variants||[]).map(v=>`${v.size||''}:${v.packaging||''}:${v.price||''}`).join('|');
+    const esc = s => `"${(s||'').toString().replace(/"/g,'""')}"`;
+    return [esc(p.sku),esc(p.name),esc(p.category),esc(p.suppliers),p.cost||0,p.price||0,p.inventory||0,p.lowStock||10,esc(variants)].join(',');
+  });
+  const csv = [header,...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `drkimpharmacy_products_${today()}.csv`;
+  a.click();
+  toast(`Exported ${allProducts.length} products`,'ok');
+};
+
+window.importCSV = async function(input) {
+  const file = input.files[0]; if(!file)return;
+  const msg = document.getElementById('importMsg');
+  msg.style.color='var(--amber)'; msg.textContent='Importing...';
+  const text = await file.text();
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/"/g,''));
+  let imported=0, skipped=0;
+  for(let i=1;i<lines.length;i++){
+    const line = lines[i].trim(); if(!line)continue;
+    // Parse CSV respecting quoted fields
+    const cols = parseCSVLine(line);
+    const row = {};
+    headers.forEach((h,j)=>row[h]=(cols[j]||'').replace(/^"|"$/g,'').trim());
+    if(!row.name){skipped++;continue;}
+    // Parse variants
+    const variants = row.variants ? row.variants.split('|').map(v=>{
+      const parts=v.split(':'); return {size:parts[0]||'',packaging:parts[1]||'',price:parseFloat(parts[2])||0};
+    }).filter(v=>v.size||v.packaging) : [];
+    const id = 'prod_'+Date.now()+'_'+i;
+    await fsSet('products', id, {
+      sku:row.sku||'', name:row.name, category:row.category||'',
+      suppliers:row.suppliers||'',
+      cost:parseFloat(row.cost)||0, price:parseFloat(row.price)||0,
+      inventory:parseInt(row.inventory)||0, lowStock:parseInt(row.lowstock)||10,
+      variants, updatedAt:tnow()
+    });
+    imported++;
+  }
+  msg.style.color='var(--teal)'; msg.textContent=`Imported ${imported} products${skipped?' ('+skipped+' skipped)':''}`;
+  setTimeout(()=>msg.textContent='',4000);
+  input.value='';
+  await loadProducts();
+};
+
+function parseCSVLine(line) {
+  const result=[]; let cur='', inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}
+    else if(c===','&&!inQ){result.push(cur);cur='';}
+    else cur+=c;
+  }
+  result.push(cur); return result;
+}
+
+// ═══════════════════════════════════════════════════
+// ── ORDER LIST ──
+// ═══════════════════════════════════════════════════
+
+let orderItems = {}; // prodId -> {prod, qty}
+
+function initOrderTab() {
+  document.getElementById('poDate').value = today();
+  const num = 'PO-'+today().replace(/-/g,'').slice(2)+'-001';
+  if(!document.getElementById('poNumber').value) document.getElementById('poNumber').value = num;
+  renderLowStock();
+  renderOrderList();
+}
+
+function renderLowStock() {
+  const low = allProducts.filter(p=>(p.inventory||0)<=(p.lowStock||10));
+  const el = document.getElementById('lowStockList');
+  document.getElementById('lowStockCount').textContent = low.length+' items';
+  if(!low.length){el.innerHTML='<div class="empty"><i class="ti ti-check"></i>All stock levels OK</div>';return;}
+  el.innerHTML = low.map(p=>{
+    const inv=p.inventory||0, isOut=inv<=0;
+    const suggested = Math.max((p.lowStock||10)*3 - inv, 1);
+    return `<div class="po-item">
+      <input type="checkbox" id="chk_${p.id}" onchange="toggleOrderItem('${p.id}',this.checked,${suggested})">
+      <div class="po-info">
+        <div class="po-name">${p.name} <span class="${isOut?'chip chip-out':'chip chip-low'}">${isOut?'Out of stock':'Low: '+inv}</span></div>
+        <div class="po-meta">${p.sku||'No SKU'} · ${p.suppliers||'No supplier'}</div>
+      </div>
+      <div class="po-qty-wrap">
+        <label style="font-size:10px;color:var(--text3)">Qty:</label>
+        <input type="number" class="po-qty" id="qty_${p.id}" value="${suggested}" min="1" onchange="updateOrderQty('${p.id}',this.value)">
+      </div>
+      <div class="po-price">${fmt((p.cost||0)*suggested)}</div>
+    </div>`;
+  }).join('');
+}
+
+window.checkAllLow = function() {
+  const low = allProducts.filter(p=>(p.inventory||0)<=(p.lowStock||10));
+  low.forEach(p=>{
+    const chk=document.getElementById('chk_'+p.id);
+    const qty=parseInt(document.getElementById('qty_'+p.id)?.value)||1;
+    if(chk&&!chk.checked){chk.checked=true;orderItems[p.id]={prod:p,qty};}
+  });
+  renderOrderList();
+};
+window.uncheckAll = function() {
+  allProducts.forEach(p=>{const chk=document.getElementById('chk_'+p.id);if(chk)chk.checked=false;});
+  orderItems={};renderOrderList();
+};
+
+window.toggleOrderItem = function(id,checked,qty) {
+  const prod=allProducts.find(p=>p.id===id); if(!prod)return;
+  if(checked) orderItems[id]={prod,qty:qty||1};
+  else delete orderItems[id];
+  renderOrderList();
+};
+window.updateOrderQty = function(id,qty) {
+  if(orderItems[id]) orderItems[id].qty=parseInt(qty)||1;
+  renderOrderList();
+};
+
+window.renderOrderSearch = function() {
+  const q=document.getElementById('orderSearch').value.trim().toLowerCase();
+  const el=document.getElementById('orderSearchResults');
+  if(!q){el.innerHTML='';return;}
+  const results=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q)).slice(0,8);
+  if(!results.length){el.innerHTML='<div class="empty" style="padding:10px">No products found</div>';return;}
+  el.innerHTML=results.map(p=>`
+    <div class="po-item" style="cursor:pointer" onclick="addToOrder('${p.id}')">
+      <div class="po-info">
+        <div class="po-name">${p.name}</div>
+        <div class="po-meta">${p.sku||'No SKU'} · Stock: ${p.inventory||0} · ${p.suppliers||'No supplier'}</div>
+      </div>
+      <button class="btn btn-ghost btn-xs"><i class="ti ti-plus"></i> Add</button>
+    </div>`).join('');
+};
+
+window.addToOrder = function(id) {
+  const prod=allProducts.find(p=>p.id===id); if(!prod)return;
+  if(!orderItems[id]) orderItems[id]={prod,qty:1};
+  else orderItems[id].qty++;
+  // Check the checkbox if in low stock list
+  const chk=document.getElementById('chk_'+id);
+  if(chk) chk.checked=true;
+  toast(prod.name+' added to order','ok');
+  renderOrderList();
+};
+
+window.removeFromOrder = function(id) {
+  delete orderItems[id];
+  const chk=document.getElementById('chk_'+id);
+  if(chk) chk.checked=false;
+  renderOrderList();
+};
+
+function renderOrderList() {
+  const items=Object.values(orderItems);
+  const el=document.getElementById('orderList');
+  const emptyEl=document.getElementById('orderEmpty');
+  const previewCard=document.getElementById('poPreviewCard');
+  document.getElementById('orderItemCount').textContent=items.length+' items';
+  if(!items.length){
+    el.innerHTML=''; emptyEl.style.display='block'; previewCard.style.display='none'; return;
+  }
+  emptyEl.style.display='none'; previewCard.style.display='block';
+
+  // Group by supplier
+  const bySupplier={};
+  items.forEach(({prod,qty})=>{
+    const suppliers=(prod.suppliers||'No Supplier').split(',').map(s=>s.trim());
+    const primarySupplier=suppliers[0]||'No Supplier';
+    if(!bySupplier[primarySupplier])bySupplier[primarySupplier]=[];
+    bySupplier[primarySupplier].push({prod,qty,allSuppliers:suppliers.join(', ')});
+  });
+
+  el.innerHTML=Object.entries(bySupplier).map(([supplier,sitems])=>`
+    <div class="supplier-section">
+      <div class="supplier-header"><i class="ti ti-truck" style="font-size:11px;margin-right:4px"></i>${supplier}</div>
+      ${sitems.map(({prod,qty})=>`
+        <div class="po-item">
+          <div class="po-info">
+            <div class="po-name">${prod.name}</div>
+            <div class="po-meta">${prod.sku||'No SKU'} · Cost: ${fmt(prod.cost||0)} · Stock: ${prod.inventory||0}</div>
+          </div>
+          <div class="po-qty-wrap">
+            <label style="font-size:10px;color:var(--text3)">Qty:</label>
+            <input type="number" class="po-qty" value="${qty}" min="1" onchange="orderItems['${prod.id}'].qty=parseInt(this.value)||1;renderOrderList()">
+          </div>
+          <div class="po-price">${fmt((prod.cost||0)*qty)}</div>
+          <button class="del-btn" onclick="removeFromOrder('${prod.id}')"><i class="ti ti-x"></i></button>
+        </div>`).join('')}
+      <div style="text-align:right;font-size:11px;color:var(--amber);font-family:var(--mono);padding:4px 10px">
+        Subtotal: ${fmt(sitems.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0))}
+      </div>
+    </div>`).join('');
+
+  renderPOPreview(bySupplier);
+}
+
+function renderPOPreview(bySupplier) {
+  const poNum=document.getElementById('poNumber').value||'PO-001';
+  const poDate=document.getElementById('poDate').value||today();
+  const poNotes=document.getElementById('poNotes').value||'';
+  const grandTotal=Object.values(orderItems).reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0);
+  const totalItems=Object.values(orderItems).reduce((a,{qty})=>a+qty,0);
+
+  let html=`<div class="po-preview">
+    <div class="po-preview-header">
+      <div class="po-preview-title">PURCHASE ORDER</div>
+      <div class="po-preview-sub">Dr. Kim Pharmacy</div>
+      <div class="po-preview-sub">PO# ${poNum} &nbsp;·&nbsp; Date: ${poDate}</div>
+      ${poNotes?`<div class="po-preview-sub" style="margin-top:4px;color:var(--amber)">Note: ${poNotes}</div>`:''}
+    </div>`;
+
+  Object.entries(bySupplier).forEach(([supplier,sitems])=>{
+    html+=`<div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:600;color:var(--purple);margin-bottom:4px;text-transform:uppercase">SUPPLIER: ${supplier}</div>
+      <table class="po-tbl">
+        <tr><th>SKU</th><th>Product</th><th style="text-align:right">Cost</th><th style="text-align:right">Qty</th><th style="text-align:right">Total</th></tr>
+        ${sitems.map(({prod,qty})=>`<tr>
+          <td style="color:var(--text3)">${prod.sku||'-'}</td>
+          <td>${prod.name}</td>
+          <td style="text-align:right">${fmtShort(prod.cost||0)}</td>
+          <td style="text-align:right">${qty}</td>
+          <td style="text-align:right;color:var(--amber)">${fmtShort((prod.cost||0)*qty)}</td>
+        </tr>`).join('')}
+      </table>
+    </div>`;
+  });
+
+  html+=`<div style="border-top:1px dashed var(--border2);padding-top:8px;margin-top:4px">
+    <div style="display:flex;justify-content:space-between"><span>Total Items:</span><span>${totalItems}</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:600;font-size:13px;margin-top:4px;color:var(--teal)"><span>Grand Total:</span><span>${fmtShort(grandTotal)}</span></div>
+  </div></div>`;
+  document.getElementById('poPreview').innerHTML=html;
+}
+
+window.exportPO = function() {
+  const items=Object.values(orderItems);
+  if(!items.length){toast('No items in order','err');return;}
+  const poNum=document.getElementById('poNumber').value||'PO-001';
+  const poDate=document.getElementById('poDate').value||today();
+  const header='PO Number,Date,Supplier,SKU,Product,Cost,Qty,Total';
+  const rows=items.map(({prod,qty})=>{
+    const esc=s=>`"${(s||'').toString().replace(/"/g,'""')}"`;
+    const suppliers=(prod.suppliers||'No Supplier').split(',').map(s=>s.trim());
+    return [esc(poNum),esc(poDate),esc(suppliers[0]),esc(prod.sku),esc(prod.name),prod.cost||0,qty,((prod.cost||0)*qty).toFixed(2)].join(',');
+  });
+  const csv=[header,...rows].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`PO_${poNum}_${poDate}.csv`;
+  a.click();
+  toast('PO exported as CSV','ok');
+};
+
+window.printPO = function() {
+  const poNum=document.getElementById('poNumber').value||'PO-001';
+  const poDate=document.getElementById('poDate').value||today();
+  const poNotes=document.getElementById('poNotes').value||'';
+  const items=Object.values(orderItems);
+  if(!items.length){toast('No items in order','err');return;}
+  const grandTotal=items.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0);
+
+  // Group by supplier
+  const bySupplier={};
+  items.forEach(({prod,qty})=>{
+    const s=(prod.suppliers||'No Supplier').split(',')[0].trim();
+    if(!bySupplier[s])bySupplier[s]=[];
+    bySupplier[s].push({prod,qty});
+  });
+
+  let supplierHtml='';
+  Object.entries(bySupplier).forEach(([supplier,sitems])=>{
+    supplierHtml+=`<div style="margin-bottom:24px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px;border-bottom:2px solid #000;padding-bottom:4px">SUPPLIER: ${supplier}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <tr style="background:#f0f0f0"><th style="padding:6px;border:1px solid #ccc;text-align:left">SKU</th><th style="padding:6px;border:1px solid #ccc;text-align:left">Product</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Unit Cost</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Qty</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Total</th></tr>
+        ${sitems.map(({prod,qty})=>`<tr><td style="padding:6px;border:1px solid #ccc">${prod.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${prod.name}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(prod.cost||0).toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${qty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${((prod.cost||0)*qty).toFixed(2)}</td></tr>`).join('')}
+      </table>
+    </div>`;
+  });
+
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>PO ${poNum}</title><style>body{font-family:Arial,sans-serif;font-size:13px;padding:30px;color:#000}@media print{body{padding:10px}}</style></head><body>
+    <div style="text-align:center;margin-bottom:20px;border-bottom:3px double #000;padding-bottom:16px">
+      <h1 style="font-size:20px;margin:0">PURCHASE ORDER</h1>
+      <h2 style="font-size:15px;margin:6px 0;font-weight:normal">Dr. Kim Pharmacy</h2>
+      <div style="font-size:12px;margin-top:6px"><strong>PO#:</strong> ${poNum} &nbsp;&nbsp; <strong>Date:</strong> ${poDate}</div>
+      ${poNotes?`<div style="font-size:11px;margin-top:4px;color:#666">Note: ${poNotes}</div>`:''}
+    </div>
+    ${supplierHtml}
+    <div style="border-top:2px solid #000;padding-top:10px;text-align:right;margin-top:20px">
+      <strong style="font-size:15px">GRAND TOTAL: PHP ${grandTotal.toLocaleString('en-PH',{minimumFractionDigits:2})}</strong>
+    </div>
+    <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:12px">
+      <div>Prepared by: _______________________</div>
+      <div>Approved by: _______________________</div>
+    </div>
+    <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`);
+  win.document.close();
+};
 </script>
 </body>
 </html>
