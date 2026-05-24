@@ -25,7 +25,9 @@
   --r:10px;--r2:14px;--r3:18px;
 }
 html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5}
-.app{max-width:960px;margin:0 auto;padding:12px 12px 80px}
+.app{max-width:960px;margin:0 auto;padding:12px 18px 80px;box-sizing:border-box}
+.header,.tabs,.panel{box-sizing:border-box;width:100%}
+.ptoggle,.fg,.mrow,.stbl,.elist,.chwrap,.pay-wrap,.pos-layout,.prod-table,.variant-list,.srow{width:100%;box-sizing:border-box}
 /* HEADER */
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:12px 18px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r3);position:relative;overflow:hidden}
 .header::after{content:'';position:absolute;top:-50px;right:-50px;width:180px;height:180px;background:radial-gradient(circle,rgba(0,212,170,.06),transparent 70%);pointer-events:none}
@@ -68,7 +70,7 @@ html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:va
 .shift-btn.active{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
 .shift-btn:hover:not(.active){border-color:var(--border2);color:var(--text)}
 /* CARDS */
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:10px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:10px;width:100%;box-sizing:border-box}
 .card-accent{border-color:var(--teal);background:linear-gradient(135deg,rgba(0,41,32,.5),var(--bg2))}
 .card-title{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;display:flex;align-items:center;gap:6px}
 .card-title i{font-size:14px}
@@ -366,7 +368,7 @@ select option{background:var(--bg3)}
       <div class="logo-icon"><i class="ti ti-pill"></i></div>
       <div class="logo-text">
         <h1>Dr. Kim Pharmacy</h1>
-        <p>Cashflow &amp; POS System &nbsp;<span style="background:var(--teal-dim);color:var(--teal);border:1px solid var(--teal-mid);border-radius:4px;font-size:9px;font-weight:700;padding:1px 6px;letter-spacing:.05em;vertical-align:middle">v3.0</span></p>
+        <p>Cashflow &amp; POS System &nbsp;<span style="background:var(--teal-dim);color:var(--teal);border:1px solid var(--teal-mid);border-radius:4px;font-size:9px;font-weight:700;padding:1px 6px;letter-spacing:.05em;vertical-align:middle">v3.3</span></p>
       </div>
     </div>
     <div class="hright">
