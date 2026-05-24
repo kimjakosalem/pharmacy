@@ -874,12 +874,28 @@ function calcShift(s){
 // ═══════════════════════════════════════
 // ── PRODUCTS ──
 // ═══════════════════════════════════════
-let allProducts=[], editingProdId=null;
+let allProducts=[], allProductsFull={}, editingProdId=null, productPageIndex=0, pageSize=50;
 
+// OPTIMIZED: Load lightweight index only (name, SKU, price, ID)
 async function loadProducts(){
-  allProducts=await fsGetAll('products');
-  renderProductTable(allProducts);
+  const rawProducts=await fsGetAll('products');
+  // Store lightweight version for search
+  allProducts=rawProducts.map(p=>({
+    id:p.id,
+    sku:p.sku||'',
+    name:p.name||'',
+    price:p.price||0,
+    inventory:p.inventory||0,
+    cost:p.cost||0,
+    category:p.category||'',
+    lowStock:p.lowStock||10
+  }));
+  // Store full versions in object for on-demand fetching
+  rawProducts.forEach(p=>allProductsFull[p.id]=p);
+  productPageIndex=0;
+  renderProductTable(allProducts.slice(0,pageSize));
   document.getElementById('prodCount').textContent=allProducts.length+' products';
+  renderPaginationControls();
 }
 
 function renderProductTable(prods){
@@ -907,9 +923,57 @@ function renderProductTable(prods){
   }).join('');
 }
 
+function renderPaginationControls(){
+  const totalPages=Math.ceil(allProducts.length/pageSize);
+  const container=document.getElementById('prodTbody').parentElement.parentElement;
+  let paginationHtml=`<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;padding:12px;border-top:1px solid var(--border)">`;
+  if(productPageIndex>0) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="prevProductPage()"><i class="ti ti-arrow-left"></i> Prev</button>`;
+  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4"><i class="ti ti-arrow-left"></i> Prev</button>`;
+  paginationHtml+=`<span style="font-size:11px;color:var(--text3)">Page ${productPageIndex+1} of ${totalPages}</span>`;
+  if(productPageIndex<totalPages-1) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="nextProductPage()">Next <i class="ti ti-arrow-right"></i></button>`;
+  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4">Next <i class="ti ti-arrow-right"></i></button>`;
+  paginationHtml+=`</div>`;
+  const existing=container.querySelector('[data-pagination]');
+  if(existing)existing.outerHTML=paginationHtml;
+  else{const div=document.createElement('div');div.setAttribute('data-pagination','');div.innerHTML=paginationHtml;container.appendChild(div);}
+}
+
+window.nextProductPage=function(){
+  const totalPages=Math.ceil(allProducts.length/pageSize);
+  if(productPageIndex<totalPages-1){
+    productPageIndex++;
+    const start=productPageIndex*pageSize;
+    renderProductTable(allProducts.slice(start,start+pageSize));
+    renderPaginationControls();
+    document.querySelector('.prod-table').scrollIntoView({behavior:'smooth'});
+  }
+};
+
+window.prevProductPage=function(){
+  if(productPageIndex>0){
+    productPageIndex--;
+    const start=productPageIndex*pageSize;
+    renderProductTable(allProducts.slice(start,start+pageSize));
+    renderPaginationControls();
+    document.querySelector('.prod-table').scrollIntoView({behavior:'smooth'});
+  }
+};
+
 window.filterProducts=function(q){
   const filtered=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q.toLowerCase())||(p.sku||'').toLowerCase().includes(q.toLowerCase())||(p.category||'').toLowerCase().includes(q.toLowerCase()));
-  renderProductTable(filtered);
+  productPageIndex=0; // Reset to first page on filter
+  renderProductTable(filtered.slice(0,pageSize));
+  // Update pagination for filtered results
+  const totalPages=Math.ceil(filtered.length/pageSize);
+  const container=document.querySelector('[data-pagination]');
+  let paginationHtml=`<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;padding:12px;border-top:1px solid var(--border)">`;
+  if(productPageIndex>0) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="prevProductPage()"><i class="ti ti-arrow-left"></i> Prev</button>`;
+  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4"><i class="ti ti-arrow-left"></i> Prev</button>`;
+  paginationHtml+=`<span style="font-size:11px;color:var(--text3)">Page ${productPageIndex+1} of ${totalPages || 1}</span>`;
+  if(productPageIndex<totalPages-1) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="nextProductPage()">Next <i class="ti ti-arrow-right"></i></button>`;
+  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4">Next <i class="ti ti-arrow-right"></i></button>`;
+  paginationHtml+=`</div>`;
+  if(container) container.outerHTML=paginationHtml;
 };
 
 window.calcMargin=function(){
@@ -963,13 +1027,21 @@ window.saveProduct=async function(){
     updatedAt:tnow()
   };
   await fsSet('products',id,data);
+  // Update cache
+  allProductsFull[id]=data;
+  const existing=allProducts.findIndex(p=>p.id===id);
+  if(existing>=0){
+    allProducts[existing]={id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,lowStock:data.lowStock};
+  } else {
+    allProducts.push({id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,lowStock:data.lowStock});
+  }
   msg.style.color='var(--teal)'; msg.textContent='Saved!';
   setTimeout(()=>msg.textContent='',2000);
   cancelEditProduct(); loadProducts(); toast('Product saved','ok');
 };
 
 window.editProduct=async function(id){
-  const p=allProducts.find(x=>x.id===id); if(!p)return;
+  const p=allProductsFull[id]; if(!p)return;
   editingProdId=id;
   document.getElementById('prodFormTitle').textContent='Edit Product';
   document.getElementById('pSku').value=p.sku||'';
@@ -995,7 +1067,12 @@ window.cancelEditProduct=function(){
 
 window.deleteProduct=async function(id){
   if(!confirm('Delete this product?'))return;
-  await fsDel('products',id); loadProducts(); toast('Product deleted','info');
+  await fsDel('products',id);
+  delete allProductsFull[id];
+  allProducts=allProducts.filter(p=>p.id!==id);
+  productPageIndex=0;
+  loadProducts(); 
+  toast('Product deleted','info');
 };
 
 // ═══════════════════════════════════════
@@ -1017,7 +1094,7 @@ window.searchProducts=function(){
       <div>
         <div class="prod-name">${p.name}</div>
         <div class="prod-sku">${p.sku||''}</div>
-        <div class="prod-inv ${invClass}">${p.variants?.length?p.variants.length+' variants':''} ${invLabel!==inv?'· '+invLabel:''}</div>
+        <div class="prod-inv ${invClass}">${invLabel!==inv?'· '+invLabel:''}</div>
       </div>
       <div class="prod-price">${fmt(p.price)}</div>
     </div>`;
@@ -1025,7 +1102,10 @@ window.searchProducts=function(){
 };
 
 window.openProductModal=function(id){
-  modalProd=allProducts.find(p=>p.id===id); if(!modalProd)return;
+  const lightProd=allProducts.find(p=>p.id===id);
+  const fullProd=allProductsFull[id]; 
+  if(!lightProd||!fullProd)return;
+  modalProd=fullProd; // Use full product data
   modalVariant=null;
   document.getElementById('modalProdName').textContent=modalProd.name;
   document.getElementById('modalProdSku').textContent=modalProd.sku||'';
@@ -1111,8 +1191,13 @@ window.checkout=async function(){
   else if(payMode==='mcredit') s.pbMcredit=(s.pbMcredit||0)+total;
   await persistShift(curShift,dt);
   for(const item of cart){
-    const prod=allProducts.find(p=>p.id===item.prodId);
-    if(prod){ prod.inventory=Math.max(0,(prod.inventory||0)-(item.qty)); await fsSet('products',item.prodId,{...prod}); }
+    const fullProd=allProductsFull[item.prodId];
+    const lightProd=allProducts.find(p=>p.id===item.prodId);
+    if(fullProd && lightProd){ 
+      fullProd.inventory=Math.max(0,(fullProd.inventory||0)-(item.qty)); 
+      lightProd.inventory=fullProd.inventory;
+      await fsSet('products',item.prodId,fullProd); 
+    }
   }
   document.getElementById('posTot').value=s.posTot||'';
   document.getElementById('posTxn').value=s.posTxn||'';
@@ -1340,29 +1425,35 @@ window.importCSV = async function(input) {
   let imported=0, skipped=0;
   for(let i=1;i<lines.length;i++){
     const line = lines[i].trim(); if(!line)continue;
-    // Parse CSV respecting quoted fields
     const cols = parseCSVLine(line);
     const row = {};
     headers.forEach((h,j)=>row[h]=(cols[j]||'').replace(/^"|"$/g,'').trim());
     if(!row.name){skipped++;continue;}
-    // Parse variants
     const variants = row.variants ? row.variants.split('|').map(v=>{
       const parts=v.split(':'); return {size:parts[0]||'',packaging:parts[1]||'',price:parseFloat(parts[2])||0};
     }).filter(v=>v.size||v.packaging) : [];
     const id = 'prod_'+Date.now()+'_'+i;
-    await fsSet('products', id, {
+    const fullData={
       sku:row.sku||'', name:row.name, category:row.category||'',
       suppliers:row.suppliers||'',
       cost:parseFloat(row.cost)||0, price:parseFloat(row.price)||0,
       inventory:parseInt(row.inventory)||0, lowStock:parseInt(row.lowstock)||10,
       variants, updatedAt:tnow()
-    });
+    };
+    await fsSet('products', id, fullData);
+    // Update caches
+    allProductsFull[id]=fullData;
+    allProducts.push({id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,lowStock:fullData.lowStock});
     imported++;
   }
   msg.style.color='var(--teal)'; msg.textContent=`Imported ${imported} products${skipped?' ('+skipped+' skipped)':''}`;
   setTimeout(()=>msg.textContent='',4000);
   input.value='';
-  await loadProducts();
+  // Reset pagination and refresh
+  productPageIndex=0;
+  renderProductTable(allProducts.slice(0,pageSize));
+  renderPaginationControls();
+  document.getElementById('prodCount').textContent=allProducts.length+' products';
 };
 
 function parseCSVLine(line) {
@@ -1402,7 +1493,7 @@ function renderLowStock() {
       <input type="checkbox" id="chk_${p.id}" onchange="toggleOrderItem('${p.id}',this.checked,${suggested})">
       <div class="po-info">
         <div class="po-name">${p.name} <span class="${isOut?'chip chip-out':'chip chip-low'}">${isOut?'Out of stock':'Low: '+inv}</span></div>
-        <div class="po-meta">${p.sku||'No SKU'} · ${p.suppliers||'No supplier'}</div>
+        <div class="po-meta">${p.sku||'No SKU'} · ${allProductsFull[p.id]?.suppliers||'No supplier'}</div>
       </div>
       <div class="po-qty-wrap">
         <label style="font-size:10px;color:var(--text3)">Qty:</label>
