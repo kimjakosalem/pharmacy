@@ -587,13 +587,6 @@ select option{background:var(--bg3)}
       </div>
     </div>
     <div class="card">
-      <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> Low / Out of Stock <span id="lowStockCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
-        <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="checkAllLow()">Check All</button>
-        <button class="btn btn-ghost btn-xs" onclick="uncheckAll()">Uncheck All</button>
-      </div>
-      <div id="lowStockList"></div>
-    </div>
-    <div class="card">
       <div class="card-title"><i class="ti ti-plus"></i> Add Any Product to Order</div>
       <div class="fg fg2">
         <div class="field"><label>Search Product</label><input type="text" id="orderSearch" placeholder="Type name or SKU..." oninput="renderOrderSearch()"></div>
@@ -613,6 +606,13 @@ select option{background:var(--bg3)}
         <button class="btn btn-teal btn-sm" onclick="exportPO()"><i class="ti ti-download"></i> Export PO as CSV</button>
         <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / Save PDF</button>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> Low / Out of Stock <span id="lowStockCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
+        <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="checkAllLow()">Check All</button>
+        <button class="btn btn-ghost btn-xs" onclick="uncheckAll()">Uncheck All</button>
+      </div>
+      <div id="lowStockList"></div>
     </div>
   </div>
 
@@ -1471,12 +1471,13 @@ function parseCSVLine(line) {
 // ── ORDER LIST ──
 // ═══════════════════════════════════════════════════
 
-let orderItems = {}; // prodId -> {prod, qty}
+let orderItems = {}, lowStockPageIndex = 0, lowStockPageSize = 10;
 
 function initOrderTab() {
   document.getElementById('poDate').value = today();
   const num = 'PO-'+today().replace(/-/g,'').slice(2)+'-001';
   if(!document.getElementById('poNumber').value) document.getElementById('poNumber').value = num;
+  lowStockPageIndex = 0;
   renderLowStock();
   renderOrderList();
 }
@@ -1486,7 +1487,13 @@ function renderLowStock() {
   const el = document.getElementById('lowStockList');
   document.getElementById('lowStockCount').textContent = low.length+' items';
   if(!low.length){el.innerHTML='<div class="empty"><i class="ti ti-check"></i>All stock levels OK</div>';return;}
-  el.innerHTML = low.map(p=>{
+  
+  // Pagination
+  const totalPages = Math.ceil(low.length / lowStockPageSize);
+  const start = lowStockPageIndex * lowStockPageSize;
+  const paginated = low.slice(start, start + lowStockPageSize);
+  
+  el.innerHTML = paginated.map(p=>{
     const inv=p.inventory||0, isOut=inv<=0;
     const suggested = Math.max((p.lowStock||10)*3 - inv, 1);
     return `<div class="po-item">
@@ -1502,7 +1509,33 @@ function renderLowStock() {
       <div class="po-price">${fmt((p.cost||0)*suggested)}</div>
     </div>`;
   }).join('');
+  
+  // Add pagination controls
+  const paginationHtml = `
+    <div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;padding:12px;border-top:1px solid var(--border)">
+      ${lowStockPageIndex>0?`<button class="btn btn-ghost btn-sm" onclick="prevLowStockPage()"><i class="ti ti-arrow-left"></i> Prev</button>`:`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4"><i class="ti ti-arrow-left"></i> Prev</button>`}
+      <span style="font-size:11px;color:var(--text3)">Page ${lowStockPageIndex+1} of ${totalPages}</span>
+      ${lowStockPageIndex<totalPages-1?`<button class="btn btn-ghost btn-sm" onclick="nextLowStockPage()">Next <i class="ti ti-arrow-right"></i></button>`:`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4">Next <i class="ti ti-arrow-right"></i></button>`}
+    </div>
+  `;
+  el.innerHTML += paginationHtml;
 }
+
+window.nextLowStockPage = function() {
+  const low = allProducts.filter(p=>(p.inventory||0)<=(p.lowStock||10));
+  const totalPages = Math.ceil(low.length / lowStockPageSize);
+  if(lowStockPageIndex < totalPages-1) {
+    lowStockPageIndex++;
+    renderLowStock();
+  }
+};
+
+window.prevLowStockPage = function() {
+  if(lowStockPageIndex > 0) {
+    lowStockPageIndex--;
+    renderLowStock();
+  }
+};
 
 window.checkAllLow = function() {
   const low = allProducts.filter(p=>(p.inventory||0)<=(p.lowStock||10));
