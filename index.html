@@ -43,6 +43,7 @@ button,.tab,.btn,.pin-key,.pay-mode-btn,.qty-btn,.shift-btn,.del-btn{touch-actio
 .logo-text p{font-size:10px;color:var(--text3)}
 .hright{display:flex;align-items:center;gap:7px;flex-shrink:0}
 .pill{font-family:var(--mono);font-size:10px;color:var(--text2);background:var(--bg3);padding:4px 10px;border-radius:20px;border:1px solid var(--border);white-space:nowrap}
+#datePill{display:none;align-items:center}   /* desktop uses the full clock (which has the date); phones show this */
 .dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px}
 .dot-g{background:var(--green);animation:pulse 2s infinite}
 .dot-a{background:var(--amber)}
@@ -190,6 +191,7 @@ select option{background:var(--bg3)}
 
 /* ═══ POS STYLES ═══ */
 .pos-layout{display:grid;grid-template-columns:1fr 340px;gap:10px;min-height:70vh}
+.pos-layout>*{min-width:0}
 .pos-search-wrap{position:relative;margin-bottom:10px}
 .pos-search-wrap i{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none}
 .pos-search{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:14px;padding:10px 12px 10px 36px;border-radius:var(--r);outline:none;transition:border-color .2s}
@@ -297,7 +299,8 @@ select option{background:var(--bg3)}
   .logo-text h1{font-size:13px}
   .logo-text p{display:none}                    /* drop subtitle to keep header short (version is in Settings) */
   .hright{flex-shrink:1;flex-wrap:wrap}
-  .hright #clockPill,.hright #syncPill{display:none}   /* keep only user chip + Close Shift on phones */
+  .hright #clockPill,.hright #syncPill{display:none}   /* full clock + sync hidden on phones */
+  .hright #datePill{display:inline-flex}              /* ...but keep the current date visible */
   .card{padding:13px}
   .fg2,.fg3,.fg4{grid-template-columns:1fr}     /* stack all multi-column forms on phones */
   .m4,.m3{grid-template-columns:1fr 1fr}
@@ -550,6 +553,7 @@ select option{background:var(--bg3)}
     <div class="hright">
       <div class="pill" id="userChip" style="display:none;gap:6px"><i class="ti ti-user-circle"></i><span id="userName"></span><span id="userRole" style="color:var(--teal);text-transform:uppercase;font-size:9px;font-weight:700;letter-spacing:.05em"></span></div>
       <button class="btn btn-ghost btn-xs" id="closeShiftBtn" onclick="openCloseShift()" style="display:none"><i class="ti ti-logout"></i> Close Shift</button>
+      <div class="pill" id="datePill"></div>
       <div class="pill" id="syncPill"><span class="dot dot-a" id="syncDot"></span><span id="syncTxt">Connecting...</span></div>
       <div class="pill" id="clockPill"></div>
     </div>
@@ -624,6 +628,13 @@ select option{background:var(--bg3)}
       </div>
     </div>
     <div class="card">
+      <div class="card-title"><i class="ti ti-receipt"></i> POS Transactions <span id="salesCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
+        <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="resetPosSales()" title="Owner: zero this shift's POS totals"><i class="ti ti-refresh"></i> Reset</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Each POS checkout is logged here for this shift. Tap ✕ to <strong style="color:var(--text2)">void</strong> a sale (reverses the totals &amp; returns stock). <strong style="color:var(--text2)">Reset</strong> clears this shift's POS figures (owner).</div>
+      <div class="elist" style="max-height:280px" id="salesList"></div>
+    </div>
+    <div class="card">
       <div class="card-title"><i class="ti ti-notebook"></i> Manual / Logbook Sales <span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:6px">(unregistered items)</span></div>
       <div class="fg fg4">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="msAmt" placeholder="0.00" step="0.01"></div>
@@ -656,6 +667,7 @@ select option{background:var(--bg3)}
         <div class="pos-search-wrap">
           <i class="ti ti-search"></i>
           <input type="text" class="pos-search" id="posSearch" placeholder="Search product name or SKU..." oninput="searchProducts()">
+          <button class="search-clear" id="posSearchClear" onclick="clearPosSearch()" title="Clear">&#x2715;</button>
         </div>
         <div class="pos-results" id="posResults">
           <div class="empty"><i class="ti ti-search"></i>Type to search products</div>
@@ -948,13 +960,19 @@ try {
 // ── Helpers ──
 const fmt = n => 'PHP ' + (parseFloat(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtShort = n => (parseFloat(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const today = () => new Date().toISOString().slice(0,10);
+// LOCAL calendar date (not UTC) so the business day rolls over at local midnight.
+const today = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const tnow = () => new Date().toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'});
 const shiftKey = (sh,dt) => `shift_${dt||today()}_${sh}`;
 
-// Clock
+// Clock + header date
 const clockEl = document.getElementById('clockPill');
-const tickClock = () => { clockEl.textContent = new Date().toLocaleString('en-PH',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); };
+const dateEl = document.getElementById('datePill');
+const tickClock = () => {
+  const now=new Date();
+  clockEl.textContent = now.toLocaleString('en-PH',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  if(dateEl) dateEl.innerHTML = `<i class="ti ti-calendar" style="font-size:11px;margin-right:3px"></i>${now.toLocaleDateString('en-PH',{month:'short',day:'numeric'})}`;
+};
 tickClock(); setInterval(tickClock,30000);
 
 // ── Firebase wrappers (offline-first) ──
@@ -1155,12 +1173,12 @@ window.switchTab=function(tab){
   // Guard owner-only tabs against direct/programmatic access by non-owners.
   if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
+  if(tab==='shift')renderSales(); if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
 };
 
 // ── SHIFT ──
 let curShift=1, shiftCache={};
-function emptyShift(sh){ return {cashier:'',startCash:0,nextCash:0,cashIns:[],cashOuts:[],posTot:0,pbCash:0,pbGcash:0,pbMaya:0,pbMcredit:0,posTxn:0,manualSales:[],drawer:0,takehome:0,saved:false,date:today(),shift:sh}; }
+function emptyShift(sh){ return {cashier:'',startCash:0,nextCash:0,cashIns:[],cashOuts:[],posTot:0,pbCash:0,pbGcash:0,pbMaya:0,pbMcredit:0,posTxn:0,sales:[],manualSales:[],drawer:0,takehome:0,saved:false,date:today(),shift:sh}; }
 async function getShift(sh,dt){ const k=shiftKey(sh,dt); if(!shiftCache[k])shiftCache[k]=await fsGet('shifts',k)||emptyShift(sh); return shiftCache[k]; }
 async function persistShift(sh,dt){ const k=shiftKey(sh,dt); await fsSet('shifts',k,shiftCache[k]); }
 
@@ -1172,7 +1190,7 @@ async function loadShiftFields(){
     const map={cashierName:'cashier',startCash:'startCash',posTot:'posTot',pbCash:'pbCash',pbGcash:'pbGcash',pbMaya:'pbMaya',pbMcredit:'pbMcredit',posTxn:'posTxn',drawer:'drawer',takehome:'takehome',nextCash:'nextCash'};
     document.getElementById(id).value=s[map[id]]||'';
   });
-  updatePaySum(); renderCI(); renderCO(); renderMS();
+  updatePaySum(); renderCI(); renderCO(); renderMS(); renderSales();
 }
 
 let saveTimer=null;
@@ -1243,6 +1261,52 @@ async function renderMS(){
   if(!s.manualSales.length){el.innerHTML='<div class="empty"><i class="ti ti-notebook"></i>None</div>';return;}
   el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem"><div><div class="el">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span><button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
 }
+
+// ── POS transactions ledger (this shift) ──
+async function renderSales(){
+  const el=document.getElementById('salesList'); if(!el) return;
+  const s=await getShift(curShift);
+  const sales=(s.sales||[]);
+  document.getElementById('salesCount').textContent = sales.length+(sales.length===1?' sale':' sales');
+  if(!sales.length){ el.innerHTML='<div class="empty"><i class="ti ti-receipt"></i>No sales yet this shift</div>'; return; }
+  el.innerHTML=[...sales].reverse().map(t=>{
+    const items=(t.items||[]).map(it=>`${it.name}${it.size?' ('+it.size+')':''} ×${it.qty}`).join(', ');
+    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${items||'Sale'} <span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span></div><div class="ed">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</div></div><div style="display:flex;align-items:center"><span class="eval c-tel">${fmt(t.total)}</span><button class="del-btn" title="Void this sale" onclick="voidSale('${t.id}')"><i class="ti ti-x"></i></button></div></div>`;
+  }).join('');
+}
+window.resetPosSales=async function(){
+  if(session?.role!=='owner'){ toast('Owner only','err'); return; }
+  if(!confirm("Reset this shift's POS sales totals to zero? Clears the POS sale figures and transaction log for the current shift (inventory is left unchanged).")) return;
+  const s=await getShift(curShift);
+  s.posTot=0; s.posTxn=0; s.pbCash=0; s.pbGcash=0; s.pbMaya=0; s.pbMcredit=0; s.sales=[];
+  await persistShift(curShift);
+  ['posTot','posTxn','pbCash','pbGcash','pbMaya','pbMcredit'].forEach(id=>document.getElementById(id).value='');
+  updatePaySum(); renderSales();
+  toast('POS sales reset for this shift','ok');
+};
+window.voidSale=async function(id){
+  const s=await getShift(curShift);
+  const idx=(s.sales||[]).findIndex(t=>t.id===id); if(idx<0) return;
+  const t=s.sales[idx];
+  if(!confirm(`Void this ${fmt(t.total)} sale? It will be removed and the stock returned.`)) return;
+  // Reverse the shift aggregates
+  s.posTot=Math.max(0,(s.posTot||0)-t.total);
+  s.posTxn=Math.max(0,(s.posTxn||0)-1);
+  const mk={cash:'pbCash',gcash:'pbGcash',maya:'pbMaya',mcredit:'pbMcredit'}[t.mode||'cash'];
+  if(mk) s[mk]=Math.max(0,(s[mk]||0)-t.total);
+  // Return stock
+  for(const it of (t.items||[])){
+    const fp=allProductsFull[it.prodId]; if(fp){ fp.inventory=(fp.inventory||0)+it.qty; fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+  }
+  s.sales.splice(idx,1);
+  await persistShift(curShift);
+  // refresh the shift fields + lists
+  document.getElementById('posTot').value=s.posTot||''; document.getElementById('posTxn').value=s.posTxn||'';
+  document.getElementById('pbCash').value=s.pbCash||''; document.getElementById('pbGcash').value=s.pbGcash||'';
+  document.getElementById('pbMaya').value=s.pbMaya||''; document.getElementById('pbMcredit').value=s.pbMcredit||'';
+  updatePaySum(); renderSales();
+  toast('Sale voided — stock returned','ok');
+};
 
 // ── Shift Calc ──
 function calcShift(s){
@@ -1531,9 +1595,11 @@ window.deleteProduct=async function(id){
 // ═══════════════════════════════════════
 let cart=[], payMode='cash', modalProd=null, modalVariant=null;
 
+window.clearPosSearch=function(){ document.getElementById('posSearch').value=''; window.searchProducts(); document.getElementById('posSearch').focus(); };
 window.searchProducts=function(){
   const q=document.getElementById('posSearch').value.trim().toLowerCase();
   const el=document.getElementById('posResults');
+  document.getElementById('posSearchClear').classList.toggle('show', !!document.getElementById('posSearch').value);
   if(!q){el.innerHTML='<div class="empty"><i class="ti ti-search"></i>Type to search products</div>';return;}
   const results=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q));
   if(!results.length){el.innerHTML='<div class="empty"><i class="ti ti-search"></i>No products found</div>';return;}
@@ -1690,6 +1756,12 @@ async function finalizeSale(total, cashInfo){
   const now=tnow(), dt=today();
   const sold=cart.slice();   // snapshot for the receipt before we clear
   const s=await getShift(curShift,dt);
+  // Record the sale as an individual transaction (the POS ledger) so it can be reviewed/voided.
+  s.sales=s.sales||[];
+  s.sales.push({ id:'sale_'+Date.now(), time:now, ts:Date.now(), mode:payMode, total,
+    cashReceived:cashInfo?cashInfo.received:null, change:cashInfo?cashInfo.change:null,
+    cashier:session?.name||'',
+    items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty})) });
   s.posTot=(s.posTot||0)+total;
   s.posTxn=(s.posTxn||0)+1;
   if(payMode==='cash') s.pbCash=(s.pbCash||0)+total;
@@ -1712,7 +1784,7 @@ async function finalizeSale(total, cashInfo){
   document.getElementById('pbGcash').value=s.pbGcash||'';
   document.getElementById('pbMaya').value=s.pbMaya||'';
   document.getElementById('pbMcredit').value=s.pbMcredit||'';
-  updatePaySum();
+  updatePaySum(); renderSales();
   const receiptHtml=`<div class="receipt">
     <div class="receipt-header">
       <div style="font-weight:600;font-size:13px">DR. KIM PHARMACY</div>
@@ -1941,8 +2013,9 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v3.9';
+const APP_VERSION='v4.0';
 const CHANGELOG=[
+  {v:'v4.0', date:'2026-06-27', notes:['Real POS sales ledger: every checkout is now a logged transaction you can review and VOID (voiding reverses the totals and returns stock)','Owner can Reset a shift\'s POS figures to clear old/test data','POS search has a clear (✕) button; fixed POS cart overflow on iPhone','Current date now shown in the header on phones','Business day now rolls over at local midnight (fixes early-morning sales landing on the wrong day)']},
   {v:'v3.9', date:'2026-06-27', notes:['Fixed input boxes overflowing the screen edge on iPhone (payment breakdown, forms, header)','Phones now stack all two-column forms and keep only the user + Close Shift chips in the header','Shift hand-off: starting cash now carries over automatically (morning→evening, and last night→next morning); each new day starts fresh']},
   {v:'v3.8', date:'2026-06-27', notes:['Mobile polish: full support for phones, Android tablets, and iPhone (notch/safe-area aware)','Modals and login now scroll within the screen on small devices and avoid the notch & home bar','Inputs no longer zoom the page on iPhone; bigger touch targets throughout','Tighter phone layouts: stacked dense forms and a compact header']},
   {v:'v3.7', date:'2026-06-27', notes:['Shift: POS payment breakdown is now auto-only (read-only); manual sales record a payment mode','Close shift: manual-sales total now reflects entries logged during the shift','Products: editable Categories database (with recommended markup %) and Suppliers database','Orders: one supplier per order list (search/dropdown)','Receiving: choose payment terms (COD / Check / 30-60 day PDC) → auto-creates an Accounts Payable','Payables: issue payment from take-home, drawer (logs a cash-out), or bank; paid POs get a Paid tag']},
