@@ -86,17 +86,19 @@ button,.tab,.btn,.pin-key,.pay-mode-btn,.qty-btn,.shift-btn,.del-btn{touch-actio
 .fg3{grid-template-columns:1fr 1fr 1fr}
 .fg4{grid-template-columns:1fr 1fr 1fr 1fr}
 .fc{grid-column:1/-1}
-.field{display:flex;flex-direction:column;gap:4px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fg>*,.pay-grid>*{min-width:0}
 .field label{font-size:10px;color:var(--text2);font-weight:500;letter-spacing:.03em}
-.field input,.field select,.field textarea{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 10px;border-radius:7px;outline:none;transition:border-color .2s;width:100%}
+.field input,.field select,.field textarea{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 10px;border-radius:7px;outline:none;transition:border-color .2s;width:100%;min-width:0;box-sizing:border-box}
 .field input:focus,.field select:focus{border-color:var(--teal)}
 .field input::placeholder{color:var(--text3);font-style:italic}
 select option{background:var(--bg3)}
 /* PAYMENT BREAKDOWN */
 .pay-wrap{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:11px;margin-top:9px}
 .pay-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
-.pay-field{display:flex;flex-direction:column;gap:3px}
-.pay-field input{font-size:12px;padding:6px 8px}
+.pay-field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.pay-field input{font-size:12px;padding:6px 8px;width:100%;min-width:0;box-sizing:border-box;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--mono);border-radius:6px;outline:none}
+.pay-field input:read-only{opacity:.85}
 .ptag{display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.05em;margin-bottom:2px}
 .pt-cash{background:var(--teal-dim);color:var(--teal)}
 .pt-gcash{background:var(--gcash-dim);color:var(--gcash)}
@@ -288,22 +290,24 @@ select option{background:var(--bg3)}
 /* Phones */
 @media(max-width:480px){
   .app{padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(70px + env(safe-area-inset-bottom));padding-left:calc(10px + env(safe-area-inset-left));padding-right:calc(10px + env(safe-area-inset-right))}
-  .header{padding:10px 12px;margin-bottom:10px}
+  .header{padding:10px 12px;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+  .logo{min-width:0;flex:1 1 auto}
+  .logo-text{min-width:0}
   .logo-icon{width:34px;height:34px;font-size:17px}
   .logo-text h1{font-size:13px}
   .logo-text p{display:none}                    /* drop subtitle to keep header short (version is in Settings) */
-  .hright #clockPill{display:none}              /* save header space on phones */
+  .hright{flex-shrink:1;flex-wrap:wrap}
+  .hright #clockPill,.hright #syncPill{display:none}   /* keep only user chip + Close Shift on phones */
   .card{padding:13px}
-  .fg3,.fg4{grid-template-columns:1fr}          /* stack dense forms */
+  .fg2,.fg3,.fg4{grid-template-columns:1fr}     /* stack all multi-column forms on phones */
   .m4,.m3{grid-template-columns:1fr 1fr}
+  .pay-grid{grid-template-columns:1fr 1fr}
   .variant-grid{grid-template-columns:1fr}
   .modal{padding:18px}
   .ptoggle{flex-wrap:wrap}
 }
 @media(max-width:380px){
-  .fg2{grid-template-columns:1fr}
   .m4,.m3{grid-template-columns:1fr}
-  .pay-grid,.pay-mode-grid{grid-template-columns:1fr 1fr}
   .cart-total-val{font-size:18px}
 }
 /* ── Tablet / touch polish ── */
@@ -1033,7 +1037,13 @@ window.selLoginShift=async function(n){
     note.textContent=`Starting cash already logged for this shift (${fmt(s.startCash)}) — optional.`;
     note.style.display='block';
   } else {
-    cash.value=''; cash.placeholder='0.00'; note.style.display='none';
+    // Not started yet — carry over the leftover "next shift cash" from the previous shift.
+    // Evening ← this morning's leftover; Morning ← last night's evening leftover (new day = fresh shift).
+    let prev=0, label='';
+    if(n===2){ const m=await fsGet('shifts',shiftKey(1,today())); if(m&&(m.nextCash||0)>0){ prev=m.nextCash; label='this morning'; } }
+    else { const y=new Date(); y.setDate(y.getDate()-1); const yd=y.toISOString().slice(0,10); const e=await fsGet('shifts',shiftKey(2,yd)); if(e&&(e.nextCash||0)>0){ prev=e.nextCash; label="last night"; } }
+    if(prev>0){ cash.value=prev; cash.placeholder='0.00'; note.textContent=`Carried over from ${label}: ${fmt(prev)} — adjust if needed.`; note.style.display='block'; }
+    else { cash.value=''; cash.placeholder='0.00'; note.style.display='none'; }
   }
 };
 window.backToPin=function(){
@@ -1931,8 +1941,9 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v3.8';
+const APP_VERSION='v3.9';
 const CHANGELOG=[
+  {v:'v3.9', date:'2026-06-27', notes:['Fixed input boxes overflowing the screen edge on iPhone (payment breakdown, forms, header)','Phones now stack all two-column forms and keep only the user + Close Shift chips in the header','Shift hand-off: starting cash now carries over automatically (morning→evening, and last night→next morning); each new day starts fresh']},
   {v:'v3.8', date:'2026-06-27', notes:['Mobile polish: full support for phones, Android tablets, and iPhone (notch/safe-area aware)','Modals and login now scroll within the screen on small devices and avoid the notch & home bar','Inputs no longer zoom the page on iPhone; bigger touch targets throughout','Tighter phone layouts: stacked dense forms and a compact header']},
   {v:'v3.7', date:'2026-06-27', notes:['Shift: POS payment breakdown is now auto-only (read-only); manual sales record a payment mode','Close shift: manual-sales total now reflects entries logged during the shift','Products: editable Categories database (with recommended markup %) and Suppliers database','Orders: one supplier per order list (search/dropdown)','Receiving: choose payment terms (COD / Check / 30-60 day PDC) → auto-creates an Accounts Payable','Payables: issue payment from take-home, drawer (logs a cash-out), or bank; paid POs get a Paid tag']},
   {v:'v3.6', date:'2026-06-27', notes:['POS: quantity input in Add-to-Cart and editable cart quantity (tablet numpad)','POS: cash-tendered entry with automatic change calculation','Products: category dropdown (existing categories + free type)','Orders: clearable search box and per-item supplier selection','Receive Delivery: cleaner layout + delivery-fee spread across received stock']},
