@@ -315,7 +315,87 @@ select option{background:var(--bg3)}
 
 <div class="toast" id="toast"></div>
 
-<!-- PIN Overlay -->
+<!-- ═══ LOGIN GATE (whole-app, role-based) ═══ -->
+<div class="pin-overlay" id="loginOverlay" style="z-index:450">
+  <!-- Step 1: PIN -->
+  <div class="pin-box" id="loginStep1">
+    <div class="pin-icon"><i class="ti ti-shield-lock"></i></div>
+    <h2>Staff Login</h2>
+    <p>Enter your 4-digit PIN</p>
+    <div class="pin-dots">
+      <div class="pin-dot" id="ld0"></div><div class="pin-dot" id="ld1"></div>
+      <div class="pin-dot" id="ld2"></div><div class="pin-dot" id="ld3"></div>
+    </div>
+    <div class="pin-keypad">
+      <button class="pin-key" onclick="loginKey('1')">1</button><button class="pin-key" onclick="loginKey('2')">2</button><button class="pin-key" onclick="loginKey('3')">3</button>
+      <button class="pin-key" onclick="loginKey('4')">4</button><button class="pin-key" onclick="loginKey('5')">5</button><button class="pin-key" onclick="loginKey('6')">6</button>
+      <button class="pin-key" onclick="loginKey('7')">7</button><button class="pin-key" onclick="loginKey('8')">8</button><button class="pin-key" onclick="loginKey('9')">9</button>
+      <button class="pin-key" style="visibility:hidden"></button>
+      <button class="pin-key" onclick="loginKey('0')">0</button>
+      <button class="pin-key" onclick="loginKey('back')" style="font-size:18px">&#x232B;</button>
+    </div>
+    <div class="pin-err" id="loginErr"></div>
+  </div>
+  <!-- Step 2: shift + starting cash -->
+  <div class="pin-box" id="loginStep2" style="display:none;width:300px;text-align:left">
+    <div class="pin-icon" style="margin:0 auto"><i class="ti ti-clock-play"></i></div>
+    <h2 style="text-align:center">Start Shift</h2>
+    <p style="text-align:center" id="loginWho">Welcome</p>
+    <div class="shift-row" style="margin-bottom:12px">
+      <button class="shift-btn active" id="ls1" onclick="selLoginShift(1)"><i class="ti ti-sun"></i> Morning <span style="font-size:10px;opacity:.6">7AM-3PM</span></button>
+      <button class="shift-btn" id="ls2" onclick="selLoginShift(2)"><i class="ti ti-moon"></i> Evening <span style="font-size:10px;opacity:.6">3PM-11PM</span></button>
+    </div>
+    <div class="field"><label>Starting Cash (PHP)</label><input type="number" id="loginCash" placeholder="0.00" step="0.01" inputmode="decimal"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-teal" style="flex:1" onclick="startSession()"><i class="ti ti-lock-open"></i> Unlock</button>
+      <button class="btn btn-ghost" onclick="backToPin()">Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CLOSE-SHIFT WIZARD ═══ -->
+<div class="modal-overlay" id="closeShiftModal">
+  <div class="modal" style="width:360px;text-align:left">
+    <h3 style="color:var(--teal)"><i class="ti ti-flag-3" style="margin-right:6px"></i>Close Shift &amp; Log Out</h3>
+    <div class="modal-sub" style="margin-bottom:12px">Complete the handover. This logs you out.</div>
+    <div class="field" style="margin-bottom:8px"><label>Current Drawer Cash (PHP)</label><input type="number" id="csDrawer" placeholder="0.00" step="0.01"></div>
+    <div class="field" style="margin-bottom:8px"><label>Manual Sales not in POS (PHP)</label><input type="number" id="csManual" placeholder="0.00" step="0.01"></div>
+    <div class="field" style="margin-bottom:8px"><label>Remittance / Take-Home (PHP)</label><input type="number" id="csTakehome" placeholder="0.00" step="0.01"></div>
+    <div class="field" style="margin-bottom:8px"><label>Next Shift Starting Cash (PHP)</label><input type="number" id="csNext" placeholder="0.00" step="0.01"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-teal" onclick="finishShift()"><i class="ti ti-check"></i> Close &amp; Log Out</button>
+      <button class="btn btn-ghost" onclick="closeCloseShift()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MASTER RESET (double-confirm) ═══ -->
+<div class="modal-overlay" id="resetModal">
+  <div class="modal" style="width:360px;text-align:left">
+    <h3 style="color:var(--red)"><i class="ti ti-alert-triangle" style="margin-right:6px"></i>Master Reset</h3>
+    <div class="modal-sub" style="margin-bottom:12px;line-height:1.6">This permanently deletes <strong>all products, shifts, payables, and sales</strong> from Firestore. Staff PINs are kept. This cannot be undone.</div>
+    <div class="field"><label>Type <strong style="color:var(--red)">RESET</strong> to confirm</label><input type="text" id="resetConfirm" placeholder="RESET" autocomplete="off"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn" style="background:var(--red);color:#fff" onclick="doMasterReset()"><i class="ti ti-trash"></i> Erase Everything</button>
+      <button class="btn btn-ghost" onclick="closeResetModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DELIVERY INTAKE ═══ -->
+<div class="modal-overlay" id="intakeModal">
+  <div class="modal" style="width:460px;max-width:94vw;text-align:left">
+    <h3 style="color:var(--teal)" id="intakeTitle"><i class="ti ti-truck-delivery" style="margin-right:6px"></i>Receive Delivery</h3>
+    <div class="modal-sub" style="margin-bottom:10px">Confirm the quantity received and the actual cost per item. Inventory and product cost update on confirm.</div>
+    <div id="intakeBody" style="max-height:50vh;overflow-y:auto"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-teal" onclick="confirmDelivery()"><i class="ti ti-check"></i> Confirm &amp; Update Inventory</button>
+      <button class="btn btn-ghost" onclick="closeIntake()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- PIN Overlay (legacy reports gate — superseded by login gate) -->
 <div class="pin-overlay" id="pinOverlay">
   <div class="pin-box">
     <div class="pin-icon"><i class="ti ti-shield-lock"></i></div>
@@ -372,6 +452,8 @@ select option{background:var(--bg3)}
       </div>
     </div>
     <div class="hright">
+      <div class="pill" id="userChip" style="display:none;gap:6px"><i class="ti ti-user-circle"></i><span id="userName"></span><span id="userRole" style="color:var(--teal);text-transform:uppercase;font-size:9px;font-weight:700;letter-spacing:.05em"></span></div>
+      <button class="btn btn-ghost btn-xs" id="closeShiftBtn" onclick="openCloseShift()" style="display:none"><i class="ti ti-logout"></i> Close Shift</button>
       <div class="pill" id="syncPill"><span class="dot dot-a" id="syncDot"></span><span id="syncTxt">Connecting...</span></div>
       <div class="pill" id="clockPill"></div>
     </div>
@@ -603,9 +685,15 @@ select option{background:var(--bg3)}
       <div class="card-title ct-teal"><i class="ti ti-file-text"></i> Purchase Order Preview</div>
       <div id="poPreview"></div>
       <div class="btn-row" style="margin-top:12px">
-        <button class="btn btn-teal btn-sm" onclick="exportPO()"><i class="ti ti-download"></i> Export PO as CSV</button>
-        <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / Save PDF</button>
+        <button class="btn btn-teal btn-sm" onclick="savePO()"><i class="ti ti-device-floppy"></i> Save PO</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportPO()"><i class="ti ti-download"></i> Export CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / PDF</button>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><i class="ti ti-file-invoice"></i> Saved Purchase Orders <span id="poListCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Save a PO above to track it. When the order arrives, tap <strong style="color:var(--teal)">Receive</strong> to verify quantities &amp; costs — inventory updates automatically.</div>
+      <div id="poListContainer"></div>
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> Low / Out of Stock <span id="lowStockCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
@@ -665,13 +753,17 @@ select option{background:var(--bg3)}
   <!-- ═══ SETTINGS ═══ -->
   <div class="panel" id="panel-settings">
     <div class="card">
-      <div class="card-title"><i class="ti ti-lock"></i> Reports PIN</div>
-      <div class="fg fg2" style="margin-top:4px">
-        <div class="field"><label>New PIN (4 digits)</label><input type="password" id="newPin" placeholder="&bull;&bull;&bull;&bull;" maxlength="4" inputmode="numeric"></div>
-        <div class="field"><label>Confirm PIN</label><input type="password" id="confirmPin" placeholder="&bull;&bull;&bull;&bull;" maxlength="4" inputmode="numeric"></div>
+      <div class="card-title"><i class="ti ti-users"></i> Staff &amp; PINs</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">Each PIN unlocks the app at its role. Only <strong style="color:var(--teal)">owner</strong> can see Reports &amp; Settings.</div>
+      <div class="fg fg3">
+        <div class="field"><label>Name</label><input type="text" id="stName" placeholder="e.g. Maria"></div>
+        <div class="field"><label>Role</label>
+          <select id="stRole"><option value="staff">Staff</option><option value="manager">Manager</option><option value="owner">Owner</option></select>
+        </div>
+        <div class="field"><label>PIN (4 digits)</label><input type="text" id="stPin" placeholder="&bull;&bull;&bull;&bull;" maxlength="4" inputmode="numeric"></div>
       </div>
-      <div class="btn-row"><button class="btn btn-teal btn-sm" onclick="changePin()"><i class="ti ti-check"></i> Save PIN</button></div>
-      <div id="pinMsg" style="font-size:11px;margin-top:6px;min-height:14px"></div>
+      <div class="btn-row"><button class="btn btn-teal btn-sm" onclick="addStaff()"><i class="ti ti-user-plus"></i> Add Staff</button><span id="staffMsg" style="font-size:11px;margin-left:4px"></span></div>
+      <div class="elist" id="staffList" style="margin-top:10px"></div>
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-cloud"></i> Cloud Sync</div>
@@ -694,12 +786,17 @@ select option{background:var(--bg3)}
         </ol>
       </div>
     </div>
+    <div class="card" style="border-color:var(--red-dim,rgba(255,77,106,.3))">
+      <div class="card-title" style="color:var(--red)"><i class="ti ti-alert-triangle"></i> Danger Zone</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px">Master Reset wipes all products, shifts, payables, and sales for a fresh setup. Staff PINs are preserved.</div>
+      <div class="btn-row"><button class="btn btn-sm" style="background:var(--red);color:#fff" onclick="openResetModal()"><i class="ti ti-trash"></i> Master Reset</button></div>
+    </div>
   </div>
 </div><!-- end .app -->
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, enableIndexedDbPersistence, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, deleteDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
 Chart.register(...registerables);
 
@@ -712,10 +809,21 @@ const firebaseConfig = {
   appId: "1:348227497829:web:04bd0d5c2becebfef67b8c"
 };
 const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
-
-// Enable offline persistence
-try { await enableIndexedDbPersistence(db); } catch(e) { /* already enabled or unsupported */ }
+// Offline-first: persist the entire cache to IndexedDB so the app survives 12-hour
+// brownouts. Mutations queue locally and auto-sync when the connection returns.
+// persistentMultipleTabManager lets several tablet tabs share one cache without conflict.
+let db;
+try {
+  db = initializeFirestore(fbApp, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+      cacheSizeBytes: CACHE_SIZE_UNLIMITED
+    })
+  });
+} catch(e) {
+  // Fallback for browsers without IndexedDB (e.g. private mode): in-memory cache.
+  db = initializeFirestore(fbApp, {});
+}
 
 // ── Helpers ──
 const fmt = n => 'PHP ' + (parseFloat(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -729,10 +837,29 @@ const clockEl = document.getElementById('clockPill');
 const tickClock = () => { clockEl.textContent = new Date().toLocaleString('en-PH',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); };
 tickClock(); setInterval(tickClock,30000);
 
-// ── Firebase wrappers ──
-async function fsGet(col,id){ try{ const s=await getDoc(doc(db,col,id)); return s.exists()?s.data():null; }catch(e){ return null; } }
-async function fsSet(col,id,data){ try{ await setDoc(doc(db,col,id),data); setLastSaved(); return true; }catch(e){ toast('Save failed','err'); return false; } }
-async function fsDel(col,id){ try{ await deleteDoc(doc(db,col,id)); }catch(e){} }
+// ── Firebase wrappers (offline-first) ──
+// Reads are cache-first: try the local IndexedDB copy instantly, fall back to the
+// server only on a cache miss. This keeps reads snappy and never blocks the UI
+// waiting for a server handshake during a brownout.
+async function fsGet(col,id){
+  const ref=doc(db,col,id);
+  try{ const c=await getDocFromCache(ref); return c.exists()?c.data():null; }
+  catch(_){ /* not in cache yet — fall through to server */ }
+  try{ const s=await getDoc(ref); return s.exists()?s.data():null; }catch(e){ return null; }
+}
+// Writes: the local mutation is applied & persisted to IndexedDB synchronously inside
+// setDoc(). The returned promise only resolves on SERVER ack — which may be hours away
+// during a brownout — so we deliberately do NOT await it. The caller continues immediately
+// and the write auto-syncs when the connection returns.
+function fsSet(col,id,data){
+  setDoc(doc(db,col,id),data).then(setLastSaved).catch(()=>{ /* queued; will retry on reconnect */ });
+  setLastSaved();
+  return Promise.resolve(true);
+}
+function fsDel(col,id){
+  deleteDoc(doc(db,col,id)).catch(()=>{});
+  return Promise.resolve();
+}
 async function fsGetAll(col){ try{ const s=await getDocs(collection(db,col)); return s.docs.map(d=>({id:d.id,...d.data()})); }catch(e){ return []; } }
 function setLastSaved(){ document.getElementById('lastSaved').textContent='Last saved: '+new Date().toLocaleString('en-PH'); document.getElementById('syncTxt').textContent='Synced'; document.getElementById('syncDot').className='dot dot-g'; }
 
@@ -740,37 +867,149 @@ function setLastSaved(){ document.getElementById('lastSaved').textContent='Last 
 let toastTimer;
 function toast(msg,type='info'){ const el=document.getElementById('toast'); el.textContent=msg; el.className=`toast ${type} show`; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),3000); }
 
-// ── PIN ──
-let pinBuf='', pinUnlocked=false;
-async function getPin(){ const d=await fsGet('config','pin'); return d?.value||'1234'; }
-window.openReports=function(){ if(pinUnlocked){switchTab('reports');return;} pinBuf='';updatePinDots();document.getElementById('pinErr').textContent='';document.getElementById('pinOverlay').classList.add('show'); };
-window.pinKey=async function(k){
-  if(k==='cancel'){document.getElementById('pinOverlay').classList.remove('show');return;}
-  if(k==='back'){pinBuf=pinBuf.slice(0,-1);updatePinDots();return;}
-  if(pinBuf.length>=4)return;
-  pinBuf+=k; updatePinDots();
-  if(pinBuf.length===4){
-    const stored=await getPin();
-    if(pinBuf===stored){pinUnlocked=true;document.getElementById('pinOverlay').classList.remove('show');switchTab('reports');}
-    else{document.getElementById('pinErr').textContent='Incorrect PIN';setTimeout(()=>{pinBuf='';updatePinDots();document.getElementById('pinErr').textContent='';},900);}
+// ── AUTH / SESSION (role-based, whole-app gate) ──
+// Staff roster lives in config/staff as {value:[{id,name,role,pin}]}.
+// Roles: 'owner' (full access incl. Reports + Settings), 'manager', 'staff'.
+let staffList=[], session=null;      // session = {name, role, shift}
+let pendingUser=null, loginBuf='', loginShift=1;
+
+async function loadStaff(){
+  const d=await fsGet('config','staff');
+  if(d?.value?.length){ staffList=d.value; return; }
+  // Bootstrap: seed one owner from any legacy single PIN (default 1234) so the
+  // owner can always log in and then configure the roster from Settings.
+  const legacy=await fsGet('config','pin');
+  staffList=[{id:'owner',name:'Owner',role:'owner',pin:legacy?.value||'1234'}];
+  await fsSet('config','staff',{value:staffList});
+}
+async function saveStaff(){ await fsSet('config','staff',{value:staffList}); }
+
+function loginDots(){ for(let i=0;i<4;i++) document.getElementById('ld'+i).classList.toggle('filled',i<loginBuf.length); }
+window.loginKey=function(k){
+  const err=document.getElementById('loginErr');
+  if(k==='back'){ loginBuf=loginBuf.slice(0,-1); loginDots(); return; }
+  if(loginBuf.length>=4) return;
+  loginBuf+=k; loginDots();
+  if(loginBuf.length===4){
+    const u=staffList.find(s=>s.pin===loginBuf);
+    if(u){ loginBuf=''; loginDots(); openShiftStep(u); }
+    else{ err.textContent='Incorrect PIN'; setTimeout(()=>{loginBuf='';loginDots();err.textContent='';},900); }
   }
 };
-function updatePinDots(){ for(let i=0;i<4;i++) document.getElementById('pd'+i).classList.toggle('filled',i<pinBuf.length); }
-window.changePin=async function(){
-  const np=document.getElementById('newPin').value,cp=document.getElementById('confirmPin').value,msg=document.getElementById('pinMsg');
-  if(!/^\d{4}$/.test(np)){msg.style.color='var(--red)';msg.textContent='Must be 4 digits';return;}
-  if(np!==cp){msg.style.color='var(--red)';msg.textContent='PINs do not match';return;}
-  await fsSet('config','pin',{value:np}); pinUnlocked=false;
-  msg.style.color='var(--teal)';msg.textContent='PIN updated!';
-  document.getElementById('newPin').value='';document.getElementById('confirmPin').value='';
-  setTimeout(()=>msg.textContent='',3000);
+function openShiftStep(u){
+  pendingUser=u;
+  document.getElementById('loginStep1').style.display='none';
+  document.getElementById('loginStep2').style.display='block';
+  document.getElementById('loginWho').textContent=`${u.name} · ${u.role.toUpperCase()}`;
+  selLoginShift(new Date().getHours()<15?1:2);
+  document.getElementById('loginCash').value='';
+}
+window.selLoginShift=function(n){ loginShift=n; document.getElementById('ls1').classList.toggle('active',n===1); document.getElementById('ls2').classList.toggle('active',n===2); };
+window.backToPin=function(){
+  document.getElementById('loginStep1').style.display='block';
+  document.getElementById('loginStep2').style.display='none';
+  loginBuf=''; loginDots();
+};
+window.startSession=async function(){
+  const cash=parseFloat(document.getElementById('loginCash').value);
+  if(isNaN(cash)||cash<0){ toast('Enter starting cash','err'); return; }
+  session={name:pendingUser.name,role:pendingUser.role,shift:loginShift};
+  curShift=loginShift;
+  const s=await getShift(curShift);           // unlock the drawer with starting cash
+  if(!s.cashier) s.cashier=session.name;
+  if(!s.startCash) s.startCash=cash;
+  await persistShift(curShift);
+  applyRole();
+  document.getElementById('loginOverlay').classList.remove('show');
+  backToPin();                                 // reset login UI for next time
+  selShift(curShift); switchTab('shift');
+  toast(`Welcome, ${session.name}`,'ok');
+};
+
+// Role-based visibility: only the owner sees Reports + Settings.
+function applyRole(){
+  const owner = session?.role==='owner';
+  document.getElementById('tab-reports').style.display = owner?'':'none';
+  document.getElementById('tab-settings').style.display = owner?'':'none';
+  document.getElementById('userChip').style.display = session?'flex':'none';
+  document.getElementById('closeShiftBtn').style.display = session?'inline-flex':'none';
+  if(session){ document.getElementById('userName').textContent=session.name; document.getElementById('userRole').textContent=session.role; }
+}
+window.openReports=function(){ if(session?.role==='owner') switchTab('reports'); };
+
+// ── End-of-shift closure wizard (forced before logout) ──
+window.openCloseShift=async function(){
+  if(!session) return;
+  const s=await getShift(curShift);
+  document.getElementById('csDrawer').value=s.drawer||'';
+  document.getElementById('csManual').value='';
+  document.getElementById('csTakehome').value=s.takehome||'';
+  document.getElementById('csNext').value=s.nextCash||'';
+  document.getElementById('closeShiftModal').classList.add('show');
+};
+window.closeCloseShift=function(){ document.getElementById('closeShiftModal').classList.remove('show'); };
+window.finishShift=async function(){
+  await flushFields();
+  const s=await getShift(curShift);
+  s.drawer=parseFloat(document.getElementById('csDrawer').value)||0;
+  s.takehome=parseFloat(document.getElementById('csTakehome').value)||0;
+  s.nextCash=parseFloat(document.getElementById('csNext').value)||0;
+  const man=parseFloat(document.getElementById('csManual').value)||0;
+  if(man>0){ s.manualSales=s.manualSales||[]; s.manualSales.push({amount:man,desc:'Shift-close manual total',qty:1,time:tnow()}); }
+  s.saved=true; s.savedAt=tnow(); s.closedBy=session.name;
+  await persistShift(curShift);
+  closeCloseShift();
+  toast('Shift closed — logged out','ok');
+  session=null; applyRole();
+  document.getElementById('loginOverlay').classList.add('show');
+  backToPin();
+};
+
+// ── Staff management (Settings, owner-only) ──
+window.renderStaff=function(){
+  const el=document.getElementById('staffList'); if(!el) return;
+  el.innerHTML=staffList.map((s,i)=>`<div class="eitem"><div><div class="el"><span class="tag-purple">${s.role}</span>${s.name}</div><div class="ed">PIN ${s.pin}</div></div><button class="del-btn" onclick="delStaff(${i})"><i class="ti ti-x"></i></button></div>`).join('')||'<div class="empty">No staff yet</div>';
+};
+window.addStaff=async function(){
+  const name=document.getElementById('stName').value.trim();
+  const role=document.getElementById('stRole').value;
+  const pin=document.getElementById('stPin').value.trim();
+  const msg=document.getElementById('staffMsg');
+  if(!name){ msg.style.color='var(--red)'; msg.textContent='Enter a name'; return; }
+  if(!/^\d{4}$/.test(pin)){ msg.style.color='var(--red)'; msg.textContent='PIN must be 4 digits'; return; }
+  if(staffList.some(s=>s.pin===pin)){ msg.style.color='var(--red)'; msg.textContent='PIN already in use'; return; }
+  staffList.push({id:'st_'+Date.now(),name,role,pin});
+  await saveStaff(); renderStaff();
+  document.getElementById('stName').value=''; document.getElementById('stPin').value='';
+  msg.style.color='var(--teal)'; msg.textContent='Staff added'; setTimeout(()=>msg.textContent='',2500);
+};
+window.delStaff=async function(i){
+  if(staffList[i].role==='owner' && staffList.filter(s=>s.role==='owner').length<=1){ toast('Cannot remove the last owner','err'); return; }
+  staffList.splice(i,1); await saveStaff(); renderStaff();
+};
+
+// ── Master reset (owner-only): wipe products, shifts, payables, sales ──
+window.openResetModal=function(){ document.getElementById('resetConfirm').value=''; document.getElementById('resetModal').classList.add('show'); };
+window.closeResetModal=function(){ document.getElementById('resetModal').classList.remove('show'); };
+window.doMasterReset=async function(){
+  if(document.getElementById('resetConfirm').value!=='RESET'){ toast('Type RESET to confirm','err'); return; }
+  for(const col of ['products','shifts','payables','sales']){
+    const all=await fsGetAll(col);
+    for(const d of all) await fsDel(col,d.id);
+  }
+  shiftCache={}; allProducts=[];
+  closeResetModal();
+  toast('All data cleared','ok');
+  setTimeout(()=>location.reload(),900);
 };
 
 // ── Tabs ──
 const TABS=['shift','pos','products','orders','daily','payables','reports','settings'];
 window.switchTab=function(tab){
+  // Guard owner-only tabs against direct/programmatic access by non-owners.
+  if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='daily')renderDaily(); if(tab==='reports')renderReports(); if(tab==='payables')renderPayables(); if(tab==='products')loadProducts(); if(tab==='orders')initOrderTab();
+  if(tab==='daily')renderDaily(); if(tab==='reports')renderReports(); if(tab==='payables')renderPayables(); if(tab==='products')loadProducts(); if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
 };
 
 // ── SHIFT ──
@@ -1282,16 +1521,18 @@ async function renderDaily(){ await window.renderDaily(); }
 window.addPayable=async function(){
   const amt=parseFloat(document.getElementById('payAmt').value)||0; if(!amt){toast('Enter amount','err');return;}
   const id='pay_'+Date.now();
-  await fsSet('payables',id,{date:document.getElementById('payDate').value||today(),category:document.getElementById('payCat').value,amount:amt,desc:document.getElementById('payDesc').value,createdAt:tnow()});
+  await fsSet('payables',id,{date:document.getElementById('payDate').value||today(),category:document.getElementById('payCat').value,amount:amt,desc:document.getElementById('payDesc').value,createdAt:tnow(),by:session?.name||'',byRole:session?.role||'staff'});
   document.getElementById('payAmt').value=''; document.getElementById('payDesc').value='';
   toast('Payable saved','ok'); renderPayables();
 };
 window.removePayable=async function(id){ await fsDel('payables',id); renderPayables(); };
 window.renderPayables=async function(){
-  const list=await fsGetAll('payables'); const el=document.getElementById('payList');
+  let list=await fsGetAll('payables'); const el=document.getElementById('payList');
+  // Privacy: non-owners never see entries logged by an owner.
+  if(session?.role!=='owner') list=list.filter(p=>p.byRole!=='owner');
   if(!list.length){el.innerHTML='<div class="empty"><i class="ti ti-building-bank"></i>No payables yet</div>';return;}
   list.sort((a,b)=>b.date.localeCompare(a.date));
-  el.innerHTML=list.map(p=>`<div class="eitem"><div><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''}</div><div class="ed">${p.date}</div></div><div style="display:flex;align-items:center"><span class="eval c-neg">-${fmt(p.amount)}</span><button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button></div></div>`).join('');
+  el.innerHTML=list.map(p=>`<div class="eitem"><div><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}</div></div><div style="display:flex;align-items:center"><span class="eval c-neg">-${fmt(p.amount)}</span><button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button></div></div>`).join('');
 };
 async function renderPayables(){ await window.renderPayables(); }
 
@@ -1376,8 +1617,11 @@ async function init(){
   rt.value=today();const rd=new Date();rd.setDate(rd.getDate()-6);rf.value=rd.toISOString().slice(0,10);
   try{ await fsGet('config','ping'); document.getElementById('syncTxt').textContent='Synced'; document.getElementById('syncDot').className='dot dot-g'; }
   catch(e){ document.getElementById('syncTxt').textContent='Offline'; document.getElementById('syncDot').className='dot dot-a'; }
+  await loadStaff();
+  applyRole();                 // hide owner-only tabs until someone logs in
   await loadShiftFields();
   await loadProducts();
+  document.getElementById('loginOverlay').classList.add('show');   // gate the whole app
   setTimeout(()=>{ document.getElementById('loadingScreen').style.opacity='0'; setTimeout(()=>document.getElementById('loadingScreen').style.display='none',400); },1500);
 }
 init();
@@ -1480,6 +1724,7 @@ function initOrderTab() {
   lowStockPageIndex = 0;
   renderLowStock();
   renderOrderList();
+  loadPOs();
 }
 
 function renderLowStock() {
@@ -1744,6 +1989,108 @@ window.printPO = function() {
     <script>window.onload=()=>{window.print();}<\/script>
   </body></html>`);
   win.document.close();
+};
+
+// ═══════════════════════════════════════════════════
+// ── PURCHASE ORDERS + DELIVERY INTAKE ──
+// POs persist in the `purchaseOrders` collection with a status. Marking one
+// "Delivered" opens an intake screen to verify actual qty + actual cost, which
+// then writes straight back into product inventory and cost.
+// ═══════════════════════════════════════════════════
+let savedPOs=[], intakePOId=null;
+
+async function loadPOs(){ savedPOs=await fsGetAll('purchaseOrders'); renderPOList(); }
+
+window.savePO=async function(){
+  const items=Object.values(orderItems);
+  if(!items.length){ toast('No items in order','err'); return; }
+  const poNum=document.getElementById('poNumber').value||('PO-'+Date.now());
+  const id='po_'+Date.now();
+  const po={
+    id, poNumber:poNum, date:document.getElementById('poDate').value||today(),
+    notes:document.getElementById('poNotes').value||'', status:'pending',
+    items: items.map(({prod,qty})=>{
+      const supplier=((allProductsFull[prod.id]?.suppliers||prod.suppliers||'').split(',')[0]||'').trim()||'No Supplier';
+      return { prodId:prod.id, sku:prod.sku||'', name:prod.name, supplier,
+               orderedQty:qty, orderedCost:prod.cost||0, recvQty:qty, recvCost:prod.cost||0 };
+    }),
+    createdAt:tnow(), createdBy:session?.name||''
+  };
+  await fsSet('purchaseOrders', id, po);
+  savedPOs.push(po);
+  orderItems={}; document.getElementById('poNumber').value='';
+  initOrderTab();
+  toast('PO saved as pending','ok');
+};
+
+window.deletePO=async function(id){
+  await fsDel('purchaseOrders',id);
+  savedPOs=savedPOs.filter(p=>p.id!==id);
+  renderPOList();
+};
+
+function renderPOList(){
+  const el=document.getElementById('poListContainer'); if(!el) return;
+  const pos=[...savedPOs].sort((a,b)=>b.id.localeCompare(a.id));
+  document.getElementById('poListCount').textContent=pos.length+' POs';
+  if(!pos.length){ el.innerHTML='<div class="empty"><i class="ti ti-file-invoice"></i>No saved purchase orders</div>'; return; }
+  el.innerHTML=pos.map(po=>{
+    const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
+    const delivered=po.status==='delivered';
+    return `<div class="po-item">
+      <div class="po-info">
+        <div class="po-name">${po.poNumber} <span class="chip ${delivered?'chip-ok':'chip-low'}">${delivered?'Delivered':'Pending'}</span></div>
+        <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${delivered?'':`<button class="btn btn-teal btn-xs" onclick="openIntake('${po.id}')"><i class="ti ti-truck-delivery"></i> Receive</button>`}
+        <button class="del-btn" onclick="deletePO('${po.id}')"><i class="ti ti-x"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.openIntake=function(id){
+  const po=savedPOs.find(p=>p.id===id); if(!po) return;
+  intakePOId=id;
+  document.getElementById('intakeTitle').textContent=`Receive Delivery — ${po.poNumber}`;
+  document.getElementById('intakeBody').innerHTML=po.items.map((it,i)=>`
+    <div class="po-item" style="align-items:flex-end;gap:8px">
+      <div class="po-info">
+        <div class="po-name">${it.name}</div>
+        <div class="po-meta">${it.sku||'No SKU'} · Ordered ${it.orderedQty} @ ${fmt(it.orderedCost)}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="margin:0"><label style="font-size:9px">Recv Qty</label><input type="number" class="po-qty" id="iq_${i}" value="${it.recvQty}" min="0" step="1"></div>
+        <div class="field" style="margin:0"><label style="font-size:9px">Actual Cost</label><input type="number" class="po-qty" id="ic_${i}" value="${it.recvCost}" min="0" step="0.01"></div>
+      </div>
+    </div>`).join('');
+  document.getElementById('intakeModal').classList.add('show');
+};
+window.closeIntake=function(){ document.getElementById('intakeModal').classList.remove('show'); intakePOId=null; };
+
+window.confirmDelivery=async function(){
+  const po=savedPOs.find(p=>p.id===intakePOId); if(!po) return;
+  let updated=0, priceChanges=0;
+  for(let i=0;i<po.items.length;i++){
+    const it=po.items[i];
+    const rq=parseFloat(document.getElementById('iq_'+i).value); it.recvQty=isNaN(rq)?0:rq;
+    const rc=parseFloat(document.getElementById('ic_'+i).value); it.recvCost=isNaN(rc)?it.orderedCost:rc;
+    const prod=allProductsFull[it.prodId];
+    if(prod){
+      prod.inventory=(prod.inventory||0)+it.recvQty;        // restock
+      if(!isNaN(rc) && rc!==prod.cost){ prod.cost=rc; priceChanges++; }   // price adjustment
+      prod.updatedAt=tnow();
+      await fsSet('products', it.prodId, prod);
+      const lp=allProducts.find(p=>p.id===it.prodId);       // keep search cache in sync
+      if(lp){ lp.inventory=prod.inventory; lp.cost=prod.cost; }
+      updated++;
+    }
+  }
+  po.status='delivered'; po.deliveredDate=today(); po.deliveredAt=tnow(); po.receivedBy=session?.name||'';
+  await fsSet('purchaseOrders', po.id, po);
+  closeIntake(); renderPOList(); renderLowStock();
+  toast(`Delivery received — ${updated} items restocked${priceChanges?', '+priceChanges+' price change(s)':''}`,'ok');
 };
 </script>
 </body>
