@@ -272,6 +272,25 @@ select option{background:var(--bg3)}
   .m4{grid-template-columns:1fr 1fr}
   .variant-grid{grid-template-columns:1fr}
 }
+/* ── Tablet / touch polish ── */
+.tabs{overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1 0 auto}
+.hright{flex-wrap:wrap;justify-content:flex-end}
+/* Portrait-tablet: give the product catalog more room by slimming the cart */
+@media(min-width:701px) and (max-width:860px){
+  .pos-layout{grid-template-columns:1fr 290px}
+}
+/* Bigger hit targets on any touch device (phones + tablets) */
+@media(pointer:coarse){
+  .tab{min-height:46px;padding:10px 6px}
+  .btn:not(.btn-xs){min-height:42px}
+  .pin-key{padding:16px;font-size:18px}
+  .pay-mode-btn{min-height:48px}
+  .checkout-btn{min-height:54px}
+  .shift-btn{min-height:50px}
+  input:not([type=checkbox]):not([type=file]),select,textarea{min-height:42px;font-size:14px}
+}
 
 /* ═══ ORDER LIST & IMPORT/EXPORT ═══ */
 .po-item{display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--bg3);border-radius:7px;border:1px solid var(--border);margin-bottom:5px}
@@ -342,10 +361,11 @@ select option{background:var(--bg3)}
     <h2 style="text-align:center">Start Shift</h2>
     <p style="text-align:center" id="loginWho">Welcome</p>
     <div class="shift-row" style="margin-bottom:12px">
-      <button class="shift-btn active" id="ls1" onclick="selLoginShift(1)"><i class="ti ti-sun"></i> Morning <span style="font-size:10px;opacity:.6">7AM-3PM</span></button>
-      <button class="shift-btn" id="ls2" onclick="selLoginShift(2)"><i class="ti ti-moon"></i> Evening <span style="font-size:10px;opacity:.6">3PM-11PM</span></button>
+      <button class="shift-btn active" id="ls1" onclick="selLoginShift(1)" style="flex-direction:column;gap:3px;padding:10px 6px;min-width:0"><span style="display:flex;align-items:center;gap:6px"><i class="ti ti-sun"></i> Morning</span><span style="font-size:9px;opacity:.6">7AM-3PM</span></button>
+      <button class="shift-btn" id="ls2" onclick="selLoginShift(2)" style="flex-direction:column;gap:3px;padding:10px 6px;min-width:0"><span style="display:flex;align-items:center;gap:6px"><i class="ti ti-moon"></i> Evening</span><span style="font-size:9px;opacity:.6">3PM-11PM</span></button>
     </div>
     <div class="field"><label>Starting Cash (PHP)</label><input type="number" id="loginCash" placeholder="0.00" step="0.01" inputmode="decimal"></div>
+    <div id="loginCashNote" style="font-size:10px;color:var(--teal);margin-top:5px;display:none"></div>
     <div class="btn-row" style="margin-top:14px">
       <button class="btn btn-teal" style="flex:1" onclick="startSession()"><i class="ti ti-lock-open"></i> Unlock</button>
       <button class="btn btn-ghost" onclick="backToPin()">Back</button>
@@ -464,7 +484,6 @@ select option{background:var(--bg3)}
     <button class="tab" onclick="switchTab('pos')" id="tab-pos"><i class="ti ti-shopping-cart"></i><span> POS</span></button>
     <button class="tab" onclick="switchTab('products')" id="tab-products"><i class="ti ti-package"></i><span> Products</span></button>
     <button class="tab" onclick="switchTab('orders')" id="tab-orders"><i class="ti ti-clipboard-list"></i><span> Orders</span></button>
-    <button class="tab" onclick="switchTab('daily')" id="tab-daily"><i class="ti ti-layout-dashboard"></i><span> Daily</span></button>
     <button class="tab" onclick="switchTab('payables')" id="tab-payables"><i class="ti ti-building-bank"></i><span> Payables</span></button>
     <button class="tab" onclick="openReports()" id="tab-reports"><i class="ti ti-chart-bar"></i><span> Reports</span></button>
     <button class="tab" onclick="switchTab('settings')" id="tab-settings"><i class="ti ti-settings"></i><span> Settings</span></button>
@@ -704,18 +723,6 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
-  <!-- ═══ DAILY ═══ -->
-  <div class="panel" id="panel-daily">
-    <div class="card">
-      <div class="card-title"><i class="ti ti-calendar"></i> Select Date</div>
-      <div class="fg fg2">
-        <div class="field"><label>Date</label><input type="date" id="sumDate" onchange="renderDaily()"></div>
-        <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="exportDay()"><i class="ti ti-download"></i> Export</button></div>
-      </div>
-    </div>
-    <div id="dailyContent"></div>
-  </div>
-
   <!-- ═══ PAYABLES ═══ -->
   <div class="panel" id="panel-payables">
     <div class="card">
@@ -736,18 +743,26 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
-  <!-- ═══ REPORTS ═══ -->
+  <!-- ═══ REPORTS (Daily summaries merged inline) ═══ -->
   <div class="panel" id="panel-reports">
     <div class="ptoggle">
-      <button class="pb active" id="wkBtn" onclick="setPeriod('week')">Weekly</button>
-      <button class="pb" id="moBtn" onclick="setPeriod('month')">Monthly</button>
-      <button class="pb" id="yrBtn" onclick="setPeriod('year')">Yearly</button>
+      <button class="pb active" id="dyBtn" onclick="setReportView('daily')">Daily</button>
+      <button class="pb" id="wkBtn" onclick="setReportView('week')">Weekly</button>
+      <button class="pb" id="moBtn" onclick="setReportView('month')">Monthly</button>
+      <button class="pb" id="yrBtn" onclick="setReportView('year')">Yearly</button>
     </div>
-    <div class="fg fg2" style="margin-bottom:12px">
+    <!-- Daily date picker (Daily view) -->
+    <div class="fg fg2" id="dailyDateRow" style="margin-bottom:12px">
+      <div class="field"><label>Date</label><input type="date" id="sumDate" onchange="renderDaily()"></div>
+      <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="exportDay()"><i class="ti ti-download"></i> Export Daily</button></div>
+    </div>
+    <!-- Period range (Weekly/Monthly/Yearly views) -->
+    <div class="fg fg2" id="rangeRow" style="margin-bottom:12px;display:none">
       <div class="field"><label>From</label><input type="date" id="rpFrom" onchange="renderReports()"></div>
       <div class="field"><label>To</label><input type="date" id="rpTo" onchange="renderReports()"></div>
     </div>
-    <div id="reportContent"></div>
+    <div id="dailyContent"></div>
+    <div id="reportContent" style="display:none"></div>
   </div>
 
   <!-- ═══ SETTINGS ═══ -->
@@ -775,16 +790,13 @@ select option{background:var(--bg3)}
       <div class="srow"><div><div class="slabel">Last saved</div><div class="ssub" id="lastSaved">-</div></div></div>
     </div>
     <div class="card">
-      <div class="card-title"><i class="ti ti-rocket"></i> Deploy to Netlify</div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.9">
-        <ol style="padding-left:18px">
-          <li>Go to <strong style="color:var(--text)">netlify.com</strong> and sign up free</li>
-          <li>Click <strong style="color:var(--text)">Add new site &rarr; Deploy manually</strong></li>
-          <li>Drag and drop your <strong style="color:var(--text)">index.html</strong> file</li>
-          <li>Go to <strong style="color:var(--text)">Site settings &rarr; Change site name</strong></li>
-          <li>Set name to get your custom URL</li>
-        </ol>
+      <div class="card-title"><i class="ti ti-rocket"></i> Deployment</div>
+      <div class="srow">
+        <div><div class="slabel">Hosting</div><div class="ssub">GitHub Pages — auto-deploys on every push to <span style="font-family:var(--mono);color:var(--text2)">main</span></div></div>
+        <span class="badge b-saved"><span class="dot dot-g" style="animation:none"></span> Live</span>
       </div>
+      <div class="srow"><div><div class="slabel">Repository</div><div class="ssub" style="font-family:var(--mono);color:var(--text2)">kimjakosalem/pharmacy</div></div></div>
+      <div class="srow"><div><div class="slabel">Live URL</div><div class="ssub"><a href="https://kimjakosalem.github.io/pharmacy/" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">kimjakosalem.github.io/pharmacy</a></div></div></div>
     </div>
     <div class="card" style="border-color:var(--red-dim,rgba(255,77,106,.3))">
       <div class="card-title" style="color:var(--red)"><i class="ti ti-alert-triangle"></i> Danger Zone</div>
@@ -904,18 +916,38 @@ function openShiftStep(u){
   selLoginShift(new Date().getHours()<15?1:2);
   document.getElementById('loginCash').value='';
 }
-window.selLoginShift=function(n){ loginShift=n; document.getElementById('ls1').classList.toggle('active',n===1); document.getElementById('ls2').classList.toggle('active',n===2); };
+window.selLoginShift=async function(n){
+  loginShift=n;
+  document.getElementById('ls1').classList.toggle('active',n===1);
+  document.getElementById('ls2').classList.toggle('active',n===2);
+  // If this shift's starting cash was already logged earlier today, don't make
+  // the next staff re-enter it — prefill and mark optional.
+  const s=await getShift(n);
+  const cash=document.getElementById('loginCash'), note=document.getElementById('loginCashNote');
+  if((s.startCash||0)>0){
+    cash.value=s.startCash; cash.placeholder='already logged';
+    note.textContent=`Starting cash already logged for this shift (${fmt(s.startCash)}) — optional.`;
+    note.style.display='block';
+  } else {
+    cash.value=''; cash.placeholder='0.00'; note.style.display='none';
+  }
+};
 window.backToPin=function(){
   document.getElementById('loginStep1').style.display='block';
   document.getElementById('loginStep2').style.display='none';
   loginBuf=''; loginDots();
 };
 window.startSession=async function(){
-  const cash=parseFloat(document.getElementById('loginCash').value);
-  if(isNaN(cash)||cash<0){ toast('Enter starting cash','err'); return; }
-  session={name:pendingUser.name,role:pendingUser.role,shift:loginShift};
   curShift=loginShift;
   const s=await getShift(curShift);           // unlock the drawer with starting cash
+  const already=(s.startCash||0)>0;           // shift already started earlier today
+  let cash=parseFloat(document.getElementById('loginCash').value);
+  if(already){
+    if(isNaN(cash)) cash=s.startCash;         // succeeding login: cash optional
+  } else if(isNaN(cash)||cash<0){
+    toast('Enter starting cash','err'); return;   // first login of the shift requires it
+  }
+  session={name:pendingUser.name,role:pendingUser.role,shift:loginShift};
   if(!s.cashier) s.cashier=session.name;
   if(!s.startCash) s.startCash=cash;
   await persistShift(curShift);
@@ -1004,12 +1036,12 @@ window.doMasterReset=async function(){
 };
 
 // ── Tabs ──
-const TABS=['shift','pos','products','orders','daily','payables','reports','settings'];
+const TABS=['shift','pos','products','orders','payables','reports','settings'];
 window.switchTab=function(tab){
   // Guard owner-only tabs against direct/programmatic access by non-owners.
   if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='daily')renderDaily(); if(tab==='reports')renderReports(); if(tab==='payables')renderPayables(); if(tab==='products')loadProducts(); if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
+  if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products')loadProducts(); if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
 };
 
 // ── SHIFT ──
@@ -1537,7 +1569,20 @@ window.renderPayables=async function(){
 };
 async function renderPayables(){ await window.renderPayables(); }
 
-let rChart=null, curPeriod='week';
+let rChart=null, curPeriod='week', reportView='daily';
+// Reports tab hosts the Daily summaries inline with Weekly/Monthly/Yearly.
+window.setReportView=function(v){
+  reportView=v;
+  const map={daily:'dy',week:'wk',month:'mo',year:'yr'};
+  Object.entries(map).forEach(([k,id])=>document.getElementById(id+'Btn')?.classList.toggle('active',k===v));
+  const daily=v==='daily';
+  document.getElementById('dailyDateRow').style.display=daily?'':'none';
+  document.getElementById('rangeRow').style.display=daily?'none':'';
+  document.getElementById('dailyContent').style.display=daily?'':'none';
+  document.getElementById('reportContent').style.display=daily?'none':'';
+  if(daily){ if(!document.getElementById('sumDate').value)document.getElementById('sumDate').value=today(); renderDaily(); }
+  else setPeriod(v);
+};
 window.setPeriod=function(p){
   curPeriod=p; ['wk','mo','yr'].forEach((id,i)=>document.getElementById(id+'Btn').classList.toggle('active',['week','month','year'][i]===p));
   const t=new Date(),f=new Date();
