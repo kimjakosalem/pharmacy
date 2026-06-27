@@ -1496,7 +1496,8 @@ window.renderDaily=async function(){
   const c1=s1?calcShift(s1):{ciTot:0,coCash:0,coStock:0,msTotal:0,grossSales:0};
   const c2=s2?calcShift(s2):{ciTot:0,coCash:0,coStock:0,msTotal:0,grossSales:0};
   const dG=c1.grossSales+c2.grossSales,dCO=c1.coCash+c2.coCash,dSt=c1.coStock+c2.coStock;
-  const ap=await fsGetAll('payables'),dp=ap.filter(p=>p.date===dt),dPT=dp.reduce((a,p)=>a+p.amount,0);
+  // Privacy: non-owners never see owner-created payables — excluded from the list AND the net totals.
+  const ap=await fsGetAll('payables'),dp=ap.filter(p=>p.date===dt && (session?.role==='owner'||p.byRole!=='owner')),dPT=dp.reduce((a,p)=>a+p.amount,0);
   const dNet=dG-dCO-dSt-dPT;
   el.innerHTML=`<div class="mrow m4">
     <div class="metric"><div class="ml">Gross Sales</div><div class="mv c-tel">${fmt(dG)}</div></div>
@@ -1605,7 +1606,7 @@ window.exportDay=async function(){
   const s1=await fsGet('shifts',shiftKey(1,dt)),s2=await fsGet('shifts',shiftKey(2,dt));
   let txt=`DR. KIM PHARMACY - DAILY REPORT\nDate: ${dt}\n${'='.repeat(40)}\n`;
   for(const [s,n] of [[s1,1],[s2,2]]){ if(!s)continue; const c=calcShift(s); txt+=`\nSHIFT ${n}\nCashier: ${s.cashier||'-'}\nStarting Cash: ${fmt(s.startCash)}\nPOS: ${fmt(s.posTot)} (${s.posTxn||0} txn)\n  Cash:${fmt(s.pbCash)} GCash:${fmt(s.pbGcash)} Maya:${fmt(s.pbMaya)} MCredit:${fmt(s.pbMcredit)}\nManual: ${fmt(c.msTotal)}\nGross: ${fmt(c.grossSales)}\nExpenses: ${fmt(c.coCash)}\nStock Use: ${fmt(c.coStock)}\nTake-Home: ${fmt(s.takehome)}\nDrawer: ${fmt(s.drawer)} (var:${c.variance.toFixed(2)})\n`; }
-  const ap=await fsGetAll('payables'),dp=ap.filter(p=>p.date===dt);
+  const ap=await fsGetAll('payables'),dp=ap.filter(p=>p.date===dt && (session?.role==='owner'||p.byRole!=='owner'));
   if(dp.length){txt+=`\nBANK PAYABLES\n`;dp.forEach(p=>txt+=`  ${p.category}: ${p.desc||''} ${fmt(p.amount)}\n`);}
   const blob=new Blob([txt],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`drkimpharmacy_${dt}.txt`;a.click();
 };
