@@ -391,7 +391,7 @@ select option{background:var(--bg3)}
     <h3 style="color:var(--teal)"><i class="ti ti-flag-3" style="margin-right:6px"></i>Close Shift &amp; Log Out</h3>
     <div class="modal-sub" style="margin-bottom:12px">Complete the handover. This logs you out.</div>
     <div class="field" style="margin-bottom:8px"><label>Current Drawer Cash (PHP)</label><input type="number" id="csDrawer" placeholder="0.00" step="0.01"></div>
-    <div class="field" style="margin-bottom:8px"><label>Manual Sales not in POS (PHP)</label><input type="number" id="csManual" placeholder="0.00" step="0.01"></div>
+    <div class="field" style="margin-bottom:8px"><label>Manual Sales not in POS (PHP) <span style="color:var(--text3);font-weight:400">· from this shift</span></label><input type="number" id="csManual" placeholder="0.00" step="0.01" readonly tabindex="-1"></div>
     <div class="field" style="margin-bottom:8px"><label>Remittance / Take-Home (PHP)</label><input type="number" id="csTakehome" placeholder="0.00" step="0.01"></div>
     <div class="field" style="margin-bottom:8px"><label>Next Shift Starting Cash (PHP)</label><input type="number" id="csNext" placeholder="0.00" step="0.01"></div>
     <div class="btn-row" style="margin-top:14px">
@@ -419,15 +419,40 @@ select option{background:var(--bg3)}
   <div class="modal" style="width:460px;max-width:94vw;text-align:left">
     <h3 style="color:var(--teal)" id="intakeTitle"><i class="ti ti-truck-delivery" style="margin-right:6px"></i>Receive Delivery</h3>
     <div class="modal-sub" style="margin-bottom:10px">Confirm the quantity received and the actual cost per item. Inventory and product cost update on confirm.</div>
-    <div id="intakeBody" style="max-height:46vh;overflow-y:auto"></div>
+    <div id="intakeBody" style="max-height:42vh;overflow-y:auto"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
       <div><div style="font-size:11px;color:var(--text);font-weight:500">Extra Delivery Fee (PHP)</div><div style="font-size:9px;color:var(--text3)">Spread across all received units as added cost</div></div>
       <input type="number" id="intakeFee" class="po-qty" value="0" min="0" step="0.01" style="width:110px" oninput="updateIntakeSummary()">
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
+      <div><div style="font-size:11px;color:var(--text);font-weight:500">Payment Terms</div><div style="font-size:9px;color:var(--text3)">Creates an entry in Payables to settle</div></div>
+      <select id="intakeTerm" style="width:210px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 9px;border-radius:7px;outline:none">
+        <option value="COD">Cash on Delivery (COD)</option>
+        <option value="Check on Delivery">Check on Delivery</option>
+        <option value="30-day PDC">Payment Terms — 30 days (PDC)</option>
+        <option value="60-day PDC">Payment Terms — 60 days (PDC)</option>
+      </select>
     </div>
     <div id="intakeSummary" style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.7"></div>
     <div class="btn-row" style="margin-top:12px">
       <button class="btn btn-teal" onclick="confirmDelivery()"><i class="ti ti-check"></i> Confirm &amp; Update Inventory</button>
       <button class="btn btn-ghost" onclick="closeIntake()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ISSUE PAYMENT (for an Accounts Payable) ═══ -->
+<div class="modal-overlay" id="payModal">
+  <div class="modal" style="width:360px;text-align:left">
+    <h3 style="color:var(--teal)"><i class="ti ti-cash" style="margin-right:6px"></i>Issue Payment</h3>
+    <div class="modal-sub" id="payModalInfo" style="margin-bottom:12px"></div>
+    <div class="field"><label>Funding Source</label>
+      <select id="payFund"></select>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px">Drawer Cash logs a “Delivery Payment” cash-out in the current shift.</div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-teal" onclick="confirmPay()"><i class="ti ti-check"></i> Confirm Payment</button>
+      <button class="btn btn-ghost" onclick="closePayModal()">Cancel</button>
     </div>
   </div>
 </div>
@@ -550,18 +575,18 @@ select option{background:var(--bg3)}
       <div class="elist" id="coList"></div>
     </div>
     <div class="card">
-      <div class="card-title"><i class="ti ti-device-desktop"></i> POS / Encoded Sales <span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:6px">(auto-filled from POS tab)</span></div>
+      <div class="card-title"><i class="ti ti-device-desktop"></i> POS / Encoded Sales <span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:6px">(auto from POS — read-only)</span></div>
       <div class="fg fg2">
-        <div class="field"><label>Total POS Sales (PHP)</label><input type="number" id="posTot" placeholder="0.00" step="0.01" oninput="updatePaySum();queueSave()"></div>
-        <div class="field"><label>POS Transaction Count</label><input type="number" id="posTxn" placeholder="0" step="1" oninput="queueSave()"></div>
+        <div class="field"><label>Total POS Sales (PHP)</label><input type="number" id="posTot" placeholder="0.00" step="0.01" readonly tabindex="-1"></div>
+        <div class="field"><label>POS Transaction Count</label><input type="number" id="posTxn" placeholder="0" step="1" readonly tabindex="-1"></div>
       </div>
       <div class="pay-wrap">
-        <div style="font-size:9px;color:var(--text3);margin-bottom:8px;letter-spacing:.07em;font-weight:600">PAYMENT MODE BREAKDOWN</div>
+        <div style="font-size:9px;color:var(--text3);margin-bottom:8px;letter-spacing:.07em;font-weight:600">PAYMENT MODE BREAKDOWN <span style="color:var(--text3);font-weight:400">· auto from POS checkouts</span></div>
         <div class="pay-grid">
-          <div class="pay-field"><div class="ptag pt-cash">CASH</div><input type="number" id="pbCash" placeholder="0.00" step="0.01" oninput="updatePaySum();queueSave()"></div>
-          <div class="pay-field"><div class="ptag pt-gcash">GCASH</div><input type="number" id="pbGcash" placeholder="0.00" step="0.01" oninput="updatePaySum();queueSave()"></div>
-          <div class="pay-field"><div class="ptag pt-maya">MAYA</div><input type="number" id="pbMaya" placeholder="0.00" step="0.01" oninput="updatePaySum();queueSave()"></div>
-          <div class="pay-field"><div class="ptag pt-mcredit">M CREDIT</div><input type="number" id="pbMcredit" placeholder="0.00" step="0.01" oninput="updatePaySum();queueSave()"></div>
+          <div class="pay-field"><div class="ptag pt-cash">CASH</div><input type="number" id="pbCash" placeholder="0.00" step="0.01" readonly tabindex="-1"></div>
+          <div class="pay-field"><div class="ptag pt-gcash">GCASH</div><input type="number" id="pbGcash" placeholder="0.00" step="0.01" readonly tabindex="-1"></div>
+          <div class="pay-field"><div class="ptag pt-maya">MAYA</div><input type="number" id="pbMaya" placeholder="0.00" step="0.01" readonly tabindex="-1"></div>
+          <div class="pay-field"><div class="ptag pt-mcredit">M CREDIT</div><input type="number" id="pbMcredit" placeholder="0.00" step="0.01" readonly tabindex="-1"></div>
         </div>
         <div class="pay-footer">
           <span style="color:var(--text2)">Breakdown total:</span>
@@ -571,10 +596,11 @@ select option{background:var(--bg3)}
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-notebook"></i> Manual / Logbook Sales <span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:6px">(unregistered items)</span></div>
-      <div class="fg fg3">
+      <div class="fg fg4">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="msAmt" placeholder="0.00" step="0.01"></div>
         <div class="field"><label>Item / Description</label><input type="text" id="msDesc" placeholder="Item name..." onkeydown="if(event.key==='Enter')addMS()"></div>
-        <div class="field"><label>Qty</label><input type="number" id="msQty" placeholder="1" step="1" value="1" style="max-width:80px"></div>
+        <div class="field"><label>Mode</label><select id="msMode"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="maya">Maya</option><option value="mcredit">M Credit</option></select></div>
+        <div class="field"><label>Qty</label><input type="number" id="msQty" placeholder="1" step="1" value="1"></div>
       </div>
       <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="addMS()"><i class="ti ti-plus"></i> Add</button></div>
       <div class="elist" id="msList"></div>
@@ -652,13 +678,37 @@ select option{background:var(--bg3)}
         <strong style="color:var(--text2)">Suppliers format:</strong> Supplier A,Supplier B
       </div>
     </div>
-  
+
+    <!-- Categories & Suppliers databases -->
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-title"><i class="ti ti-tags"></i> Categories &amp; Suppliers <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">two separate lists</span></div>
+      <div class="fg fg2">
+        <div>
+          <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:6px">CATEGORIES <span style="font-weight:400;color:var(--text3)">· recommended markup %</span></div>
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input type="text" id="catName" placeholder="e.g. Branded" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none">
+            <input type="number" id="catMarkup" placeholder="Markup %" step="0.1" style="width:96px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 8px;border-radius:7px;outline:none">
+            <button class="btn btn-teal btn-sm" onclick="addCategory()"><i class="ti ti-plus"></i></button>
+          </div>
+          <div class="elist" id="catDbList" style="max-height:220px"></div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:6px">SUPPLIERS</div>
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input type="text" id="supName" placeholder="e.g. Zuellig" onkeydown="if(event.key==='Enter')addSupplier()" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none">
+            <button class="btn btn-teal btn-sm" onclick="addSupplier()"><i class="ti ti-plus"></i></button>
+          </div>
+          <div class="elist" id="supDbList" style="max-height:220px"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title"><i class="ti ti-plus"></i> <span id="prodFormTitle">Add New Product</span></div>
       <div class="fg fg3">
         <div class="field"><label>SKU / ID</label><input type="text" id="pSku" placeholder="e.g. MED-001"></div>
         <div class="field fc" style="grid-column:2/-1"><label>Product Name</label><input type="text" id="pName" placeholder="e.g. Amoxicillin 500mg"></div>
-        <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off"><datalist id="catList"></datalist></div>
+        <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off" onchange="applyCategoryMarkup()"><datalist id="catList"></datalist><div id="catMarkupHint" style="font-size:10px;color:var(--teal);margin-top:3px"></div></div>
         <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
         <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
         <div class="field"><label>Margin / Markup</label><input type="text" id="pMargin" placeholder="auto-calculated" readonly style="color:var(--teal)"></div>
@@ -702,9 +752,12 @@ select option{background:var(--bg3)}
   <!-- ═══ ORDERS ═══ -->
   <div class="panel" id="panel-orders">
     <div class="card">
-      <div class="card-title"><i class="ti ti-settings"></i> Order Settings</div>
-      <div class="fg fg3">
+      <div class="card-title"><i class="ti ti-settings"></i> Order Settings <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">one supplier per order</span></div>
+      <div class="fg fg2" style="margin-bottom:9px">
+        <div class="field"><label><i class="ti ti-building-store" style="font-size:12px"></i> Supplier (this order)</label><input type="text" id="orderSupplierInput" list="supplierList" placeholder="Search or type supplier..." autocomplete="off" oninput="setOrderSupplier(this.value)"></div>
         <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001"></div>
+      </div>
+      <div class="fg fg2">
         <div class="field"><label>Order Date</label><input type="date" id="poDate"></div>
         <div class="field"><label>Notes / Terms</label><input type="text" id="poNotes" placeholder="e.g. Please deliver within 3 days"></div>
       </div>
@@ -999,8 +1052,9 @@ window.openReports=function(){ if(session?.role==='owner') switchTab('reports');
 window.openCloseShift=async function(){
   if(!session) return;
   const s=await getShift(curShift);
+  const c=calcShift(s);
   document.getElementById('csDrawer').value=s.drawer||'';
-  document.getElementById('csManual').value='';
+  document.getElementById('csManual').value=c.msTotal? c.msTotal.toFixed(2):'';  // reflects manual sales logged this shift
   document.getElementById('csTakehome').value=s.takehome||'';
   document.getElementById('csNext').value=s.nextCash||'';
   document.getElementById('closeShiftModal').classList.add('show');
@@ -1012,8 +1066,7 @@ window.finishShift=async function(){
   s.drawer=parseFloat(document.getElementById('csDrawer').value)||0;
   s.takehome=parseFloat(document.getElementById('csTakehome').value)||0;
   s.nextCash=parseFloat(document.getElementById('csNext').value)||0;
-  const man=parseFloat(document.getElementById('csManual').value)||0;
-  if(man>0){ s.manualSales=s.manualSales||[]; s.manualSales.push({amount:man,desc:'Shift-close manual total',qty:1,time:tnow()}); }
+  // csManual is read-only — it just reflects manual sales already logged this shift; no new entry to add.
   s.saved=true; s.savedAt=tnow(); s.closedBy=session.name;
   await persistShift(curShift);
   closeCloseShift();
@@ -1067,7 +1120,7 @@ window.switchTab=function(tab){
   // Guard owner-only tabs against direct/programmatic access by non-owners.
   if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products')loadProducts(); if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
+  if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
 };
 
 // ── SHIFT ──
@@ -1143,29 +1196,33 @@ async function renderCO(){
   if(!s.cashOuts.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
   el.innerHTML=s.cashOuts.map((c,i)=>`<div class="eitem"><div><div class="el"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval ${c.type==='Personal Stock Use'?'c-amb':'c-neg'}">${c.type==='Personal Stock Use'?'INV':'-'}${fmt(c.amount)}</span><button class="del-btn" onclick="removeCO(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
 }
+const MODE_LABEL={cash:'CASH',gcash:'GCASH',maya:'MAYA',mcredit:'M-CREDIT'};
 window.addMS=async function(){
   const amt=parseFloat(document.getElementById('msAmt').value); if(!amt){toast('Enter amount','err');return;}
-  const s=await getShift(curShift); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,qty:parseInt(document.getElementById('msQty').value)||1,time:tnow()});
+  const s=await getShift(curShift); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,mode:document.getElementById('msMode').value||'cash',qty:parseInt(document.getElementById('msQty').value)||1,time:tnow()});
   document.getElementById('msAmt').value=''; document.getElementById('msDesc').value=''; document.getElementById('msQty').value='1'; await persistShift(curShift); renderMS();
 };
 window.removeMS=async function(i){ const s=await getShift(curShift); s.manualSales.splice(i,1); await persistShift(curShift); renderMS(); };
 async function renderMS(){
   const s=await getShift(curShift); const el=document.getElementById('msList');
   if(!s.manualSales.length){el.innerHTML='<div class="empty"><i class="ti ti-notebook"></i>None</div>';return;}
-  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem"><div><div class="el">${m.desc||'Item'}</div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span><button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
+  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem"><div><div class="el">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span><button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
 }
 
 // ── Shift Calc ──
 function calcShift(s){
   const ciTot=s.cashIns.reduce((a,c)=>a+c.amount,0);
-  const coCash=s.cashOuts.filter(c=>c.type!=='Personal Stock Use').reduce((a,c)=>a+c.amount,0);
+  const coAll=s.cashOuts.filter(c=>c.type!=='Personal Stock Use');
+  const coCash=coAll.reduce((a,c)=>a+c.amount,0);                              // all non-stock cash-outs — drawer reconciliation
+  const coCashExp=coAll.filter(c=>!c.settlement).reduce((a,c)=>a+c.amount,0);  // excludes payable settlements — report expenses
   const coStock=s.cashOuts.filter(c=>c.type==='Personal Stock Use').reduce((a,c)=>a+c.amount,0);
   const msTotal=s.manualSales.reduce((a,m)=>a+m.amount,0);
+  const msCash=s.manualSales.filter(m=>(m.mode||'cash')==='cash').reduce((a,m)=>a+m.amount,0);  // only cash manual sales hit the drawer
   const grossSales=(s.posTot||0)+msTotal;
   const cashPOS=s.pbCash||0;
-  const expected=(s.startCash||0)+ciTot+cashPOS+msTotal-coCash-(s.takehome||0);
+  const expected=(s.startCash||0)+ciTot+cashPOS+msCash-coCash-(s.takehome||0);
   const variance=(s.drawer||0)-expected;
-  return {ciTot,coCash,coStock,msTotal,grossSales,cashPOS,expected,variance};
+  return {ciTot,coCash,coCashExp,coStock,msTotal,msCash,grossSales,cashPOS,expected,variance};
 }
 
 // ═══════════════════════════════════════
@@ -1195,11 +1252,66 @@ async function loadProducts(){
   renderPaginationControls();
   populateCategoryList();
 }
-// Distinct categories from existing products feed the Add/Edit category dropdown.
+// ── Categories & Suppliers databases (config/categories, config/suppliers) ──
+// Categories: [{name, markup}] (recommended markup %). Suppliers: [{name}].
+let categories=[], suppliers=[];
+async function loadCatSup(){
+  const c=await fsGet('config','categories'); categories=Array.isArray(c?.value)?c.value:[];
+  const s=await fsGet('config','suppliers'); suppliers=Array.isArray(s?.value)?s.value:[];
+}
+async function saveCategoriesDb(){ await fsSet('config','categories',{value:categories}); }
+async function saveSuppliersDb(){ await fsSet('config','suppliers',{value:suppliers}); }
+
+window.renderCatSup=function(){ renderCategoriesDb(); renderSuppliersDb(); };
+function renderCategoriesDb(){
+  const el=document.getElementById('catDbList'); if(!el)return;
+  if(!categories.length){ el.innerHTML='<div class="empty" style="padding:10px">No categories yet</div>'; return; }
+  el.innerHTML=categories.map((c,i)=>`<div class="eitem"><div class="el" style="flex:1">${c.name}</div><div style="display:flex;align-items:center;gap:5px"><input type="number" value="${c.markup||0}" step="0.1" onchange="updateCategoryMarkup(${i},this.value)" style="width:64px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 6px;border-radius:5px;outline:none"><span style="font-size:10px;color:var(--text3)">% mk</span><button class="del-btn" onclick="delCategory(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
+}
+function renderSuppliersDb(){
+  const el=document.getElementById('supDbList'); if(!el)return;
+  if(!suppliers.length){ el.innerHTML='<div class="empty" style="padding:10px">No suppliers yet</div>'; return; }
+  el.innerHTML=suppliers.map((s,i)=>`<div class="eitem"><div class="el" style="flex:1"><i class="ti ti-building-store" style="font-size:12px;color:var(--text3)"></i> ${s.name}</div><button class="del-btn" onclick="delSupplier(${i})"><i class="ti ti-x"></i></button></div>`).join('');
+}
+window.addCategory=async function(){
+  const name=document.getElementById('catName').value.trim();
+  const markup=parseFloat(document.getElementById('catMarkup').value)||0;
+  if(!name){ toast('Enter a category name','err'); return; }
+  if(categories.some(c=>c.name.toLowerCase()===name.toLowerCase())){ toast('Category already exists','err'); return; }
+  categories.push({name,markup}); await saveCategoriesDb();
+  document.getElementById('catName').value=''; document.getElementById('catMarkup').value='';
+  renderCategoriesDb(); populateCategoryList();
+};
+window.updateCategoryMarkup=async function(i,v){ categories[i].markup=parseFloat(v)||0; await saveCategoriesDb(); };
+window.delCategory=async function(i){ categories.splice(i,1); await saveCategoriesDb(); renderCategoriesDb(); populateCategoryList(); };
+window.addSupplier=async function(){
+  const name=document.getElementById('supName').value.trim();
+  if(!name){ toast('Enter a supplier name','err'); return; }
+  if(suppliers.some(s=>s.name.toLowerCase()===name.toLowerCase())){ toast('Supplier already exists','err'); return; }
+  suppliers.push({name}); await saveSuppliersDb();
+  document.getElementById('supName').value='';
+  renderSuppliersDb(); populateSupplierList();
+};
+window.delSupplier=async function(i){ suppliers.splice(i,1); await saveSuppliersDb(); renderSuppliersDb(); populateSupplierList(); };
+
+// Apply a category's recommended markup to suggest a selling price from cost.
+window.applyCategoryMarkup=function(){
+  const name=document.getElementById('pCategory').value;
+  const cat=categories.find(c=>c.name.toLowerCase()===name.toLowerCase());
+  const hint=document.getElementById('catMarkupHint');
+  if(cat && cat.markup){
+    if(hint) hint.textContent=`Recommended markup ${cat.markup}% — price auto-set from cost`;
+    const cost=parseFloat(document.getElementById('pCost').value)||0;
+    if(cost>0){ document.getElementById('pPrice').value=(cost*(1+cat.markup/100)).toFixed(2); calcMargin(); }
+  } else if(hint){ hint.textContent=''; }
+};
+
+// Category dropdown: categories DB first, falling back to distinct product categories.
 function populateCategoryList(){
   const dl=document.getElementById('catList'); if(!dl)return;
-  const cats=[...new Set(allProducts.map(p=>p.category).filter(Boolean))].sort();
-  dl.innerHTML=cats.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('');
+  let names=categories.map(c=>c.name);
+  if(!names.length) names=[...new Set(allProducts.map(p=>p.category).filter(Boolean))].sort();
+  dl.innerHTML=names.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('');
 }
 
 function renderProductTable(prods){
@@ -1610,7 +1722,7 @@ window.renderDaily=async function(){
       <tr><td style="color:var(--text2)">POS Sales</td><td class="c-tel">+${fmt(s.posTot)} <span style="font-size:9px;color:var(--text3)">(${s.posTxn||0} txn)</span></td></tr>
       ${pt?`<tr class="tr-ind"><td>Payment modes</td><td><div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">${pt}</div></td></tr>`:''}
       <tr><td style="color:var(--text2)">Manual Sales</td><td class="c-blu">+${fmt(c.msTotal)}</td></tr>
-      <tr><td style="color:var(--text2)">Cash Expenses</td><td class="c-neg">-${fmt(c.coCash)}</td></tr>
+      <tr><td style="color:var(--text2)">Cash Expenses</td><td class="c-neg">-${fmt(c.coCashExp)}</td></tr>
       ${c.coStock?`<tr><td style="color:var(--text2)">Stock Use</td><td class="c-amb">-${fmt(c.coStock)}</td></tr>`:''}
       <tr><td style="color:var(--text2)">Take-Home</td><td class="c-amb">-${fmt(s.takehome)}</td></tr>
       <tr class="tr-total"><td>Gross Sales</td><td class="c-tel">${fmt(c.grossSales)}</td></tr>
@@ -1618,9 +1730,9 @@ window.renderDaily=async function(){
       <tr><td style="color:var(--text2)">Actual Drawer</td><td>${fmt(s.drawer)}</td></tr>
     </table><div class="rec ${vc}">${vi}</div></div>`;
   };
-  const c1=s1?calcShift(s1):{ciTot:0,coCash:0,coStock:0,msTotal:0,grossSales:0};
-  const c2=s2?calcShift(s2):{ciTot:0,coCash:0,coStock:0,msTotal:0,grossSales:0};
-  const dG=c1.grossSales+c2.grossSales,dCO=c1.coCash+c2.coCash,dSt=c1.coStock+c2.coStock;
+  const c1=s1?calcShift(s1):{ciTot:0,coCash:0,coCashExp:0,coStock:0,msTotal:0,grossSales:0};
+  const c2=s2?calcShift(s2):{ciTot:0,coCash:0,coCashExp:0,coStock:0,msTotal:0,grossSales:0};
+  const dG=c1.grossSales+c2.grossSales,dCO=c1.coCashExp+c2.coCashExp,dSt=c1.coStock+c2.coStock;
   // Privacy: non-owners never see owner-created payables — excluded from the list AND the net totals.
   const ap=await fsGetAll('payables'),dp=ap.filter(p=>p.date===dt && (session?.role==='owner'||p.byRole!=='owner')),dPT=dp.reduce((a,p)=>a+p.amount,0);
   const dNet=dG-dCO-dSt-dPT;
@@ -1657,10 +1769,53 @@ window.renderPayables=async function(){
   // Privacy: non-owners never see entries logged by an owner.
   if(session?.role!=='owner') list=list.filter(p=>p.byRole!=='owner');
   if(!list.length){el.innerHTML='<div class="empty"><i class="ti ti-building-bank"></i>No payables yet</div>';return;}
-  list.sort((a,b)=>b.date.localeCompare(a.date));
-  el.innerHTML=list.map(p=>`<div class="eitem"><div><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}</div></div><div style="display:flex;align-items:center"><span class="eval c-neg">-${fmt(p.amount)}</span><button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button></div></div>`).join('');
+  // Unpaid first, then by date.
+  list.sort((a,b)=>{ const ap=a.status==='unpaid'?0:1, bp=b.status==='unpaid'?0:1; return ap-bp || b.date.localeCompare(a.date); });
+  el.innerHTML=list.map(p=>{
+    const unpaid=p.status==='unpaid', paid=p.status==='paid';
+    const chip=unpaid?`<span class="chip chip-low">Unpaid</span>`:paid?`<span class="chip chip-ok">Paid</span>`:'';
+    const term=p.payTerm?` · ${p.payTerm}`:'';
+    const paidVia=paid&&p.paidVia?` · via ${p.paidVia}${p.paidBy?' ('+p.paidBy+')':''}`:'';
+    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''} ${chip}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}${term}${paidVia}</div></div><div style="display:flex;align-items:center;gap:6px">${unpaid?`<button class="btn btn-teal btn-xs" onclick="openPayModal('${p.id}')"><i class="ti ti-cash"></i> Pay</button>`:''}<span class="eval c-neg">-${fmt(p.amount)}</span><button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button></div></div>`;
+  }).join('');
 };
 async function renderPayables(){ await window.renderPayables(); }
+
+// ── Issue payment for a payable (SS4) ──
+let payingId=null;
+window.openPayModal=async function(id){
+  const list=await fsGetAll('payables'); const p=list.find(x=>x.id===id); if(!p) return;
+  payingId=id;
+  document.getElementById('payModalInfo').innerHTML=`<strong>${p.desc||p.category}</strong><br>Amount: <strong style="color:var(--red)">${fmt(p.amount)}</strong>${p.payTerm?(' · '+p.payTerm):''}`;
+  // Staff/Manager: cash sources only. Owner: also bank.
+  const opts=[['Take-Home Cash','Take-Home / Remittance Cash'],['Drawer Cash','Drawer Cash (logs a cash-out)']];
+  if(session?.role==='owner') opts.push(['Bank Cash','Bank Cash'],['Bank Check','Bank Check']);
+  document.getElementById('payFund').innerHTML=opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  document.getElementById('payModal').classList.add('show');
+};
+window.closePayModal=function(){ document.getElementById('payModal').classList.remove('show'); payingId=null; };
+window.confirmPay=async function(){
+  const list=await fsGetAll('payables'); const p=list.find(x=>x.id===payingId);
+  if(!p){ closePayModal(); return; }
+  const fund=document.getElementById('payFund').value;
+  p.status='paid'; p.paidVia=fund; p.paidBy=session?.name||''; p.paidByRole=session?.role||'staff'; p.paidAt=tnow(); p.paidDate=today();
+  await fsSet('payables', p.id, p);
+  // Drawer cash → log a settlement cash-out in the current shift (Tab 1).
+  if(fund==='Drawer Cash'){
+    const s=await getShift(curShift);
+    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:p.desc||p.supplier||'Payable settlement', time:tnow(), settlement:true, payableId:p.id});
+    await persistShift(curShift);
+    if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
+  }
+  // Tag the linked PO as Paid (SS5).
+  if(p.poId){
+    let po=savedPOs.find(x=>x.id===p.poId);
+    if(po){ po.payStatus='paid'; po.paidVia=fund; await fsSet('purchaseOrders', po.id, po); renderPOList(); }
+    else { const fresh=await fsGet('purchaseOrders', p.poId); if(fresh){ fresh.payStatus='paid'; fresh.paidVia=fund; await fsSet('purchaseOrders', p.poId, fresh); } }
+  }
+  closePayModal(); renderPayables();
+  toast('Payment issued via '+fund,'ok');
+};
 
 let rChart=null, curPeriod='week', reportView='daily';
 // Reports tab hosts the Daily summaries inline with Weekly/Monthly/Yearly.
@@ -1694,7 +1849,7 @@ window.renderReports=async function(){
   const daily=[],ap=await fsGetAll('payables');
   for(const d of dates){
     let dG=0,dE=0;
-    for(const n of [1,2]){ const s=await fsGet('shifts',shiftKey(n,d)); if(s){const c=calcShift(s);dG+=c.grossSales;dE+=c.coCash+c.coStock;tPOS+=s.posTot||0;tMan+=c.msTotal;tCE+=c.coCash;tSt+=c.coStock;} }
+    for(const n of [1,2]){ const s=await fsGet('shifts',shiftKey(n,d)); if(s){const c=calcShift(s);dG+=c.grossSales;dE+=c.coCashExp+c.coStock;tPOS+=s.posTot||0;tMan+=c.msTotal;tCE+=c.coCashExp;tSt+=c.coStock;} }
     const dp=ap.filter(p=>p.date===d).reduce((a,p)=>a+p.amount,0);
     tG+=dG;tPay+=dp;daily.push({date:d,gross:dG,exp:dE+dp});
   }
@@ -1743,7 +1898,7 @@ window.exportDay=async function(){
   const dt=document.getElementById('sumDate').value||today();
   const s1=await fsGet('shifts',shiftKey(1,dt)),s2=await fsGet('shifts',shiftKey(2,dt));
   let txt=`DR. KIM PHARMACY - DAILY REPORT\nDate: ${dt}\n${'='.repeat(40)}\n`;
-  for(const [s,n] of [[s1,1],[s2,2]]){ if(!s)continue; const c=calcShift(s); txt+=`\nSHIFT ${n}\nCashier: ${s.cashier||'-'}\nStarting Cash: ${fmt(s.startCash)}\nPOS: ${fmt(s.posTot)} (${s.posTxn||0} txn)\n  Cash:${fmt(s.pbCash)} GCash:${fmt(s.pbGcash)} Maya:${fmt(s.pbMaya)} MCredit:${fmt(s.pbMcredit)}\nManual: ${fmt(c.msTotal)}\nGross: ${fmt(c.grossSales)}\nExpenses: ${fmt(c.coCash)}\nStock Use: ${fmt(c.coStock)}\nTake-Home: ${fmt(s.takehome)}\nDrawer: ${fmt(s.drawer)} (var:${c.variance.toFixed(2)})\n`; }
+  for(const [s,n] of [[s1,1],[s2,2]]){ if(!s)continue; const c=calcShift(s); txt+=`\nSHIFT ${n}\nCashier: ${s.cashier||'-'}\nStarting Cash: ${fmt(s.startCash)}\nPOS: ${fmt(s.posTot)} (${s.posTxn||0} txn)\n  Cash:${fmt(s.pbCash)} GCash:${fmt(s.pbGcash)} Maya:${fmt(s.pbMaya)} MCredit:${fmt(s.pbMcredit)}\nManual: ${fmt(c.msTotal)}\nGross: ${fmt(c.grossSales)}\nExpenses: ${fmt(c.coCashExp)}\nStock Use: ${fmt(c.coStock)}\nTake-Home: ${fmt(s.takehome)}\nDrawer: ${fmt(s.drawer)} (var:${c.variance.toFixed(2)})\n`; }
   const ap=await fsGetAll('payables'),dp=ap.filter(p=>p.date===dt && (session?.role==='owner'||p.byRole!=='owner'));
   if(dp.length){txt+=`\nBANK PAYABLES\n`;dp.forEach(p=>txt+=`  ${p.category}: ${p.desc||''} ${fmt(p.amount)}\n`);}
   const blob=new Blob([txt],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`drkimpharmacy_${dt}.txt`;a.click();
@@ -1751,8 +1906,9 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v3.6';
+const APP_VERSION='v3.7';
 const CHANGELOG=[
+  {v:'v3.7', date:'2026-06-27', notes:['Shift: POS payment breakdown is now auto-only (read-only); manual sales record a payment mode','Close shift: manual-sales total now reflects entries logged during the shift','Products: editable Categories database (with recommended markup %) and Suppliers database','Orders: one supplier per order list (search/dropdown)','Receiving: choose payment terms (COD / Check / 30-60 day PDC) → auto-creates an Accounts Payable','Payables: issue payment from take-home, drawer (logs a cash-out), or bank; paid POs get a Paid tag']},
   {v:'v3.6', date:'2026-06-27', notes:['POS: quantity input in Add-to-Cart and editable cart quantity (tablet numpad)','POS: cash-tendered entry with automatic change calculation','Products: category dropdown (existing categories + free type)','Orders: clearable search box and per-item supplier selection','Receive Delivery: cleaner layout + delivery-fee spread across received stock']},
   {v:'v3.5', date:'2026-06-27', notes:['Offline persistence (persistentLocalCache), role-based login, shift lifecycle','Delivery intake updating inventory; Daily summaries merged into Reports']}
 ];
@@ -1772,6 +1928,7 @@ async function init(){
   try{ await fsGet('config','ping'); document.getElementById('syncTxt').textContent='Synced'; document.getElementById('syncDot').className='dot dot-g'; }
   catch(e){ document.getElementById('syncTxt').textContent='Offline'; document.getElementById('syncDot').className='dot dot-a'; }
   await loadStaff();
+  await loadCatSup();
   applyRole();                 // hide owner-only tabs until someone logs in
   await loadShiftFields();
   await loadProducts();
@@ -1869,12 +2026,14 @@ function parseCSVLine(line) {
 // ── ORDER LIST ──
 // ═══════════════════════════════════════════════════
 
-let orderItems = {}, lowStockPageIndex = 0, lowStockPageSize = 10;
+let orderItems = {}, orderSupplier = '', lowStockPageIndex = 0, lowStockPageSize = 10;
 
 function initOrderTab() {
   document.getElementById('poDate').value = today();
   const num = 'PO-'+today().replace(/-/g,'').slice(2)+'-001';
   if(!document.getElementById('poNumber').value) document.getElementById('poNumber').value = num;
+  document.getElementById('orderSupplierInput').value = orderSupplier;
+  populateSupplierList();
   lowStockPageIndex = 0;
   renderLowStock();
   renderOrderList();
@@ -1969,8 +2128,9 @@ window.clearOrderSearch = function() {
 // Aggregate every distinct supplier seen across products to feed the datalist.
 function knownSuppliers(){
   const set=new Set();
+  suppliers.forEach(s=>{ if(s.name) set.add(s.name); });                 // suppliers database
   Object.values(allProductsFull).forEach(p=>(p.suppliers||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(s=>set.add(s)));
-  Object.values(orderItems).forEach(o=>{ if(o.supplier) set.add(o.supplier); });
+  if(orderSupplier) set.add(orderSupplier);
   return [...set].sort();
 }
 function populateSupplierList(){
@@ -1994,12 +2154,14 @@ window.renderOrderSearch = function() {
     </div>`).join('');
 };
 
-function orderSupplierOf(id){ return orderItems[id]?.supplier || ((allProductsFull[id]?.suppliers||'').split(',')[0]||'').trim() || 'No Supplier'; }
-window.setOrderSupplier=function(id,val){ if(orderItems[id]){ orderItems[id].supplier=(val||'').trim(); renderOrderList(); } };
+function orderSupplierOf(){ return orderSupplier.trim() || 'No Supplier'; }
+window.setOrderSupplier=function(val){ orderSupplier=(val||'').trim(); renderOrderList(); };
 window.addToOrder = function(id) {
   const prod=allProducts.find(p=>p.id===id); if(!prod)return;
-  if(!orderItems[id]) orderItems[id]={prod,qty:1,supplier:((allProductsFull[id]?.suppliers||'').split(',')[0]||'').trim()};
+  if(!orderItems[id]) orderItems[id]={prod,qty:1};
   else orderItems[id].qty++;
+  // Default the order's supplier to the product's first supplier if none chosen yet.
+  if(!orderSupplier){ const ps=((allProductsFull[id]?.suppliers||'').split(',')[0]||'').trim(); if(ps){ orderSupplier=ps; document.getElementById('orderSupplierInput').value=ps; } }
   // Check the checkbox if in low stock list
   const chk=document.getElementById('chk_'+id);
   if(chk) chk.checked=true;
@@ -2026,16 +2188,15 @@ function renderOrderList() {
   emptyEl.style.display='none'; previewCard.style.display='block';
 
   populateSupplierList();
-  // Group by the per-item supplier (override → product's first supplier → No Supplier)
-  const supplierOf=({prod})=> orderItems[prod.id].supplier || ((allProductsFull[prod.id]?.suppliers||'').split(',')[0]||'').trim() || 'No Supplier';
-  const bySupplier={};
-  items.forEach(it=>{ const sup=supplierOf(it); (bySupplier[sup]=bySupplier[sup]||[]).push(it); });
+  // One supplier per order list (SS3): all items grouped under the order-level supplier.
+  const supplier=orderSupplierOf();
+  const bySupplier={[supplier]:items};
 
-  el.innerHTML=Object.entries(bySupplier).map(([supplier,sitems])=>`
+  el.innerHTML=`
     <div class="supplier-section">
-      <div class="supplier-header"><i class="ti ti-truck" style="font-size:11px;margin-right:4px"></i>${supplier}</div>
-      ${sitems.map(({prod,qty})=>`
-        <div class="po-item" style="flex-wrap:wrap">
+      <div class="supplier-header"><i class="ti ti-building-store" style="font-size:11px;margin-right:4px"></i>${supplier}</div>
+      ${items.map(({prod,qty})=>`
+        <div class="po-item">
           <div class="po-info">
             <div class="po-name">${prod.name}</div>
             <div class="po-meta">${prod.sku||'No SKU'} · Cost: ${fmt(prod.cost||0)} · Stock: ${prod.inventory||0}</div>
@@ -2046,15 +2207,11 @@ function renderOrderList() {
           </div>
           <div class="po-price">${fmt((prod.cost||0)*qty)}</div>
           <button class="del-btn" onclick="removeFromOrder('${prod.id}')"><i class="ti ti-x"></i></button>
-          <div style="flex-basis:100%;display:flex;align-items:center;gap:6px;margin-top:4px">
-            <label style="font-size:10px;color:var(--text3);white-space:nowrap"><i class="ti ti-building-store" style="font-size:11px"></i> Supplier:</label>
-            <input type="text" list="supplierList" value="${(orderItems[prod.id].supplier||'').replace(/"/g,'&quot;')}" placeholder="Search or type supplier..." onchange="setOrderSupplier('${prod.id}',this.value)" style="flex:1;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:11px;padding:5px 8px;border-radius:5px;outline:none">
-          </div>
         </div>`).join('')}
       <div style="text-align:right;font-size:11px;color:var(--amber);font-family:var(--mono);padding:4px 10px">
-        Subtotal: ${fmt(sitems.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0))}
+        Subtotal: ${fmt(items.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0))}
       </div>
-    </div>`).join('');
+    </div>`;
 
   renderPOPreview(bySupplier);
 }
@@ -2103,10 +2260,10 @@ window.exportPO = function() {
   const poNum=document.getElementById('poNumber').value||'PO-001';
   const poDate=document.getElementById('poDate').value||today();
   const header='PO Number,Date,Supplier,SKU,Product,Cost,Qty,Total';
+  const sup=orderSupplierOf();
   const rows=items.map(({prod,qty})=>{
     const esc=s=>`"${(s||'').toString().replace(/"/g,'""')}"`;
-    const suppliers=(prod.suppliers||'No Supplier').split(',').map(s=>s.trim());
-    return [esc(poNum),esc(poDate),esc(suppliers[0]),esc(prod.sku),esc(prod.name),prod.cost||0,qty,((prod.cost||0)*qty).toFixed(2)].join(',');
+    return [esc(poNum),esc(poDate),esc(sup),esc(prod.sku),esc(prod.name),prod.cost||0,qty,((prod.cost||0)*qty).toFixed(2)].join(',');
   });
   const csv=[header,...rows].join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
@@ -2125,13 +2282,8 @@ window.printPO = function() {
   if(!items.length){toast('No items in order','err');return;}
   const grandTotal=items.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0);
 
-  // Group by supplier
-  const bySupplier={};
-  items.forEach(({prod,qty})=>{
-    const s=(prod.suppliers||'No Supplier').split(',')[0].trim();
-    if(!bySupplier[s])bySupplier[s]=[];
-    bySupplier[s].push({prod,qty});
-  });
+  // One supplier per order
+  const bySupplier={[orderSupplierOf()]:items};
 
   let supplierHtml='';
   Object.entries(bySupplier).forEach(([supplier,sitems])=>{
@@ -2180,20 +2332,21 @@ window.savePO=async function(){
   if(!items.length){ toast('No items in order','err'); return; }
   const poNum=document.getElementById('poNumber').value||('PO-'+Date.now());
   const id='po_'+Date.now();
+  const supplier=orderSupplierOf();
   const po={
     id, poNumber:poNum, date:document.getElementById('poDate').value||today(),
-    notes:document.getElementById('poNotes').value||'', status:'pending',
+    notes:document.getElementById('poNotes').value||'', status:'pending', supplier,
     items: items.map(({prod,qty})=>{
-      return { prodId:prod.id, sku:prod.sku||'', name:prod.name, supplier:orderSupplierOf(prod.id),
+      return { prodId:prod.id, sku:prod.sku||'', name:prod.name, supplier,
                orderedQty:qty, orderedCost:prod.cost||0, recvQty:qty, recvCost:prod.cost||0 };
     }),
     createdAt:tnow(), createdBy:session?.name||''
   };
   await fsSet('purchaseOrders', id, po);
   savedPOs.push(po);
-  orderItems={}; document.getElementById('poNumber').value='';
+  orderItems={}; orderSupplier=''; document.getElementById('poNumber').value='';
   initOrderTab();
-  toast('PO saved as pending','ok');
+  toast(`PO saved for ${supplier}`,'ok');
 };
 
 window.deletePO=async function(id){
@@ -2210,10 +2363,13 @@ function renderPOList(){
   el.innerHTML=pos.map(po=>{
     const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
     const delivered=po.status==='delivered';
+    const paid=po.payStatus==='paid';
+    const statusChip=delivered?`<span class="chip chip-ok">Delivered</span>`:`<span class="chip chip-low">Pending</span>`;
+    const payChip=delivered?(paid?`<span class="chip chip-ok">Paid</span>`:`<span class="chip chip-low">Unpaid</span>`):'';
     return `<div class="po-item">
       <div class="po-info">
-        <div class="po-name">${po.poNumber} <span class="chip ${delivered?'chip-ok':'chip-low'}">${delivered?'Delivered':'Pending'}</span></div>
-        <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}</div>
+        <div class="po-name">${po.poNumber} <span style="font-size:10px;color:var(--text3);font-weight:400">${po.supplier||''}</span> ${statusChip} ${payChip}</div>
+        <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}${paid&&po.paidVia?' · paid '+po.paidVia:''}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
         ${delivered?'':`<button class="btn btn-teal btn-xs" onclick="openIntake('${po.id}')"><i class="ti ti-truck-delivery"></i> Receive</button>`}
@@ -2285,10 +2441,22 @@ window.confirmDelivery=async function(){
       updated++;
     }
   }
-  po.status='delivered'; po.deliveredDate=today(); po.deliveredAt=tnow(); po.receivedBy=session?.name||''; po.deliveryFee=t?.fee||0;
+  // Create an Accounts Payable for the supplier (SS4) — settled later from Payables.
+  const term=document.getElementById('intakeTerm').value;
+  const landedTotal=Math.round(((t?.grand)||0)*100)/100;
+  const payId='pay_'+Date.now();
+  await fsSet('payables', payId, {
+    date:today(), category:'Stocks', amount:landedTotal,
+    desc:`Delivery: ${po.poNumber}${po.supplier?(' — '+po.supplier):''}`,
+    createdAt:tnow(), by:session?.name||'', byRole:session?.role||'staff',
+    source:'delivery', poId:po.id, poNumber:po.poNumber, supplier:po.supplier||'',
+    payTerm:term, status:'unpaid'
+  });
+  po.status='delivered'; po.deliveredDate=today(); po.deliveredAt=tnow(); po.receivedBy=session?.name||'';
+  po.deliveryFee=t?.fee||0; po.payableId=payId; po.payTerm=term; po.payStatus='unpaid'; po.payableAmount=landedTotal;
   await fsSet('purchaseOrders', po.id, po);
   closeIntake(); renderPOList(); renderLowStock();
-  toast(`Delivery received — ${updated} items restocked${priceChanges?', costs updated':''}`,'ok');
+  toast(`Received — ${updated} items restocked · ${fmt(landedTotal)} payable (${term})`,'ok');
 };
 </script>
 </body>
