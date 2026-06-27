@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0f1a">
 <title>Dr. Kim Pharmacy</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
@@ -24,8 +28,9 @@
   --mono:'DM Mono',monospace;--sans:'Sora',sans-serif;
   --r:10px;--r2:14px;--r3:18px;
 }
-html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;overflow-x:hidden}
-.app{max-width:960px;margin:0 auto;padding:12px 18px 80px;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch}
+html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;overflow-x:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+button,.tab,.btn,.pin-key,.pay-mode-btn,.qty-btn,.shift-btn,.del-btn{touch-action:manipulation}
+.app{max-width:960px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch}
 .header,.tabs,.panel{box-sizing:border-box}
 .panel{display:none}
 .panel.active{display:block}
@@ -50,9 +55,9 @@ html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:va
 .tab:hover:not(.active){color:var(--text2)}
 .tab i{font-size:14px}
 /* PIN */
-.pin-overlay{position:fixed;inset:0;background:rgba(7,10,20,.93);z-index:200;display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+.pin-overlay{position:fixed;inset:0;background:rgba(7,10,20,.93);z-index:200;display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:max(16px,env(safe-area-inset-top)) 12px max(16px,env(safe-area-inset-bottom))}
 .pin-overlay.show{display:flex}
-.pin-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);padding:32px 26px;width:290px;text-align:center}
+.pin-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);padding:32px 26px;width:290px;max-width:100%;text-align:center;margin:auto}
 .pin-icon{font-size:30px;color:var(--teal);margin-bottom:8px}
 .pin-box h2{font-size:15px;font-weight:600;margin-bottom:4px}
 .pin-box p{font-size:11px;color:var(--text2);margin-bottom:18px}
@@ -241,9 +246,9 @@ select option{background:var(--bg3)}
 .checkout-btn:hover{filter:brightness(1.1)}
 .checkout-btn:disabled{opacity:.4;cursor:not-allowed}
 /* VARIANT MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(7,10,20,.88);z-index:150;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal-overlay{position:fixed;inset:0;background:rgba(7,10,20,.88);z-index:150;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:max(14px,env(safe-area-inset-top)) 12px max(14px,env(safe-area-inset-bottom))}
 .modal-overlay.show{display:flex}
-.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);padding:22px;width:380px;max-width:95vw}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);padding:22px;width:380px;max-width:95vw;margin:auto;max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow-y:auto;-webkit-overflow-scrolling:touch}
 .modal h3{font-size:15px;font-weight:600;margin-bottom:4px}
 .modal-sub{font-size:11px;color:var(--text2);margin-bottom:16px}
 .variant-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:14px}
@@ -280,9 +285,26 @@ select option{background:var(--bg3)}
   .tab span{display:none}
   .hright .pill:first-child{display:none}
 }
-@media(max-width:420px){
-  .m4{grid-template-columns:1fr 1fr}
+/* Phones */
+@media(max-width:480px){
+  .app{padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(70px + env(safe-area-inset-bottom));padding-left:calc(10px + env(safe-area-inset-left));padding-right:calc(10px + env(safe-area-inset-right))}
+  .header{padding:10px 12px;margin-bottom:10px}
+  .logo-icon{width:34px;height:34px;font-size:17px}
+  .logo-text h1{font-size:13px}
+  .logo-text p{display:none}                    /* drop subtitle to keep header short (version is in Settings) */
+  .hright #clockPill{display:none}              /* save header space on phones */
+  .card{padding:13px}
+  .fg3,.fg4{grid-template-columns:1fr}          /* stack dense forms */
+  .m4,.m3{grid-template-columns:1fr 1fr}
   .variant-grid{grid-template-columns:1fr}
+  .modal{padding:18px}
+  .ptoggle{flex-wrap:wrap}
+}
+@media(max-width:380px){
+  .fg2{grid-template-columns:1fr}
+  .m4,.m3{grid-template-columns:1fr}
+  .pay-grid,.pay-mode-grid{grid-template-columns:1fr 1fr}
+  .cart-total-val{font-size:18px}
 }
 /* ── Tablet / touch polish ── */
 .tabs{overflow-x:auto;scrollbar-width:none}
@@ -301,8 +323,11 @@ select option{background:var(--bg3)}
   .pay-mode-btn{min-height:48px}
   .checkout-btn{min-height:54px}
   .shift-btn{min-height:50px}
-  input:not([type=checkbox]):not([type=file]),select,textarea{min-height:42px;font-size:14px}
+  /* 16px keeps iOS Safari from zooming the page when an input gains focus */
+  input:not([type=checkbox]):not([type=file]),select,textarea{min-height:42px;font-size:16px}
+  .del-btn{min-width:30px;min-height:30px}
 }
+.cart-items,.elist,.cart-panel{-webkit-overflow-scrolling:touch}
 
 /* ═══ ORDER LIST & IMPORT/EXPORT ═══ */
 .po-item{display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--bg3);border-radius:7px;border:1px solid var(--border);margin-bottom:5px}
@@ -1906,8 +1931,9 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v3.7';
+const APP_VERSION='v3.8';
 const CHANGELOG=[
+  {v:'v3.8', date:'2026-06-27', notes:['Mobile polish: full support for phones, Android tablets, and iPhone (notch/safe-area aware)','Modals and login now scroll within the screen on small devices and avoid the notch & home bar','Inputs no longer zoom the page on iPhone; bigger touch targets throughout','Tighter phone layouts: stacked dense forms and a compact header']},
   {v:'v3.7', date:'2026-06-27', notes:['Shift: POS payment breakdown is now auto-only (read-only); manual sales record a payment mode','Close shift: manual-sales total now reflects entries logged during the shift','Products: editable Categories database (with recommended markup %) and Suppliers database','Orders: one supplier per order list (search/dropdown)','Receiving: choose payment terms (COD / Check / 30-60 day PDC) → auto-creates an Accounts Payable','Payables: issue payment from take-home, drawer (logs a cash-out), or bank; paid POs get a Paid tag']},
   {v:'v3.6', date:'2026-06-27', notes:['POS: quantity input in Add-to-Cart and editable cart quantity (tablet numpad)','POS: cash-tendered entry with automatic change calculation','Products: category dropdown (existing categories + free type)','Orders: clearable search box and per-item supplier selection','Receive Delivery: cleaner layout + delivery-fee spread across received stock']},
   {v:'v3.5', date:'2026-06-27', notes:['Offline persistence (persistentLocalCache), role-based login, shift lifecycle','Delivery intake updating inventory; Daily summaries merged into Reports']}
