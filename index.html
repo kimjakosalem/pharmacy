@@ -1269,9 +1269,10 @@ async function renderSales(){
   const sales=(s.sales||[]);
   document.getElementById('salesCount').textContent = sales.length+(sales.length===1?' sale':' sales');
   if(!sales.length){ el.innerHTML='<div class="empty"><i class="ti ti-receipt"></i>No sales yet this shift</div>'; return; }
+  const canVoid=session?.role==='owner'||session?.role==='manager';
   el.innerHTML=[...sales].reverse().map(t=>{
     const items=(t.items||[]).map(it=>`${it.name}${it.size?' ('+it.size+')':''} ×${it.qty}`).join(', ');
-    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${items||'Sale'} <span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span></div><div class="ed">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</div></div><div style="display:flex;align-items:center"><span class="eval c-tel">${fmt(t.total)}</span><button class="del-btn" title="Void this sale" onclick="voidSale('${t.id}')"><i class="ti ti-x"></i></button></div></div>`;
+    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${items||'Sale'} <span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span></div><div class="ed">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</div></div><div style="display:flex;align-items:center"><span class="eval c-tel">${fmt(t.total)}</span>${canVoid?`<button class="del-btn" title="Void this sale" onclick="voidSale('${t.id}')"><i class="ti ti-x"></i></button>`:''}</div></div>`;
   }).join('');
 }
 window.resetPosSales=async function(){
@@ -1285,6 +1286,7 @@ window.resetPosSales=async function(){
   toast('POS sales reset for this shift','ok');
 };
 window.voidSale=async function(id){
+  if(session?.role!=='owner'&&session?.role!=='manager'){ toast('Owner/Manager only','err'); return; }
   const s=await getShift(curShift);
   const idx=(s.sales||[]).findIndex(t=>t.id===id); if(idx<0) return;
   const t=s.sales[idx];
@@ -2013,8 +2015,9 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.0';
+const APP_VERSION='v4.1';
 const CHANGELOG=[
+  {v:'v4.1', date:'2026-06-28', notes:['POS Transactions: voiding a sale is now restricted to Owner and Manager accounts (staff can view sales but no longer see/use the void button)']},
   {v:'v4.0', date:'2026-06-27', notes:['Real POS sales ledger: every checkout is now a logged transaction you can review and VOID (voiding reverses the totals and returns stock)','Owner can Reset a shift\'s POS figures to clear old/test data','POS search has a clear (✕) button; fixed POS cart overflow on iPhone','Current date now shown in the header on phones','Business day now rolls over at local midnight (fixes early-morning sales landing on the wrong day)']},
   {v:'v3.9', date:'2026-06-27', notes:['Fixed input boxes overflowing the screen edge on iPhone (payment breakdown, forms, header)','Phones now stack all two-column forms and keep only the user + Close Shift chips in the header','Shift hand-off: starting cash now carries over automatically (morning→evening, and last night→next morning); each new day starts fresh']},
   {v:'v3.8', date:'2026-06-27', notes:['Mobile polish: full support for phones, Android tablets, and iPhone (notch/safe-area aware)','Modals and login now scroll within the screen on small devices and avoid the notch & home bar','Inputs no longer zoom the page on iPhone; bigger touch targets throughout','Tighter phone layouts: stacked dense forms and a compact header']},
