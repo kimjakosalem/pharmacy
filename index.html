@@ -73,9 +73,10 @@ button,.tab,.btn,.pin-key,.pay-mode-btn,.qty-btn,.shift-btn,.del-btn{touch-actio
 .dot-a{background:var(--amber)}
 .dot-r{background:var(--red)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-/* TABS */
-.tabs{display:flex;gap:2px;margin-bottom:14px;background:var(--bg2);padding:4px;border-radius:var(--r2);border:1px solid var(--border)}
-.tab{flex:1;padding:8px 4px;border:none;background:transparent;color:var(--text3);font-family:var(--sans);font-size:11px;font-weight:500;border-radius:7px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:4px}
+/* TABS — wraps onto a 2nd row instead of hiding labels or scrolling, so the name next to
+   each icon always stays visible (icons-only confused staff about which tab is which). */
+.tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px;background:var(--bg2);padding:4px;border-radius:var(--r2);border:1px solid var(--border)}
+.tab{flex:1 1 100px;max-width:160px;padding:8px 4px;border:none;background:transparent;color:var(--text3);font-family:var(--sans);font-size:11px;font-weight:500;border-radius:7px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap}
 .tab.active{background:var(--bg4);color:var(--teal);border:1px solid var(--border2)}
 .tab:hover:not(.active){color:var(--text2)}
 .tab i{font-size:14px}
@@ -144,6 +145,18 @@ select option{background:var(--bg3)}
 .ret-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
 .ret-row .rr-name{flex:1;min-width:0;font-size:12px}
 .ret-row .rr-name small{display:block;color:var(--text3);font-size:10px}
+.perm-pill{padding:5px 9px;border:1px solid var(--border);background:var(--bg3);color:var(--text3);font-family:var(--sans);font-size:10px;font-weight:600;border-radius:20px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all .15s}
+.perm-pill:hover{border-color:var(--border2);color:var(--text2)}
+.perm-pill.active{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
+.perm-pill.full{background:var(--purple-dim);border-color:var(--purple);color:var(--purple);cursor:default}
+.perm-pill i{font-size:11px}
+.sale-row{align-items:flex-start}
+.sale-items{display:flex;flex-direction:column;gap:2px}
+.sale-item-row{display:flex;align-items:baseline;gap:6px;font-size:11px;color:var(--text2);border-left:2px solid var(--border);padding-left:8px}
+.sale-item-row .si-name{flex:1;min-width:0}
+.sale-item-row .si-size{color:var(--text3)}
+.sale-item-row .si-qty{font-family:var(--mono);color:var(--text3);flex-shrink:0}
+.sale-amt-col{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;margin-left:8px}
 .btn-ghost{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
 .btn-ghost:hover{border-color:var(--border2);color:var(--text)}
 .btn-red{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}
@@ -328,7 +341,6 @@ select option{background:var(--bg3)}
   .cart-panel{position:static;max-height:none}
   .fg2,.fg3,.fg4,.m4,.m3{grid-template-columns:1fr 1fr}
   .pay-grid{grid-template-columns:1fr 1fr}
-  .tab span{display:none}
   .hright .pill:first-child{display:none}
 }
 /* Phones */
@@ -356,9 +368,6 @@ select option{background:var(--bg3)}
   .cart-total-val{font-size:18px}
 }
 /* ── Tablet / touch polish ── */
-.tabs{overflow-x:auto;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-.tab{flex:1 0 auto}
 .hright{flex-wrap:wrap;justify-content:flex-end}
 /* Portrait-tablet: give the product catalog more room by slimming the cart */
 @media(min-width:701px) and (max-width:860px){
@@ -667,17 +676,19 @@ select option{background:var(--bg3)}
         <div class="field"><label>Starting Cash (PHP)</label><input type="number" id="startCash" placeholder="0.00" step="0.01" oninput="queueSave()"></div>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="cashInCard">
       <div class="card-title"><i class="ti ti-circle-plus"></i> During-Shift Cash Ins</div>
+      <div class="infonote" id="ciPermNote" style="display:none"><i class="ti ti-lock"></i> You don't have the <strong>Cash In/Out</strong> privilege — ask the owner to grant it in Settings.</div>
       <div class="fg fg2">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="ciAmt" placeholder="0.00" step="0.01"></div>
         <div class="field"><label>Reason</label><input type="text" id="ciNote" placeholder="e.g. added float" onkeydown="if(event.key==='Enter')addCI()"></div>
       </div>
-      <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="addCI()"><i class="ti ti-plus"></i> Add</button></div>
+      <div class="btn-row"><button class="btn btn-ghost btn-sm" id="ciAddBtn" onclick="addCI()"><i class="ti ti-plus"></i> Add</button></div>
       <div class="elist" id="ciList"></div>
     </div>
-    <div class="card">
+    <div class="card" id="cashOutCard">
       <div class="card-title"><i class="ti ti-circle-minus"></i> Cash Outs / Expenses</div>
+      <div class="infonote" id="coPermNote" style="display:none"><i class="ti ti-lock"></i> You don't have the <strong>Cash In/Out</strong> privilege — ask the owner to grant it in Settings.</div>
       <div class="fg fg3">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="coAmt" placeholder="0.00" step="0.01"></div>
         <div class="field"><label>Type</label>
@@ -689,7 +700,7 @@ select option{background:var(--bg3)}
         <div class="field"><label>Description</label><input type="text" id="coNote" placeholder="Details..." onkeydown="if(event.key==='Enter')addCO()"></div>
       </div>
       <div class="infonote" id="stockNote" style="display:none"><i class="ti ti-info-circle"></i> <strong>Personal Stock Use</strong> is a non-cash inventory expense — not deducted from drawer, but tracked separately in reports.</div>
-      <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="addCO()"><i class="ti ti-plus"></i> Add</button></div>
+      <div class="btn-row"><button class="btn btn-ghost btn-sm" id="coAddBtn" onclick="addCO()"><i class="ti ti-plus"></i> Add</button></div>
       <div class="elist" id="coList"></div>
     </div>
     <div class="card">
@@ -721,7 +732,7 @@ select option{background:var(--bg3)}
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-arrow-back-up"></i> Returns &amp; Exchanges <span id="returnsCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
-        <button class="btn btn-amber btn-xs" style="margin-left:8px" onclick="openReturn()"><i class="ti ti-plus"></i> New</button>
+        <button class="btn btn-amber btn-xs" id="newReturnBtn" style="margin-left:8px" onclick="openReturn()"><i class="ti ti-plus"></i> New</button>
       </div>
       <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Refund a sale, return items to stock, or exchange for other items. Cash refunds reduce the drawer.</div>
       <div class="elist" style="max-height:240px" id="returnsList"></div>
@@ -987,7 +998,7 @@ select option{background:var(--bg3)}
   <div class="panel" id="panel-settings">
     <div class="card">
       <div class="card-title"><i class="ti ti-users"></i> Staff &amp; PINs</div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">Each PIN unlocks the app at its role. Only <strong style="color:var(--teal)">owner</strong> can see Reports &amp; Settings.</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">Each PIN unlocks the app at its role. Only <strong style="color:var(--teal)">owner</strong> can see Reports &amp; Settings. Tap the pills under a manager/staff member to grant or withdraw individual privileges — owner always has full access.</div>
       <div class="fg fg3">
         <div class="field"><label>Name</label><input type="text" id="stName" placeholder="e.g. Maria"></div>
         <div class="field"><label>Role</label>
@@ -1137,17 +1148,39 @@ function toast(msg,type='info'){ const el=document.getElementById('toast'); el.t
 let staffList=[], session=null;      // session = {name, role, shift}
 let pendingUser=null, loginBuf='', loginShift=1;
 
+// Per-staff privilege toggles (in addition to role). Owner always has everything; for
+// manager/staff these are individually grantable so the pharmacy owner can decide e.g.
+// "this staff member can do returns but not void sales" without changing their role.
+const PERMS=[
+  {key:'cashio',label:'Cash In/Out',icon:'ti-cash'},
+  {key:'void',label:'Void Sales',icon:'ti-circle-x'},
+  {key:'returns',label:'Returns/Exchange',icon:'ti-arrow-back-up'}
+];
+// Defaults preserve pre-existing behavior: manager had everything, staff had nothing,
+// before this per-staff toggle existed. Owner's perms are ignored (always full) but we
+// still store true/true/true so the data is self-describing.
+function normStaff(s){
+  const def = s.role==='staff' ? false : true;
+  const p=s.perms||{};
+  return Object.assign({},s,{perms:{
+    cashio: p.cashio!==undefined?!!p.cashio:def,
+    void: p.void!==undefined?!!p.void:def,
+    returns: p.returns!==undefined?!!p.returns:def
+  }});
+}
+function hasPerm(key){ return session?.role==='owner' || !!(session?.perms && session.perms[key]); }
+
 async function loadStaff(){
   const ref=doc(db,'config','staff');
   try{ const c=await getDocFromCache(ref); if(c.exists() && c.data()?.value?.length){
-    staffList=c.data().value;
+    staffList=c.data().value.map(normStaff);
     // Stale-while-revalidate: refresh the roster from the server in the background so a
     // staff name added/edited on another device shows up here (was frozen to cache before).
     const startedAt=Date.now();
     getDoc(ref).then(s=>{ const v=s.exists()?s.data()?.value:null;
       if((lastLocalWrite['config/staff']||0)>=startedAt) return;
       if(Array.isArray(v)&&v.length&&JSON.stringify(v)!==JSON.stringify(staffList)){
-        staffList=v; try{ if(typeof renderStaff==='function')renderStaff(); }catch(_){}
+        staffList=v.map(normStaff); try{ if(typeof renderStaff==='function')renderStaff(); }catch(_){}
       }
     }).catch(()=>{});
     return; } }
@@ -1160,10 +1193,10 @@ async function loadStaff(){
     // for "no roster configured" and wipe the real staff list in Firestore.
     staffList=[]; return;
   }
-  if(snap.exists() && snap.data()?.value?.length){ staffList=snap.data().value; return; }
+  if(snap.exists() && snap.data()?.value?.length){ staffList=snap.data().value.map(normStaff); return; }
   // Confirmed via a live server round-trip that no roster exists yet — safe to seed.
   const legacy=await fsGet('config','pin');
-  staffList=[{id:'owner',name:'Owner',role:'owner',pin:legacy?.value||'1234'}];
+  staffList=[{id:'owner',name:'Owner',role:'owner',pin:legacy?.value||'1234',perms:{cashio:true,void:true,returns:true}}];
   await fsSet('config','staff',{value:staffList});
 }
 async function saveStaff(){ await fsSet('config','staff',{value:staffList}); }
@@ -1229,7 +1262,7 @@ window.startSession=async function(){
   } else if(isNaN(cash)||cash<0){
     toast('Enter starting cash','err'); return;   // first login of the shift requires it
   }
-  session={name:pendingUser.name,role:pendingUser.role,shift:loginShift};
+  session={name:pendingUser.name,role:pendingUser.role,shift:loginShift,perms:pendingUser.perms||{}};
   if(!s.cashier) s.cashier=session.name;
   if(!s.startCash) s.startCash=cash;
   await persistShift(curShift);
@@ -1249,6 +1282,16 @@ function applyRole(){
   document.getElementById('closeShiftBtn').style.display = session?'inline-flex':'none';
   document.getElementById('logoutBtn').style.display = session?'inline-flex':'none';
   if(session){ document.getElementById('userName').textContent=session.name; document.getElementById('userRole').textContent=session.role; }
+  applyPermUI();
+}
+// Grey out + disable Cash In/Out for whoever doesn't have the 'cashio' permission. Defense
+// in depth — addCI/addCO/removeCI/removeCO also re-check hasPerm() before writing.
+function applyPermUI(){
+  const can=hasPerm('cashio');
+  ['ciAmt','ciNote','coAmt','coType','coNote','ciAddBtn','coAddBtn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=!can; });
+  ['cashInCard','cashOutCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.opacity=can?'1':'.55'; });
+  ['ciPermNote','coPermNote'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=can?'none':'block'; });
+  const newRetBtn=document.getElementById('newReturnBtn'); if(newRetBtn) newRetBtn.style.display=hasPerm('returns')?'inline-flex':'none';
 }
 // Logout = switch account mid-shift. The shift stays OPEN (data is in Firestore); the next
 // person logs in and — because starting cash is already set — won't be asked for it again.
@@ -1291,7 +1334,24 @@ window.finishShift=async function(){
 // ── Staff management (Settings, owner-only) ──
 window.renderStaff=function(){
   const el=document.getElementById('staffList'); if(!el) return;
-  el.innerHTML=staffList.map((s,i)=>`<div class="eitem"><div><div class="el"><span class="tag-purple">${s.role}</span>${s.name}</div><div class="ed">PIN ${s.pin}</div></div><button class="del-btn" onclick="delStaff(${i})"><i class="ti ti-x"></i></button></div>`).join('')||'<div class="empty">No staff yet</div>';
+  el.innerHTML=staffList.map((s,i)=>{
+    const isOwner=s.role==='owner';
+    const pills=isOwner
+      ? `<span class="perm-pill full"><i class="ti ti-shield-check"></i> Full Access</span>`
+      : PERMS.map(p=>`<button class="perm-pill${s.perms&&s.perms[p.key]?' active':''}" onclick="togglePerm(${i},'${p.key}')" title="Toggle ${p.label}"><i class="${p.icon}"></i> ${p.label}</button>`).join('');
+    return `<div class="eitem" style="flex-direction:column;align-items:stretch;gap:7px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div class="el"><span class="tag-purple">${s.role}</span>${s.name}</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0"><span class="ed">PIN ${s.pin}</span><button class="del-btn" onclick="delStaff(${i})"><i class="ti ti-x"></i></button></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${pills}</div>
+    </div>`;
+  }).join('')||'<div class="empty">No staff yet</div>';
+};
+window.togglePerm=async function(i,key){
+  const s=staffList[i]; if(!s || s.role==='owner') return;   // owner is always full access — not toggleable
+  s.perms=s.perms||{}; s.perms[key]=!s.perms[key];
+  await saveStaff(); renderStaff();
 };
 window.addStaff=async function(){
   const name=document.getElementById('stName').value.trim();
@@ -1301,7 +1361,7 @@ window.addStaff=async function(){
   if(!name){ msg.style.color='var(--red)'; msg.textContent='Enter a name'; return; }
   if(!/^\d{4}$/.test(pin)){ msg.style.color='var(--red)'; msg.textContent='PIN must be 4 digits'; return; }
   if(staffList.some(s=>s.pin===pin)){ msg.style.color='var(--red)'; msg.textContent='PIN already in use'; return; }
-  staffList.push({id:'st_'+Date.now(),name,role,pin});
+  staffList.push(normStaff({id:'st_'+Date.now(),name,role,pin}));
   await saveStaff(); renderStaff();
   document.getElementById('stName').value=''; document.getElementById('stPin').value='';
   msg.style.color='var(--teal)'; msg.textContent='Staff added'; setTimeout(()=>msg.textContent='',2500);
@@ -1396,23 +1456,31 @@ window.updatePaySum=function(){
 };
 
 window.addCI=async function(){
+  if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
   const amt=parseFloat(document.getElementById('ciAmt').value); if(!amt){toast('Enter amount','err');return;}
   const s=await getShift(curShift); s.cashIns.push({amount:amt,note:document.getElementById('ciNote').value,time:tnow()});
   document.getElementById('ciAmt').value=''; document.getElementById('ciNote').value=''; await persistShift(curShift); renderCI();
 };
-window.removeCI=async function(i){ const s=await getShift(curShift); s.cashIns.splice(i,1); await persistShift(curShift); renderCI(); };
+window.removeCI=async function(i){
+  if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
+  const s=await getShift(curShift); s.cashIns.splice(i,1); await persistShift(curShift); renderCI();
+};
 async function renderCI(){
   const s=await getShift(curShift); const el=document.getElementById('ciList');
   if(!s.cashIns.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
   el.innerHTML=s.cashIns.map((c,i)=>`<div class="eitem"><div><div class="el">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span><button class="del-btn" onclick="removeCI(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
 }
 window.addCO=async function(){
+  if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
   const amt=parseFloat(document.getElementById('coAmt').value); if(!amt){toast('Enter amount','err');return;}
   const type=document.getElementById('coType').value;
   const s=await getShift(curShift); s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow()});
   document.getElementById('coAmt').value=''; document.getElementById('coNote').value=''; await persistShift(curShift); renderCO();
 };
-window.removeCO=async function(i){ const s=await getShift(curShift); s.cashOuts.splice(i,1); await persistShift(curShift); renderCO(); };
+window.removeCO=async function(i){
+  if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
+  const s=await getShift(curShift); s.cashOuts.splice(i,1); await persistShift(curShift); renderCO();
+};
 async function renderCO(){
   const s=await getShift(curShift); const el=document.getElementById('coList');
   if(!s.cashOuts.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
@@ -1438,10 +1506,23 @@ async function renderSales(){
   const sales=(s.sales||[]);
   document.getElementById('salesCount').textContent = sales.length+(sales.length===1?' sale':' sales');
   if(!sales.length){ el.innerHTML='<div class="empty"><i class="ti ti-receipt"></i>No sales yet this shift</div>'; return; }
-  const canVoid=session?.role==='owner'||session?.role==='manager';
+  const canVoid=hasPerm('void');
+  // One row per item (instead of a single run-on comma string) so transactions with many
+  // different products stay readable instead of wrapping into a dense unbroken paragraph.
   el.innerHTML=[...sales].reverse().map(t=>{
-    const items=(t.items||[]).map(it=>`${it.name}${it.size?' ('+it.size+')':''} ×${it.qty}`).join(', ');
-    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${items||'Sale'} <span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span></div><div class="ed">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</div></div><div style="display:flex;align-items:center"><span class="eval c-tel">${fmt(t.total)}</span>${canVoid?`<button class="del-btn" title="Void this sale" onclick="voidSale('${t.id}')"><i class="ti ti-x"></i></button>`:''}</div></div>`;
+    const itemRows=(t.items||[]).length
+      ? (t.items||[]).map(it=>`<div class="sale-item-row"><span class="si-name">${it.name}${it.size?' <span class="si-size">('+it.size+')</span>':''}</span><span class="si-qty">×${it.qty}</span></div>`).join('')
+      : `<div class="sale-item-row" style="color:var(--text3)">Sale</div>`;
+    return `<div class="eitem sale-row">
+      <div style="flex:1;min-width:0">
+        <div class="el" style="margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span><span class="ed" style="margin:0">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</span></div>
+        <div class="sale-items">${itemRows}</div>
+      </div>
+      <div class="sale-amt-col">
+        <span class="eval c-tel">${fmt(t.total)}</span>
+        ${canVoid?`<button class="del-btn" title="Void this sale" onclick="voidSale('${t.id}')"><i class="ti ti-x"></i></button>`:''}
+      </div>
+    </div>`;
   }).join('');
 }
 window.resetPosSales=async function(){
@@ -1455,7 +1536,7 @@ window.resetPosSales=async function(){
   toast('POS sales reset for this shift','ok');
 };
 window.voidSale=async function(id){
-  if(session?.role!=='owner'&&session?.role!=='manager'){ toast('Owner/Manager only','err'); return; }
+  if(!hasPerm('void')){ toast('No permission to void sales','err'); return; }
   const s=await getShift(curShift);
   const idx=(s.sales||[]).findIndex(t=>t.id===id); if(idx<0) return;
   const t=s.sales[idx];
@@ -1483,7 +1564,7 @@ window.voidSale=async function(id){
 // retState.returnItems: [{prodId,name,size,packaging,price,qty,max}]  (items the customer gives back)
 // retState.newItems:    [{prodId,name,size,packaging,price,qty}]      (replacement items, exchange only)
 let retState={ sale:null, returnItems:[], newItems:[] };
-function canRefund(){ return !!session; }   // any logged-in role (incl. counter staff)
+function canRefund(){ return hasPerm('returns'); }
 
 async function renderReturns(){
   const el=document.getElementById('returnsList'); if(!el) return;
@@ -1502,7 +1583,7 @@ async function renderReturns(){
 }
 
 window.openReturn=async function(){
-  if(!canRefund()){ toast('Owner/Manager only','err'); return; }
+  if(!canRefund()){ toast('No permission for Returns/Exchange','err'); return; }
   retState={ sale:null, returnItems:[], newItems:[] };
   const s=await getShift(curShift);
   const sel=document.getElementById('retSaleSel');
@@ -1601,7 +1682,7 @@ function renderReturnSummary(){
 }
 
 window.confirmReturn=async function(){
-  if(!canRefund()){ toast('Owner/Manager only','err'); return; }
+  if(!canRefund()){ toast('No permission for Returns/Exchange','err'); return; }
   const {returnValue,newValue,net,exchange}=retValues();
   const retItems=retState.returnItems.filter(it=>it.qty>0);
   if(!retItems.length){ toast('Select at least one item to return','err'); return; }
@@ -2398,8 +2479,14 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.3';
+const APP_VERSION='v4.31';
 const CHANGELOG=[
+  {v:'v4.31', date:'2026-06-29', notes:[
+    'Settings: each staff member now has individual privilege pills — Cash In/Out, Void Sales, Returns/Exchange — that the owner can toggle on or off per person (instead of privileges being fixed by role)',
+    'Manager keeps all privileges by default and Staff starts with none, but the owner can adjust either at any time',
+    'Cash In/Out forms now show a lock note and grey out if the logged-in person lacks that privilege',
+    'Tab bar now always shows the tab names next to the icons (tablets were showing icons only, which confused staff about which tab was which) — wraps onto a 2nd row instead of hiding text or scrolling',
+    'POS Transactions: each sale now lists its items one per line instead of one run-on line, so multi-item sales stay readable']},
   {v:'v4.3', date:'2026-06-29', notes:[
     'Returns / Refunds / Exchanges can now be done by counter staff too (no longer Owner/Manager only)',
     'New Logout button in the header — switch accounts mid-shift without closing the shift',
