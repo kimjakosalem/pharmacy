@@ -450,7 +450,7 @@ select option{background:var(--bg3)}
       <button class="shift-btn active" id="ls1" onclick="selLoginShift(1)" style="flex-direction:column;gap:3px;padding:10px 6px;min-width:0"><span style="display:flex;align-items:center;gap:6px"><i class="ti ti-sun"></i> Morning</span><span style="font-size:9px;opacity:.6">7AM-3PM</span></button>
       <button class="shift-btn" id="ls2" onclick="selLoginShift(2)" style="flex-direction:column;gap:3px;padding:10px 6px;min-width:0"><span style="display:flex;align-items:center;gap:6px"><i class="ti ti-moon"></i> Evening</span><span style="font-size:9px;opacity:.6">3PM-11PM</span></button>
     </div>
-    <div class="field"><label>Starting Cash (PHP)</label><input type="number" id="loginCash" placeholder="0.00" step="0.01" inputmode="decimal"></div>
+    <div id="loginCashWrap"><div class="field"><label>Starting Cash (PHP)</label><input type="number" id="loginCash" placeholder="0.00" step="0.01" inputmode="decimal"></div></div>
     <div id="loginCashNote" style="font-size:10px;color:var(--teal);margin-top:5px;display:none"></div>
     <div class="btn-row" style="margin-top:14px">
       <button class="btn btn-teal" style="flex:1" onclick="startSession()"><i class="ti ti-lock-open"></i> Unlock</button>
@@ -616,6 +616,15 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- View saved PO itemization -->
+<div class="modal-overlay" id="poViewModal">
+  <div class="modal" style="width:480px;max-width:96vw">
+    <h3 id="poViewTitle" style="color:var(--teal)">Purchase Order</h3>
+    <div id="poViewBody" style="margin:14px 0"></div>
+    <div class="btn-row"><button class="btn btn-ghost" style="flex:1" onclick="closePoView()">Close</button></div>
+  </div>
+</div>
+
 <div class="app"><div class="app-inner">
   <div class="header">
     <div class="logo">
@@ -627,6 +636,7 @@ select option{background:var(--bg3)}
     </div>
     <div class="hright">
       <div class="pill" id="userChip" style="display:none;gap:6px"><i class="ti ti-user-circle"></i><span id="userName"></span><span id="userRole" style="color:var(--teal);text-transform:uppercase;font-size:9px;font-weight:700;letter-spacing:.05em"></span></div>
+      <button class="btn btn-ghost btn-xs" id="logoutBtn" onclick="logout()" style="display:none" title="Switch account — keeps the shift open"><i class="ti ti-switch-horizontal"></i> Logout</button>
       <button class="btn btn-ghost btn-xs" id="closeShiftBtn" onclick="openCloseShift()" style="display:none"><i class="ti ti-logout"></i> Close Shift</button>
       <div class="pill" id="datePill"></div>
       <div class="pill" id="syncPill"><span class="dot dot-a" id="syncDot"></span><span id="syncTxt">Connecting...</span></div>
@@ -713,7 +723,7 @@ select option{background:var(--bg3)}
       <div class="card-title"><i class="ti ti-arrow-back-up"></i> Returns &amp; Exchanges <span id="returnsCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
         <button class="btn btn-amber btn-xs" style="margin-left:8px" onclick="openReturn()"><i class="ti ti-plus"></i> New</button>
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Refund a sale, return items to stock, or exchange for other items. Owner/Manager only — cash refunds reduce the drawer.</div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Refund a sale, return items to stock, or exchange for other items. Cash refunds reduce the drawer.</div>
       <div class="elist" style="max-height:240px" id="returnsList"></div>
     </div>
     <div class="card">
@@ -868,7 +878,7 @@ select option{background:var(--bg3)}
         <span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400" id="prodCount"></span>
       </div>
       <div style="margin-bottom:8px">
-        <input type="text" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;width:100%;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
+        <input type="text" id="prodFilterBox" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;width:100%;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
       </div>
       <div class="scroll-pan-x" style="overflow-x:auto">
         <table class="prod-table" id="prodTable">
@@ -880,13 +890,14 @@ select option{background:var(--bg3)}
           <tbody id="prodTbody"></tbody>
         </table>
       </div>
+      <div id="prodPagination"></div>
     </div>
   </div>
 
   <!-- ═══ ORDERS ═══ -->
   <div class="panel" id="panel-orders">
     <div class="card">
-      <div class="card-title"><i class="ti ti-settings"></i> Order Settings <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">one supplier per order</span></div>
+      <div class="card-title"><i class="ti ti-settings"></i> Create Order <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">one supplier per order</span></div>
       <div class="fg fg2" style="margin-bottom:9px">
         <div class="field"><label><i class="ti ti-building-store" style="font-size:12px"></i> Supplier (this order)</label><input type="text" id="orderSupplierInput" list="supplierList" placeholder="Search or type supplier..." autocomplete="off" oninput="setOrderSupplier(this.value)"></div>
         <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001"></div>
@@ -895,17 +906,15 @@ select option{background:var(--bg3)}
         <div class="field"><label>Order Date</label><input type="date" id="poDate"></div>
         <div class="field"><label>Notes / Terms</label><input type="text" id="poNotes" placeholder="e.g. Please deliver within 3 days"></div>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-title"><i class="ti ti-plus"></i> Add Any Product to Order</div>
+      <div class="sep"></div>
+      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px"><i class="ti ti-plus" style="font-size:11px"></i> ADD PRODUCT TO ORDER</div>
       <div class="fg fg2">
         <div class="field"><label>Search Product</label><div class="search-wrap"><input type="text" id="orderSearch" placeholder="Type name or SKU..." oninput="renderOrderSearch()"><button class="search-clear" id="orderSearchClear" onclick="clearOrderSearch()" title="Clear">&#x2715;</button></div></div><datalist id="supplierList"></datalist>
         <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="renderOrderSearch()"><i class="ti ti-search"></i> Search</button></div>
       </div>
       <div id="orderSearchResults" style="margin-top:8px"></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><i class="ti ti-shopping-bag"></i> Order List <span id="orderItemCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span></div>
+      <div class="sep"></div>
+      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center"><i class="ti ti-shopping-bag" style="font-size:11px;margin-right:4px"></i> ORDER LIST <span id="orderItemCount" style="margin-left:auto;font-weight:400;color:var(--text3)"></span></div>
       <div id="orderList"></div>
       <div id="orderEmpty" class="empty" style="display:none"><i class="ti ti-clipboard-list"></i>No items in order yet</div>
     </div>
@@ -1186,12 +1195,16 @@ window.selLoginShift=async function(n){
   // If this shift's starting cash was already logged earlier today, don't make
   // the next staff re-enter it — prefill and mark optional.
   const s=await getShift(n);
-  const cash=document.getElementById('loginCash'), note=document.getElementById('loginCashNote');
+  const cash=document.getElementById('loginCash'), note=document.getElementById('loginCashNote'), wrap=document.getElementById('loginCashWrap');
   if((s.startCash||0)>0){
-    cash.value=s.startCash; cash.placeholder='already logged';
-    note.textContent=`Starting cash already logged for this shift (${fmt(s.startCash)}) — optional.`;
+    // Shift already open today — DON'T ask for starting cash again (re-entering a different
+    // amount would corrupt the drawer reconciliation). Hide the field; reuse the logged value.
+    cash.value=s.startCash;
+    wrap.style.display='none';
+    note.innerHTML=`<i class="ti ti-lock" style="font-size:11px"></i> Shift already open — starting cash ${fmt(s.startCash)} (kept).`;
     note.style.display='block';
   } else {
+    wrap.style.display='block';
     // Not started yet — carry over the leftover "next shift cash" from the previous shift.
     // Evening ← this morning's leftover; Morning ← last night's evening leftover (new day = fresh shift).
     let prev=0, label='';
@@ -1234,8 +1247,17 @@ function applyRole(){
   document.getElementById('tab-settings').style.display = owner?'':'none';
   document.getElementById('userChip').style.display = session?'flex':'none';
   document.getElementById('closeShiftBtn').style.display = session?'inline-flex':'none';
+  document.getElementById('logoutBtn').style.display = session?'inline-flex':'none';
   if(session){ document.getElementById('userName').textContent=session.name; document.getElementById('userRole').textContent=session.role; }
 }
+// Logout = switch account mid-shift. The shift stays OPEN (data is in Firestore); the next
+// person logs in and — because starting cash is already set — won't be asked for it again.
+window.logout=function(){
+  session=null; pendingUser=null;
+  applyRole();
+  backToPin();                                   // reset login overlay to the PIN step
+  document.getElementById('loginOverlay').classList.add('show');
+};
 window.openReports=function(){ if(session?.role==='owner') switchTab('reports'); };
 
 // ── End-of-shift closure wizard (forced before logout) ──
@@ -1461,7 +1483,7 @@ window.voidSale=async function(id){
 // retState.returnItems: [{prodId,name,size,packaging,price,qty,max}]  (items the customer gives back)
 // retState.newItems:    [{prodId,name,size,packaging,price,qty}]      (replacement items, exchange only)
 let retState={ sale:null, returnItems:[], newItems:[] };
-function canRefund(){ return session?.role==='owner'||session?.role==='manager'; }
+function canRefund(){ return !!session; }   // any logged-in role (incl. counter staff)
 
 async function renderReturns(){
   const el=document.getElementById('returnsList'); if(!el) return;
@@ -1638,7 +1660,7 @@ function calcShift(s){
 // ═══════════════════════════════════════
 // ── PRODUCTS ──
 // ═══════════════════════════════════════
-let allProducts=[], allProductsFull={}, editingProdId=null, productPageIndex=0, pageSize=50;
+let allProducts=[], allProductsFull={}, editingProdId=null, productPageIndex=0, pageSize=50, productView=[];
 
 // OPTIMIZED: Load lightweight index only (name, SKU, price, ID)
 async function loadProducts(){
@@ -1656,10 +1678,11 @@ async function loadProducts(){
   }));
   // Store full versions in object for on-demand fetching
   rawProducts.forEach(p=>allProductsFull[p.id]=p);
-  productPageIndex=0;
-  renderProductTable(allProducts.slice(0,pageSize));
+  productPageIndex=0; productView=allProducts;
+  // Preserve an active filter across reloads (e.g. after editing a product while filtering)
+  const fb=document.getElementById('prodFilterBox');
+  if(fb && fb.value.trim()){ filterProducts(fb.value); } else { renderProducts(); }
   document.getElementById('prodCount').textContent=allProducts.length+' products';
-  renderPaginationControls();
   populateCategoryList();
 }
 // ── Categories & Suppliers databases (config/categories, config/suppliers) ──
@@ -1684,7 +1707,7 @@ window.renderCatSup=function(){ renderCategoriesDb(); renderSuppliersDb(); };
 function renderCategoriesDb(){
   const el=document.getElementById('catDbList'); if(!el)return;
   if(!categories.length){ el.innerHTML='<div class="empty" style="padding:10px">No categories yet</div>'; return; }
-  el.innerHTML=categories.map((c,i)=>`<div class="eitem"><div class="el" style="flex:1">${c.name}</div><div style="display:flex;align-items:center;gap:5px"><select onchange="updateCategory(${i},'mode',this.value)" style="background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:10px;padding:4px 5px;border-radius:5px;outline:none"><option value="markup"${c.mode!=='margin'?' selected':''}>mk</option><option value="margin"${c.mode==='margin'?' selected':''}>mg</option></select><input type="number" value="${c.value||0}" step="0.1" onchange="updateCategory(${i},'value',this.value)" style="width:56px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 6px;border-radius:5px;outline:none"><span style="font-size:10px;color:var(--text3)">%</span><button class="del-btn" onclick="delCategory(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
+  el.innerHTML=categories.map((c,i)=>`<div class="eitem"><div class="el" style="flex:1">${c.name}</div><div style="display:flex;align-items:center;gap:5px"><select onchange="updateCategory(${i},'mode',this.value)" style="background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:10px;padding:4px 5px;border-radius:5px;outline:none"><option value="markup"${c.mode!=='margin'?' selected':''}>Markup</option><option value="margin"${c.mode==='margin'?' selected':''}>Margin</option></select><input type="number" value="${c.value||0}" step="0.1" onchange="updateCategory(${i},'value',this.value)" style="width:56px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 6px;border-radius:5px;outline:none"><span style="font-size:10px;color:var(--text3)">%</span><button class="del-btn" onclick="delCategory(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
 }
 function renderSuppliersDb(){
   const el=document.getElementById('supDbList'); if(!el)return;
@@ -1771,57 +1794,32 @@ function renderProductTable(prods){
   }).join('');
 }
 
-function renderPaginationControls(){
-  const totalPages=Math.ceil(allProducts.length/pageSize);
-  const container=document.getElementById('prodTbody').parentElement.parentElement;
-  let paginationHtml=`<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;padding:12px;border-top:1px solid var(--border)">`;
-  if(productPageIndex>0) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="prevProductPage()"><i class="ti ti-arrow-left"></i> Prev</button>`;
-  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4"><i class="ti ti-arrow-left"></i> Prev</button>`;
-  paginationHtml+=`<span style="font-size:11px;color:var(--text3)">Page ${productPageIndex+1} of ${totalPages}</span>`;
-  if(productPageIndex<totalPages-1) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="nextProductPage()">Next <i class="ti ti-arrow-right"></i></button>`;
-  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4">Next <i class="ti ti-arrow-right"></i></button>`;
-  paginationHtml+=`</div>`;
-  const existing=container.querySelector('[data-pagination]');
-  if(existing)existing.outerHTML=paginationHtml;
-  else{const div=document.createElement('div');div.setAttribute('data-pagination','');div.innerHTML=paginationHtml;container.appendChild(div);}
+// Single source of truth for the product table + its pagination. Pages over `productView`
+// (the active list — all products, or the current filter) and writes the controls into the
+// fixed #prodPagination container. (Old bug: filterProducts replaced the marker node with an
+// unmarked one, so later renders kept APPENDING new pagination bars → stacks of arrows.)
+function renderProducts(){
+  const total=productView.length;
+  const totalPages=Math.max(1,Math.ceil(total/pageSize));
+  productPageIndex=Math.min(Math.max(0,productPageIndex),totalPages-1);
+  const start=productPageIndex*pageSize;
+  renderProductTable(productView.slice(start,start+pageSize));
+  const el=document.getElementById('prodPagination'); if(!el) return;
+  if(total<=pageSize){ el.innerHTML=''; return; }
+  const prevDis=productPageIndex<=0?'disabled style="opacity:.4"':'';
+  const nextDis=productPageIndex>=totalPages-1?'disabled style="opacity:.4"':'';
+  el.innerHTML=`<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;padding:12px;border-top:1px solid var(--border)">
+    <button class="btn btn-ghost btn-sm" onclick="prevProductPage()" ${prevDis}><i class="ti ti-arrow-left"></i> Prev</button>
+    <span style="font-size:11px;color:var(--text3)">Page ${productPageIndex+1} of ${totalPages}</span>
+    <button class="btn btn-ghost btn-sm" onclick="nextProductPage()" ${nextDis}>Next <i class="ti ti-arrow-right"></i></button>
+  </div>`;
 }
-
-window.nextProductPage=function(){
-  const totalPages=Math.ceil(allProducts.length/pageSize);
-  if(productPageIndex<totalPages-1){
-    productPageIndex++;
-    const start=productPageIndex*pageSize;
-    renderProductTable(allProducts.slice(start,start+pageSize));
-    renderPaginationControls();
-    document.querySelector('.prod-table').scrollIntoView({behavior:'smooth'});
-  }
-};
-
-window.prevProductPage=function(){
-  if(productPageIndex>0){
-    productPageIndex--;
-    const start=productPageIndex*pageSize;
-    renderProductTable(allProducts.slice(start,start+pageSize));
-    renderPaginationControls();
-    document.querySelector('.prod-table').scrollIntoView({behavior:'smooth'});
-  }
-};
-
+window.nextProductPage=function(){ productPageIndex++; renderProducts(); document.querySelector('.prod-table')?.scrollIntoView({behavior:'smooth'}); };
+window.prevProductPage=function(){ productPageIndex--; renderProducts(); document.querySelector('.prod-table')?.scrollIntoView({behavior:'smooth'}); };
 window.filterProducts=function(q){
-  const filtered=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q.toLowerCase())||(p.sku||'').toLowerCase().includes(q.toLowerCase())||(p.category||'').toLowerCase().includes(q.toLowerCase()));
-  productPageIndex=0; // Reset to first page on filter
-  renderProductTable(filtered.slice(0,pageSize));
-  // Update pagination for filtered results
-  const totalPages=Math.ceil(filtered.length/pageSize);
-  const container=document.querySelector('[data-pagination]');
-  let paginationHtml=`<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;padding:12px;border-top:1px solid var(--border)">`;
-  if(productPageIndex>0) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="prevProductPage()"><i class="ti ti-arrow-left"></i> Prev</button>`;
-  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4"><i class="ti ti-arrow-left"></i> Prev</button>`;
-  paginationHtml+=`<span style="font-size:11px;color:var(--text3)">Page ${productPageIndex+1} of ${totalPages || 1}</span>`;
-  if(productPageIndex<totalPages-1) paginationHtml+=`<button class="btn btn-ghost btn-sm" onclick="nextProductPage()">Next <i class="ti ti-arrow-right"></i></button>`;
-  else paginationHtml+=`<button class="btn btn-ghost btn-sm" disabled style="opacity:0.4">Next <i class="ti ti-arrow-right"></i></button>`;
-  paginationHtml+=`</div>`;
-  if(container) container.outerHTML=paginationHtml;
+  const s=(q||'').trim().toLowerCase();
+  productView=!s?allProducts:allProducts.filter(p=>(p.name||'').toLowerCase().includes(s)||(p.sku||'').toLowerCase().includes(s)||(p.category||'').toLowerCase().includes(s));
+  productPageIndex=0; renderProducts();
 };
 
 window.calcMargin=function(){
@@ -2040,6 +2038,7 @@ function renderCart(){
         <button class="qty-btn" onclick="changeQty(${i},1)">+</button>
       </div>
       <div class="ci-total">${fmt(item.price*item.qty)}</div>
+      <button class="del-btn" onclick="removeCartItem(${i})" title="Remove item"><i class="ti ti-x"></i></button>
     </div>`).join('');
   const sub=cartSubtotal(), disc=discountAmount(sub), total=sub-disc;
   if(cartDiscount && disc>0){
@@ -2065,6 +2064,7 @@ window.changeQty=function(i,d){
   renderCart();
 };
 window.clearCart=function(){ cart=[]; renderCart(); };
+window.removeCartItem=function(i){ cart.splice(i,1); renderCart(); };
 
 // ── Reusable numpad (cart qty + cash tendered) ──
 let npBuf='', npMode='qty', npCtx=null;
@@ -2398,8 +2398,17 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.2';
+const APP_VERSION='v4.3';
 const CHANGELOG=[
+  {v:'v4.3', date:'2026-06-29', notes:[
+    'Returns / Refunds / Exchanges can now be done by counter staff too (no longer Owner/Manager only)',
+    'New Logout button in the header — switch accounts mid-shift without closing the shift',
+    'Login: once a shift is open, the next person is no longer asked for starting cash again (prevents accidentally changing the drawer figure)',
+    'Fixed: searching the Product Inventory no longer stacks multiple page-arrow bars',
+    'Orders tab: the order settings, product search, and order list are now one combined card; changing an item\'s quantity now updates its price, the subtotal, and the PO preview instantly',
+    'Saved POs now have a View button to see the full item list again',
+    'POS cart: each item now has its own ✕ to remove just that line',
+    'Categories list now spells out Markup / Margin (instead of mk / mg)']},
   {v:'v4.2', date:'2026-06-29', notes:[
     'Cross-device sync fix: the app now refreshes staff, shifts, and categories from the server in the background, so your laptop and tablet stay in sync (before, each device could get stuck showing its own old cached copy — that\'s why the laptop showed different staff names and no sales)',
     'POS: quick discount buttons — 5%, 10%, 20%, or a custom ₱ amount — shown on the cart, the receipt, and saved with each sale',
@@ -2507,9 +2516,7 @@ window.importCSV = async function(input) {
   setTimeout(()=>msg.textContent='',4000);
   input.value='';
   // Reset pagination and refresh
-  productPageIndex=0;
-  renderProductTable(allProducts.slice(0,pageSize));
-  renderPaginationControls();
+  productPageIndex=0; productView=allProducts; renderProducts();
   document.getElementById('prodCount').textContent=allProducts.length+' products';
 };
 
@@ -2705,18 +2712,31 @@ function renderOrderList() {
           </div>
           <div class="po-qty-wrap">
             <label style="font-size:10px;color:var(--text3)">Qty:</label>
-            <input type="number" class="po-qty" value="${qty}" min="1" onchange="orderItems['${prod.id}'].qty=parseInt(this.value)||1;renderOrderList()">
+            <input type="number" class="po-qty" value="${qty}" min="1" oninput="updateOrderQty('${prod.id}',this.value)">
           </div>
-          <div class="po-price">${fmt((prod.cost||0)*qty)}</div>
+          <div class="po-price" id="opx-${prod.id}">${fmt((prod.cost||0)*qty)}</div>
           <button class="del-btn" onclick="removeFromOrder('${prod.id}')"><i class="ti ti-x"></i></button>
         </div>`).join('')}
       <div style="text-align:right;font-size:11px;color:var(--amber);font-family:var(--mono);padding:4px 10px">
-        Subtotal: ${fmt(items.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0))}
+        Subtotal: <span id="orderSubtotal">${fmt(items.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0))}</span>
       </div>
     </div>`;
 
   renderPOPreview(bySupplier);
 }
+
+// Live qty edit: update the line price, the order subtotal, and the PO preview in place —
+// without re-rendering the list (which would blur the number input mid-typing).
+window.updateOrderQty=function(id,val){
+  if(!orderItems[id]) return;
+  const q=Math.max(1,parseInt(val)||1);
+  orderItems[id].qty=q;
+  const cost=orderItems[id].prod.cost||0;
+  const pe=document.getElementById('opx-'+id); if(pe) pe.textContent=fmt(cost*q);
+  const sub=Object.values(orderItems).reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0);
+  const se=document.getElementById('orderSubtotal'); if(se) se.textContent=fmt(sub);
+  renderPOPreview({[orderSupplierOf()]:Object.values(orderItems)});
+};
 
 function renderPOPreview(bySupplier) {
   const poNum=document.getElementById('poNumber').value||'PO-001';
@@ -2874,12 +2894,39 @@ function renderPOList(){
         <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}${paid&&po.paidVia?' · paid '+po.paidVia:''}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost btn-xs" onclick="viewPO('${po.id}')"><i class="ti ti-eye"></i> View</button>
         ${delivered?'':`<button class="btn btn-teal btn-xs" onclick="openIntake('${po.id}')"><i class="ti ti-truck-delivery"></i> Receive</button>`}
         <button class="del-btn" onclick="deletePO('${po.id}')"><i class="ti ti-x"></i></button>
       </div>
     </div>`;
   }).join('');
 }
+
+// View a saved PO's full itemization again (read-only).
+window.viewPO=function(id){
+  const po=savedPOs.find(p=>p.id===id); if(!po) return;
+  const delivered=po.status==='delivered';
+  const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
+  const totItems=po.items.reduce((a,it)=>a+it.orderedQty,0);
+  const rows=po.items.map(it=>`<tr>
+    <td style="color:var(--text3)">${it.sku||'-'}</td>
+    <td>${it.name}</td>
+    <td style="text-align:right">${fmtShort(it.orderedCost)}</td>
+    <td style="text-align:right">${it.orderedQty}</td>
+    <td style="text-align:right;color:var(--amber)">${fmtShort(it.orderedCost*it.orderedQty)}</td>
+    ${delivered?`<td style="text-align:right;color:var(--teal)">${it.recvQty!=null?it.recvQty:'-'}${(it.recvCost!=null&&it.recvCost!==it.orderedCost)?` @${fmtShort(it.recvCost)}`:''}</td>`:''}
+  </tr>`).join('');
+  document.getElementById('poViewTitle').innerHTML=`<i class="ti ti-file-invoice" style="margin-right:6px"></i>${po.poNumber}`;
+  document.getElementById('poViewBody').innerHTML=`
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${po.supplier||'No supplier'} · ${po.date||''}${po.payTerm?' · '+po.payTerm:''}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · received by '+po.receivedBy:''}</div>
+    <table class="po-tbl">
+      <tr><th>SKU</th><th>Product</th><th style="text-align:right">Cost</th><th style="text-align:right">Qty</th><th style="text-align:right">Total</th>${delivered?'<th style="text-align:right">Recv</th>':''}</tr>
+      ${rows}
+    </table>
+    <div style="border-top:1px dashed var(--border2);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:600;color:var(--teal)"><span>${totItems} items · Grand Total</span><span>${fmt(tot)}</span></div>`;
+  document.getElementById('poViewModal').classList.add('show');
+};
+window.closePoView=function(){ document.getElementById('poViewModal').classList.remove('show'); };
 
 window.openIntake=function(id){
   const po=savedPOs.find(p=>p.id===id); if(!po) return;
