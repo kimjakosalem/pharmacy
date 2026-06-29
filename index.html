@@ -1021,10 +1021,19 @@ let staffList=[], session=null;      // session = {name, role, shift}
 let pendingUser=null, loginBuf='', loginShift=1;
 
 async function loadStaff(){
-  const d=await fsGet('config','staff');
-  if(d?.value?.length){ staffList=d.value; return; }
-  // Bootstrap: seed one owner from any legacy single PIN (default 1234) so the
-  // owner can always log in and then configure the roster from Settings.
+  const ref=doc(db,'config','staff');
+  try{ const c=await getDocFromCache(ref); if(c.exists() && c.data()?.value?.length){ staffList=c.data().value; return; } }
+  catch(_){ /* nothing cached yet */ }
+  let snap;
+  try{ snap=await getDoc(ref); }
+  catch(e){
+    // Can't reach the server and nothing usable in cache. Fail closed rather
+    // than seed+overwrite: a transient network error must never be mistaken
+    // for "no roster configured" and wipe the real staff list in Firestore.
+    staffList=[]; return;
+  }
+  if(snap.exists() && snap.data()?.value?.length){ staffList=snap.data().value; return; }
+  // Confirmed via a live server round-trip that no roster exists yet — safe to seed.
   const legacy=await fsGet('config','pin');
   staffList=[{id:'owner',name:'Owner',role:'owner',pin:legacy?.value||'1234'}];
   await fsSet('config','staff',{value:staffList});
