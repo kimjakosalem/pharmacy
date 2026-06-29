@@ -101,6 +101,8 @@ button,.tab,.btn,.pin-key,.pay-mode-btn,.qty-btn,.shift-btn,.del-btn{touch-actio
 .shift-btn:hover:not(.active){border-color:var(--border2);color:var(--text)}
 /* CARDS */
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:10px;width:100%;box-sizing:border-box}
+.card.flash{animation:cardflash 1.2s ease-out}
+@keyframes cardflash{0%{border-color:var(--teal);box-shadow:0 0 0 2px var(--teal-dim)}100%{border-color:var(--border);box-shadow:none}}
 .card-accent{border-color:var(--teal);background:linear-gradient(135deg,rgba(0,41,32,.5),var(--bg2))}
 .card-title{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;display:flex;align-items:center;gap:6px}
 .card-title i{font-size:14px}
@@ -134,6 +136,14 @@ select option{background:var(--bg3)}
 .btn{padding:8px 14px;border:none;border-radius:7px;font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .btn-teal{background:var(--teal);color:#000;font-weight:600}
 .btn-teal:hover{filter:brightness(1.1)}
+.btn-amber{background:var(--amber);color:#000;font-weight:600}
+.btn-amber:hover{filter:brightness(1.1)}
+.ret-results{max-height:150px;overflow-y:auto;margin-top:4px}
+.ret-results .ret-opt{padding:7px 9px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;gap:8px;background:var(--bg3)}
+.ret-results .ret-opt:hover{border-color:var(--amber)}
+.ret-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.ret-row .rr-name{flex:1;min-width:0;font-size:12px}
+.ret-row .rr-name small{display:block;color:var(--text3);font-size:10px}
 .btn-ghost{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
 .btn-ghost:hover{border-color:var(--border2);color:var(--text)}
 .btn-red{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}
@@ -261,6 +271,14 @@ select option{background:var(--bg3)}
 .intake-item label{font-size:9px;color:var(--text3)}
 .ci-total{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--teal);min-width:60px;text-align:right;flex-shrink:0}
 .cart-footer{padding:12px 14px;border-top:1px solid var(--border)}
+.disc-grid{display:grid;grid-template-columns:repeat(4,1fr) auto;gap:5px;margin-bottom:9px}
+.disc-btn{padding:8px 4px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-family:var(--sans);font-size:11px;font-weight:600;border-radius:7px;cursor:pointer;transition:all .15s;text-align:center}
+.disc-btn.active{border-color:var(--amber,#f0a92e);background:var(--amber-dim,rgba(240,169,46,.15));color:var(--amber,#f0a92e)}
+.disc-btn.disc-clear{color:var(--text3)}
+.cart-sub-row,.cart-disc-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:5px}
+.cart-sub-row{color:var(--text2)}
+.cart-disc-row{color:var(--amber,#f0a92e);font-weight:600}
+.cart-sub-row span:last-child,.cart-disc-row span:last-child{font-family:var(--mono)}
 .cart-total-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .cart-total-label{font-size:12px;color:var(--text2)}
 .cart-total-val{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--teal)}
@@ -565,6 +583,39 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- Return / Refund / Exchange -->
+<div class="modal-overlay" id="returnModal">
+  <div class="modal" style="width:480px;max-width:96vw">
+    <h3 style="color:var(--amber)"><i class="ti ti-arrow-back-up" style="margin-right:6px"></i>Return / Refund / Exchange</h3>
+    <div class="field" style="margin-top:12px"><label>Original sale (this shift)</label>
+      <select id="retSaleSel" onchange="onRetSaleChange()"></select>
+    </div>
+    <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin:10px 0 6px">ITEMS BEING RETURNED</div>
+    <div id="retReturnList"></div>
+    <div id="retManualSearchWrap" style="display:none;margin-top:7px">
+      <input type="text" id="retReturnSearch" placeholder="Search product to return..." oninput="renderRetSearch('return')" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;box-sizing:border-box">
+      <div id="retReturnResults" class="ret-results"></div>
+    </div>
+    <div class="sep"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer;margin-bottom:8px"><input type="checkbox" id="retExchange" onchange="toggleExchange()"> Exchange for other item(s)</label>
+    <div id="retExchangeBox" style="display:none">
+      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:6px">REPLACEMENT ITEMS</div>
+      <input type="text" id="retNewSearch" placeholder="Search product to add..." oninput="renderRetSearch('new')" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;box-sizing:border-box">
+      <div id="retNewResults" class="ret-results"></div>
+      <div id="retNewList" style="margin-top:6px"></div>
+    </div>
+    <div class="sep"></div>
+    <div class="field"><label>Settlement mode</label>
+      <select id="retMode"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="maya">Maya</option><option value="mcredit">M Credit</option></select>
+    </div>
+    <div id="retSummary" style="margin:12px 0"></div>
+    <div class="btn-row">
+      <button class="btn btn-amber" style="flex:1" onclick="confirmReturn()"><i class="ti ti-check"></i> Confirm</button>
+      <button class="btn btn-ghost" onclick="closeReturn()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="app"><div class="app-inner">
   <div class="header">
     <div class="logo">
@@ -659,6 +710,13 @@ select option{background:var(--bg3)}
       <div class="elist" style="max-height:280px" id="salesList"></div>
     </div>
     <div class="card">
+      <div class="card-title"><i class="ti ti-arrow-back-up"></i> Returns &amp; Exchanges <span id="returnsCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
+        <button class="btn btn-amber btn-xs" style="margin-left:8px" onclick="openReturn()"><i class="ti ti-plus"></i> New</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Refund a sale, return items to stock, or exchange for other items. Owner/Manager only — cash refunds reduce the drawer.</div>
+      <div class="elist" style="max-height:240px" id="returnsList"></div>
+    </div>
+    <div class="card">
       <div class="card-title"><i class="ti ti-notebook"></i> Manual / Logbook Sales <span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:6px">(unregistered items)</span></div>
       <div class="fg fg4">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="msAmt" placeholder="0.00" step="0.01"></div>
@@ -706,6 +764,16 @@ select option{background:var(--bg3)}
           <div class="empty" style="margin-top:20px"><i class="ti ti-shopping-cart"></i>Cart is empty</div>
         </div>
         <div class="cart-footer">
+          <div style="font-size:10px;color:var(--text3);margin-bottom:6px;font-weight:600;letter-spacing:.06em">DISCOUNT</div>
+          <div class="disc-grid">
+            <button class="disc-btn" id="disc-5" onclick="setDiscount('pct',5)">5%</button>
+            <button class="disc-btn" id="disc-10" onclick="setDiscount('pct',10)">10%</button>
+            <button class="disc-btn" id="disc-20" onclick="setDiscount('pct',20)">20%</button>
+            <button class="disc-btn" id="disc-custom" onclick="openDiscountPad()">₱ Custom</button>
+            <button class="disc-btn disc-clear" id="disc-clear" onclick="clearDiscount()" title="Remove discount">✕</button>
+          </div>
+          <div class="cart-sub-row" id="cartSubRow" style="display:none"><span>Subtotal</span><span id="cartSub">PHP 0.00</span></div>
+          <div class="cart-disc-row" id="cartDiscRow" style="display:none"><span id="cartDiscLabel">Discount</span><span id="cartDiscVal">-PHP 0.00</span></div>
           <div class="cart-total-row">
             <span class="cart-total-label">Total</span>
             <span class="cart-total-val" id="cartTotal">PHP 0.00</span>
@@ -749,10 +817,11 @@ select option{background:var(--bg3)}
       <div class="card-title"><i class="ti ti-tags"></i> Categories &amp; Suppliers <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">two separate lists</span></div>
       <div class="fg fg2">
         <div>
-          <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:6px">CATEGORIES <span style="font-weight:400;color:var(--text3)">· recommended markup %</span></div>
-          <div style="display:flex;gap:6px;margin-bottom:6px">
-            <input type="text" id="catName" placeholder="e.g. Branded" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none">
-            <input type="number" id="catMarkup" placeholder="Markup %" step="0.1" style="width:96px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 8px;border-radius:7px;outline:none">
+          <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:6px">CATEGORIES <span style="font-weight:400;color:var(--text3)">· recommended margin or markup %</span></div>
+          <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+            <input type="text" id="catName" placeholder="e.g. Branded" style="flex:1;min-width:110px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none">
+            <select id="catMode" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 8px;border-radius:7px;outline:none"><option value="markup">Markup</option><option value="margin">Margin</option></select>
+            <input type="number" id="catValue" placeholder="%" step="0.1" style="width:70px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 8px;border-radius:7px;outline:none">
             <button class="btn btn-teal btn-sm" onclick="addCategory()"><i class="ti ti-plus"></i></button>
           </div>
           <div class="elist" id="catDbList" style="max-height:220px"></div>
@@ -768,7 +837,7 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="prodFormCard">
       <div class="card-title"><i class="ti ti-plus"></i> <span id="prodFormTitle">Add New Product</span></div>
       <div class="fg fg3">
         <div class="field"><label>SKU / ID</label><input type="text" id="pSku" placeholder="e.g. MED-001"></div>
@@ -1003,10 +1072,32 @@ tickClock(); setInterval(tickClock,30000);
 // Reads are cache-first: try the local IndexedDB copy instantly, fall back to the
 // server only on a cache miss. This keeps reads snappy and never blocks the UI
 // waiting for a server handshake during a brownout.
-async function fsGet(col,id){
-  const ref=doc(db,col,id);
-  try{ const c=await getDocFromCache(ref); return c.exists()?c.data():null; }
-  catch(_){ /* not in cache yet — fall through to server */ }
+// Tracks the last time THIS device wrote each doc, so a background revalidation
+// never clobbers a local edit that hasn't round-tripped to the server yet.
+const lastLocalWrite={};
+// Stale-while-revalidate read:
+//  • Returns the locally-cached copy INSTANTLY (brownout-safe — never hangs on the network).
+//  • If we had a cached copy, it ALSO fires a background server read; when fresher data
+//    arrives from another device it calls onFresh(data) so the caller can update the UI.
+// This is what keeps the laptop and tablet in sync: cache-first reads alone go stale forever.
+async function fsGet(col,id,onFresh){
+  const ref=doc(db,col,id); const key=col+'/'+id;
+  let cached=null, hadCache=false;
+  try{ const c=await getDocFromCache(ref); if(c.exists()){ cached=c.data(); hadCache=true; } }
+  catch(_){ /* not in cache yet — fall through to a server read below */ }
+  if(hadCache){
+    if(onFresh){
+      const startedAt=Date.now();
+      getDoc(ref).then(s=>{
+        const fresh=s.exists()?s.data():null;
+        if(!fresh) return;
+        // Skip if we wrote this doc locally during/after the fetch (our copy is newer).
+        if((lastLocalWrite[key]||0) >= startedAt) return;
+        if(JSON.stringify(fresh)!==JSON.stringify(cached)){ try{ onFresh(fresh); }catch(_){} }
+      }).catch(()=>{ /* offline — keep showing cache */ });
+    }
+    return cached;
+  }
   try{ const s=await getDoc(ref); return s.exists()?s.data():null; }catch(e){ return null; }
 }
 // Writes: the local mutation is applied & persisted to IndexedDB synchronously inside
@@ -1014,11 +1105,13 @@ async function fsGet(col,id){
 // during a brownout — so we deliberately do NOT await it. The caller continues immediately
 // and the write auto-syncs when the connection returns.
 function fsSet(col,id,data){
+  lastLocalWrite[col+'/'+id]=Date.now();
   setDoc(doc(db,col,id),data).then(setLastSaved).catch(()=>{ /* queued; will retry on reconnect */ });
   setLastSaved();
   return Promise.resolve(true);
 }
 function fsDel(col,id){
+  lastLocalWrite[col+'/'+id]=Date.now();
   deleteDoc(doc(db,col,id)).catch(()=>{});
   return Promise.resolve();
 }
@@ -1037,7 +1130,18 @@ let pendingUser=null, loginBuf='', loginShift=1;
 
 async function loadStaff(){
   const ref=doc(db,'config','staff');
-  try{ const c=await getDocFromCache(ref); if(c.exists() && c.data()?.value?.length){ staffList=c.data().value; return; } }
+  try{ const c=await getDocFromCache(ref); if(c.exists() && c.data()?.value?.length){
+    staffList=c.data().value;
+    // Stale-while-revalidate: refresh the roster from the server in the background so a
+    // staff name added/edited on another device shows up here (was frozen to cache before).
+    const startedAt=Date.now();
+    getDoc(ref).then(s=>{ const v=s.exists()?s.data()?.value:null;
+      if((lastLocalWrite['config/staff']||0)>=startedAt) return;
+      if(Array.isArray(v)&&v.length&&JSON.stringify(v)!==JSON.stringify(staffList)){
+        staffList=v; try{ if(typeof renderStaff==='function')renderStaff(); }catch(_){}
+      }
+    }).catch(()=>{});
+    return; } }
   catch(_){ /* nothing cached yet */ }
   let snap;
   try{ snap=await getDoc(ref); }
@@ -1206,13 +1310,23 @@ window.switchTab=function(tab){
   // Guard owner-only tabs against direct/programmatic access by non-owners.
   if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='shift')renderSales(); if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
+  if(tab==='shift'){renderSales();renderReturns();} if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
 };
 
 // ── SHIFT ──
 let curShift=1, shiftCache={};
-function emptyShift(sh){ return {cashier:'',startCash:0,nextCash:0,cashIns:[],cashOuts:[],posTot:0,pbCash:0,pbGcash:0,pbMaya:0,pbMcredit:0,posTxn:0,sales:[],manualSales:[],drawer:0,takehome:0,saved:false,date:today(),shift:sh}; }
-async function getShift(sh,dt){ const k=shiftKey(sh,dt); if(!shiftCache[k])shiftCache[k]=await fsGet('shifts',k)||emptyShift(sh); return shiftCache[k]; }
+function emptyShift(sh){ return {cashier:'',startCash:0,nextCash:0,cashIns:[],cashOuts:[],posTot:0,pbCash:0,pbGcash:0,pbMaya:0,pbMcredit:0,posTxn:0,sales:[],returns:[],manualSales:[],drawer:0,takehome:0,saved:false,date:today(),shift:sh}; }
+async function getShift(sh,dt){
+  const k=shiftKey(sh,dt);
+  if(!shiftCache[k]){
+    shiftCache[k]=await fsGet('shifts',k,fresh=>{
+      // Another device updated this shift — adopt it and refresh the screen if we're viewing it.
+      shiftCache[k]=fresh;
+      if(k===shiftKey(curShift)){ try{ loadShiftFields(); renderSales(); }catch(_){} }
+    })||emptyShift(sh);
+  }
+  return shiftCache[k];
+}
 async function persistShift(sh,dt){ const k=shiftKey(sh,dt); await fsSet('shifts',k,shiftCache[k]); }
 
 window.selShift=function(n){ curShift=n; document.getElementById('s1btn').classList.toggle('active',n===1); document.getElementById('s2btn').classList.toggle('active',n===2); loadShiftFields(); };
@@ -1223,7 +1337,7 @@ async function loadShiftFields(){
     const map={cashierName:'cashier',startCash:'startCash',posTot:'posTot',pbCash:'pbCash',pbGcash:'pbGcash',pbMaya:'pbMaya',pbMcredit:'pbMcredit',posTxn:'posTxn',drawer:'drawer',takehome:'takehome',nextCash:'nextCash'};
     document.getElementById(id).value=s[map[id]]||'';
   });
-  updatePaySum(); renderCI(); renderCO(); renderMS(); renderSales();
+  updatePaySum(); renderCI(); renderCO(); renderMS(); renderSales(); renderReturns();
 }
 
 let saveTimer=null;
@@ -1343,6 +1457,168 @@ window.voidSale=async function(id){
   toast('Sale voided — stock returned','ok');
 };
 
+// ── Returns / Refunds / Exchanges (this shift) ──
+// retState.returnItems: [{prodId,name,size,packaging,price,qty,max}]  (items the customer gives back)
+// retState.newItems:    [{prodId,name,size,packaging,price,qty}]      (replacement items, exchange only)
+let retState={ sale:null, returnItems:[], newItems:[] };
+function canRefund(){ return session?.role==='owner'||session?.role==='manager'; }
+
+async function renderReturns(){
+  const el=document.getElementById('returnsList'); if(!el) return;
+  const s=await getShift(curShift);
+  const rets=(s.returns||[]);
+  const cnt=document.getElementById('returnsCount'); if(cnt) cnt.textContent=rets.length?rets.length+(rets.length===1?' record':' records'):'';
+  if(!rets.length){ el.innerHTML='<div class="empty"><i class="ti ti-arrow-back-up"></i>No returns this shift</div>'; return; }
+  el.innerHTML=[...rets].reverse().map(r=>{
+    const ri=(r.returnedItems||[]).map(it=>`${it.name} ×${it.qty}`).join(', ');
+    const ni=(r.newItems||[]).map(it=>`${it.name} ×${it.qty}`).join(', ');
+    const net=r.net||0;
+    const netTxt=net>0?`<span class="c-tel">collected ${fmtShort(net)}</span>`:net<0?`<span class="c-neg">refunded ${fmtShort(-net)}</span>`:'<span class="c-amb">even</span>';
+    const typeTag=r.type==='exchange'?'<span class="ptag" style="background:var(--amber-dim);color:var(--amber)">EXCHANGE</span>':'<span class="ptag" style="background:var(--red-dim);color:var(--red)">REFUND</span>';
+    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${typeTag} <span class="ptag pt-${r.mode||'cash'}">${MODE_LABEL[r.mode||'cash']}</span></div><div class="ed">↩ ${ri||'—'}${ni?` · ↪ ${ni}`:''} · ${r.time||''}</div></div><div style="text-align:right;font-size:11px">${netTxt}</div></div>`;
+  }).join('');
+}
+
+window.openReturn=async function(){
+  if(!canRefund()){ toast('Owner/Manager only','err'); return; }
+  retState={ sale:null, returnItems:[], newItems:[] };
+  const s=await getShift(curShift);
+  const sel=document.getElementById('retSaleSel');
+  const opts=['<option value="manual">No receipt — pick items manually</option>'];
+  (s.sales||[]).slice().reverse().forEach(sale=>{
+    const items=(sale.items||[]).map(it=>`${it.name}×${it.qty}`).join(', ');
+    opts.push(`<option value="${sale.id}">${sale.time||''} · ${fmtShort(sale.total)} · ${items.slice(0,40)}</option>`);
+  });
+  sel.innerHTML=opts.join('');
+  sel.value='manual';
+  document.getElementById('retExchange').checked=false;
+  document.getElementById('retExchangeBox').style.display='none';
+  document.getElementById('retReturnSearch').value=''; document.getElementById('retReturnResults').innerHTML='';
+  document.getElementById('retNewSearch').value=''; document.getElementById('retNewResults').innerHTML='';
+  document.getElementById('retMode').value='cash';
+  onRetSaleChange();
+  document.getElementById('returnModal').classList.add('show');
+};
+window.closeReturn=function(){ document.getElementById('returnModal').classList.remove('show'); };
+
+window.onRetSaleChange=async function(){
+  const v=document.getElementById('retSaleSel').value;
+  const manualWrap=document.getElementById('retManualSearchWrap');
+  if(v==='manual'){
+    retState.sale=null; retState.returnItems=[];
+    manualWrap.style.display='block';
+  } else {
+    const s=await getShift(curShift);
+    const sale=(s.sales||[]).find(x=>x.id===v);
+    retState.sale=sale||null;
+    retState.returnItems=(sale?.items||[]).map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:0,max:it.qty}));
+    manualWrap.style.display='none';
+  }
+  renderRetReturnList(); renderReturnSummary();
+};
+
+function renderRetReturnList(){
+  const el=document.getElementById('retReturnList');
+  if(!retState.returnItems.length){ el.innerHTML='<div class="empty" style="padding:8px">No items selected</div>'; return; }
+  el.innerHTML=retState.returnItems.map((it,i)=>`<div class="ret-row"><div class="rr-name">${it.name}<small>${[it.size,it.packaging].filter(Boolean).join(' · ')||'Standard'} · ${fmt(it.price)} each${it.max<9999?` · sold ${it.max}`:''}</small></div><div class="ci-controls"><button class="qty-btn" onclick="changeRetQty('return',${i},-1)">-</button><input class="qty-input" value="${it.qty}" readonly><button class="qty-btn" onclick="changeRetQty('return',${i},1)">+</button></div><div style="width:62px;text-align:right;font-family:var(--mono);font-size:12px">${fmtShort(it.price*it.qty)}</div></div>`).join('');
+}
+function renderRetNewList(){
+  const el=document.getElementById('retNewList');
+  if(!retState.newItems.length){ el.innerHTML='<div class="empty" style="padding:8px">No replacement items</div>'; return; }
+  el.innerHTML=retState.newItems.map((it,i)=>`<div class="ret-row"><div class="rr-name">${it.name}<small>${fmt(it.price)} each</small></div><div class="ci-controls"><button class="qty-btn" onclick="changeRetQty('new',${i},-1)">-</button><input class="qty-input" value="${it.qty}" readonly><button class="qty-btn" onclick="changeRetQty('new',${i},1)">+</button></div><div style="width:62px;text-align:right;font-family:var(--mono);font-size:12px">${fmtShort(it.price*it.qty)}</div></div>`).join('');
+}
+window.changeRetQty=function(which,i,d){
+  const arr=which==='return'?retState.returnItems:retState.newItems;
+  arr[i].qty+=d;
+  const cap=which==='return'?(arr[i].max||9999):9999;
+  if(arr[i].qty>cap) arr[i].qty=cap;
+  if(arr[i].qty<=0){ if(which==='return'&&arr[i].max<9999) arr[i].qty=0; else arr.splice(i,1); }
+  which==='return'?renderRetReturnList():renderRetNewList();
+  renderReturnSummary();
+};
+window.renderRetSearch=function(which){
+  const q=document.getElementById(which==='return'?'retReturnSearch':'retNewSearch').value.trim().toLowerCase();
+  const box=document.getElementById(which==='return'?'retReturnResults':'retNewResults');
+  if(!q){ box.innerHTML=''; return; }
+  const res=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q)).slice(0,8);
+  if(!res.length){ box.innerHTML='<div class="empty" style="padding:6px">No match</div>'; return; }
+  box.innerHTML=res.map(p=>`<div class="ret-opt" onclick="addRetItem('${which}','${p.id}')"><span>${p.name}</span><span style="font-family:var(--mono);color:var(--teal)">${fmtShort(p.price)}</span></div>`).join('');
+};
+window.addRetItem=function(which,id){
+  const p=allProducts.find(x=>x.id===id); if(!p) return;
+  const arr=which==='return'?retState.returnItems:retState.newItems;
+  const ex=arr.find(x=>x.prodId===id && (which==='new'||x.max>=9999));
+  if(ex){ ex.qty+=1; } else { arr.push({prodId:id,name:p.name,size:'',packaging:'',price:p.price||0,qty:1,max:9999}); }
+  if(which==='return'){ document.getElementById('retReturnSearch').value=''; document.getElementById('retReturnResults').innerHTML=''; renderRetReturnList(); }
+  else { document.getElementById('retNewSearch').value=''; document.getElementById('retNewResults').innerHTML=''; renderRetNewList(); }
+  renderReturnSummary();
+};
+window.toggleExchange=function(){
+  const on=document.getElementById('retExchange').checked;
+  document.getElementById('retExchangeBox').style.display=on?'block':'none';
+  if(on && !retState.newItems.length) renderRetNewList();
+  renderReturnSummary();
+};
+function retValues(){
+  const returnValue=retState.returnItems.reduce((a,it)=>a+it.price*it.qty,0);
+  const exchange=document.getElementById('retExchange').checked;
+  const newValue=exchange?retState.newItems.reduce((a,it)=>a+it.price*it.qty,0):0;
+  return { returnValue, newValue, net:newValue-returnValue, exchange };
+}
+function renderReturnSummary(){
+  const {returnValue,newValue,net,exchange}=retValues();
+  const el=document.getElementById('retSummary');
+  let netLine;
+  if(net>0) netLine=`<div class="ret-row" style="border:none"><div class="rr-name" style="font-weight:600">Customer pays</div><div style="font-family:var(--mono);color:var(--teal);font-weight:600">${fmt(net)}</div></div>`;
+  else if(net<0) netLine=`<div class="ret-row" style="border:none"><div class="rr-name" style="font-weight:600">Refund to customer</div><div style="font-family:var(--mono);color:var(--red);font-weight:600">${fmt(-net)}</div></div>`;
+  else netLine=`<div class="ret-row" style="border:none"><div class="rr-name" style="font-weight:600">Even exchange</div><div style="font-family:var(--mono);color:var(--amber)">${fmt(0)}</div></div>`;
+  el.innerHTML=`<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px">
+    <div class="ret-row" style="border:none;padding:3px 0"><div class="rr-name">Return value</div><div style="font-family:var(--mono)">${fmt(returnValue)}</div></div>
+    ${exchange?`<div class="ret-row" style="border:none;padding:3px 0"><div class="rr-name">Replacement value</div><div style="font-family:var(--mono)">${fmt(newValue)}</div></div>`:''}
+    ${netLine}</div>`;
+}
+
+window.confirmReturn=async function(){
+  if(!canRefund()){ toast('Owner/Manager only','err'); return; }
+  const {returnValue,newValue,net,exchange}=retValues();
+  const retItems=retState.returnItems.filter(it=>it.qty>0);
+  if(!retItems.length){ toast('Select at least one item to return','err'); return; }
+  const newItems=exchange?retState.newItems.filter(it=>it.qty>0):[];
+  if(exchange && !newItems.length){ toast('Add replacement item(s) or turn off exchange','err'); return; }
+  const mode=document.getElementById('retMode').value;
+  const verb=net<0?`refund ${fmt(-net)} to the customer`:net>0?`collect ${fmt(net)} from the customer`:'process this even exchange';
+  if(!confirm(`Confirm: return ${retItems.reduce((a,i)=>a+i.qty,0)} item(s)${exchange?` and give ${newItems.reduce((a,i)=>a+i.qty,0)} replacement(s)`:''}, and ${verb}? Stock will be adjusted.`)) return;
+  const now=tnow(), dt=today();
+  const s=await getShift(curShift,dt);
+  // Return items → back into stock
+  for(const it of retItems){
+    const fp=allProductsFull[it.prodId];
+    if(fp){ fp.inventory=(fp.inventory||0)+it.qty; fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+  }
+  // Replacement items → out of stock
+  for(const it of newItems){
+    const fp=allProductsFull[it.prodId];
+    if(fp){ fp.inventory=Math.max(0,(fp.inventory||0)-it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+  }
+  // Net effect on the shift's POS sales (delta can be negative = money out of drawer)
+  const mk={cash:'pbCash',gcash:'pbGcash',maya:'pbMaya',mcredit:'pbMcredit'}[mode];
+  s.posTot=Math.max(0,(s.posTot||0)+net);
+  if(mk) s[mk]=Math.max(0,(s[mk]||0)+net);
+  s.returns=s.returns||[];
+  s.returns.push({ id:'ret_'+Date.now(), time:now, ts:Date.now(), type:exchange?'exchange':'refund', mode,
+    origSaleId:retState.sale?.id||null, cashier:session?.name||'',
+    returnedItems:retItems.map(it=>({prodId:it.prodId,name:it.name,price:it.price,qty:it.qty})),
+    newItems:newItems.map(it=>({prodId:it.prodId,name:it.name,price:it.price,qty:it.qty})),
+    returnValue, newValue, net });
+  await persistShift(curShift,dt);
+  document.getElementById('posTot').value=s.posTot||'';
+  document.getElementById('pbCash').value=s.pbCash||''; document.getElementById('pbGcash').value=s.pbGcash||'';
+  document.getElementById('pbMaya').value=s.pbMaya||''; document.getElementById('pbMcredit').value=s.pbMcredit||'';
+  updatePaySum(); renderSales(); renderReturns();
+  closeReturn();
+  toast(exchange?'Exchange processed':'Refund processed','ok');
+};
+
 // ── Shift Calc ──
 function calcShift(s){
   const ciTot=s.cashIns.reduce((a,c)=>a+c.amount,0);
@@ -1390,8 +1666,16 @@ async function loadProducts(){
 // Categories: [{name, markup}] (recommended markup %). Suppliers: [{name}].
 let categories=[], suppliers=[];
 async function loadCatSup(){
-  const c=await fsGet('config','categories'); categories=Array.isArray(c?.value)?c.value:[];
-  const s=await fsGet('config','suppliers'); suppliers=Array.isArray(s?.value)?s.value:[];
+  const c=await fsGet('config','categories',fresh=>{ if(Array.isArray(fresh?.value)){ categories=fresh.value.map(normCat); try{ renderCatSup(); populateCategoryList(); }catch(_){} } });
+  categories=Array.isArray(c?.value)?c.value.map(normCat):[];
+  const s=await fsGet('config','suppliers',fresh=>{ if(Array.isArray(fresh?.value)){ suppliers=fresh.value; try{ renderCatSup(); populateSupplierList(); }catch(_){} } });
+  suppliers=Array.isArray(s?.value)?s.value:[];
+}
+// Normalize a category to {name, mode:'markup'|'margin', value}. Legacy rows stored only
+// {name, markup} → treated as markup. Keeps old data working after the margin/markup change.
+function normCat(c){
+  if(c && c.mode && c.value!=null) return {name:c.name, mode:c.mode==='margin'?'margin':'markup', value:parseFloat(c.value)||0};
+  return {name:c?.name||'', mode:'markup', value:parseFloat(c?.markup)||0};
 }
 async function saveCategoriesDb(){ await fsSet('config','categories',{value:categories}); }
 async function saveSuppliersDb(){ await fsSet('config','suppliers',{value:suppliers}); }
@@ -1400,7 +1684,7 @@ window.renderCatSup=function(){ renderCategoriesDb(); renderSuppliersDb(); };
 function renderCategoriesDb(){
   const el=document.getElementById('catDbList'); if(!el)return;
   if(!categories.length){ el.innerHTML='<div class="empty" style="padding:10px">No categories yet</div>'; return; }
-  el.innerHTML=categories.map((c,i)=>`<div class="eitem"><div class="el" style="flex:1">${c.name}</div><div style="display:flex;align-items:center;gap:5px"><input type="number" value="${c.markup||0}" step="0.1" onchange="updateCategoryMarkup(${i},this.value)" style="width:64px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 6px;border-radius:5px;outline:none"><span style="font-size:10px;color:var(--text3)">% mk</span><button class="del-btn" onclick="delCategory(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
+  el.innerHTML=categories.map((c,i)=>`<div class="eitem"><div class="el" style="flex:1">${c.name}</div><div style="display:flex;align-items:center;gap:5px"><select onchange="updateCategory(${i},'mode',this.value)" style="background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:10px;padding:4px 5px;border-radius:5px;outline:none"><option value="markup"${c.mode!=='margin'?' selected':''}>mk</option><option value="margin"${c.mode==='margin'?' selected':''}>mg</option></select><input type="number" value="${c.value||0}" step="0.1" onchange="updateCategory(${i},'value',this.value)" style="width:56px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 6px;border-radius:5px;outline:none"><span style="font-size:10px;color:var(--text3)">%</span><button class="del-btn" onclick="delCategory(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
 }
 function renderSuppliersDb(){
   const el=document.getElementById('supDbList'); if(!el)return;
@@ -1409,14 +1693,26 @@ function renderSuppliersDb(){
 }
 window.addCategory=async function(){
   const name=document.getElementById('catName').value.trim();
-  const markup=parseFloat(document.getElementById('catMarkup').value)||0;
+  const mode=document.getElementById('catMode').value==='margin'?'margin':'markup';
+  const value=parseFloat(document.getElementById('catValue').value)||0;
   if(!name){ toast('Enter a category name','err'); return; }
+  if(mode==='margin'&&value>=100){ toast('Margin must be under 100%','err'); return; }
   if(categories.some(c=>c.name.toLowerCase()===name.toLowerCase())){ toast('Category already exists','err'); return; }
-  categories.push({name,markup}); await saveCategoriesDb();
-  document.getElementById('catName').value=''; document.getElementById('catMarkup').value='';
+  categories.push({name,mode,value}); await saveCategoriesDb();
+  document.getElementById('catName').value=''; document.getElementById('catValue').value='';
   renderCategoriesDb(); populateCategoryList();
 };
-window.updateCategoryMarkup=async function(i,v){ categories[i].markup=parseFloat(v)||0; await saveCategoriesDb(); };
+window.updateCategory=async function(i,field,v){
+  if(field==='value'){ categories[i].value=parseFloat(v)||0; }
+  else if(field==='mode'){ categories[i].mode=v==='margin'?'margin':'markup'; }
+  await saveCategoriesDb(); renderCategoriesDb();
+};
+// Price from cost given a category rule. markup: price=cost*(1+v/100). margin: price=cost/(1-v/100).
+function priceFromCat(c,cost){
+  if(!c||!cost||!c.value) return null;
+  if(c.mode==='margin'){ const m=c.value/100; return m<1?cost/(1-m):null; }
+  return cost*(1+c.value/100);
+}
 window.delCategory=async function(i){ categories.splice(i,1); await saveCategoriesDb(); renderCategoriesDb(); populateCategoryList(); };
 window.addSupplier=async function(){
   const name=document.getElementById('supName').value.trim();
@@ -1433,10 +1729,12 @@ window.applyCategoryMarkup=function(){
   const name=document.getElementById('pCategory').value;
   const cat=categories.find(c=>c.name.toLowerCase()===name.toLowerCase());
   const hint=document.getElementById('catMarkupHint');
-  if(cat && cat.markup){
-    if(hint) hint.textContent=`Recommended markup ${cat.markup}% — price auto-set from cost`;
+  if(cat && cat.value){
+    const label=cat.mode==='margin'?'margin':'markup';
+    if(hint) hint.textContent=`Recommended ${label} ${cat.value}% — price auto-set from cost`;
     const cost=parseFloat(document.getElementById('pCost').value)||0;
-    if(cost>0){ document.getElementById('pPrice').value=(cost*(1+cat.markup/100)).toFixed(2); calcMargin(); }
+    const np=priceFromCat(cat,cost);
+    if(cost>0 && np!=null){ document.getElementById('pPrice').value=np.toFixed(2); calcMargin(); }
   } else if(hint){ hint.textContent=''; }
 };
 
@@ -1605,7 +1903,10 @@ window.editProduct=async function(id){
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   (p.variants||[]).forEach(v=>addVariantRow(v));
   calcMargin();
-  document.querySelector('.card').scrollIntoView({behavior:'smooth'});
+  // Pull the edit form into view on every device (phone, tablet, desktop) and focus it.
+  const card=document.getElementById('prodFormCard');
+  if(card){ card.scrollIntoView({behavior:'smooth',block:'start'}); card.classList.add('flash'); setTimeout(()=>card.classList.remove('flash'),1200); }
+  document.getElementById('pName').focus({preventScroll:true});
 };
 
 window.cancelEditProduct=function(){
@@ -1629,6 +1930,22 @@ window.deleteProduct=async function(id){
 // ── POS SALES ──
 // ═══════════════════════════════════════
 let cart=[], payMode='cash', modalProd=null, modalVariant=null;
+// Discount on the current cart: null, or {mode:'pct',value} / {mode:'php',value}.
+let cartDiscount=null;
+function cartSubtotal(){ return cart.reduce((a,c)=>a+(c.price*c.qty),0); }
+function discountAmount(sub){
+  if(!cartDiscount) return 0;
+  const raw=cartDiscount.mode==='pct'?sub*cartDiscount.value/100:cartDiscount.value;
+  return Math.min(Math.max(0,raw),sub);   // never exceed subtotal, never negative
+}
+function cartTotalValue(){ const sub=cartSubtotal(); return Math.max(0,sub-discountAmount(sub)); }
+function discountLabel(){
+  if(!cartDiscount) return '';
+  return cartDiscount.mode==='pct'?`Discount ${cartDiscount.value}%`:`Discount (₱)`;
+}
+window.setDiscount=function(mode,value){ if(!cart.length){ toast('Cart is empty','err'); return; } cartDiscount={mode,value}; renderCart(); };
+window.clearDiscount=function(){ cartDiscount=null; renderCart(); };
+window.openDiscountPad=function(){ if(!cart.length){ toast('Cart is empty','err'); return; } openNumpad('disc',{sub:cartSubtotal()},'Discount Amount (₱)','Apply'); };
 
 window.clearPosSearch=function(){ document.getElementById('posSearch').value=''; window.searchProducts(); document.getElementById('posSearch').focus(); };
 window.searchProducts=function(){
@@ -1702,7 +2019,14 @@ window.closeModal=function(){ document.getElementById('variantModal').classList.
 
 function renderCart(){
   const el=document.getElementById('cartItems');
-  if(!cart.length){el.innerHTML='<div class="empty" style="margin-top:20px"><i class="ti ti-shopping-cart"></i>Cart is empty</div>';document.getElementById('cartTotal').textContent='PHP 0.00';document.getElementById('checkoutBtn').disabled=true;return;}
+  const subRow=document.getElementById('cartSubRow'), discRow=document.getElementById('cartDiscRow');
+  if(!cart.length){
+    el.innerHTML='<div class="empty" style="margin-top:20px"><i class="ti ti-shopping-cart"></i>Cart is empty</div>';
+    document.getElementById('cartTotal').textContent='PHP 0.00';
+    document.getElementById('checkoutBtn').disabled=true;
+    cartDiscount=null; if(subRow)subRow.style.display='none'; if(discRow)discRow.style.display='none';
+    renderDiscountBtns(); return;
+  }
   el.innerHTML=cart.map((item,i)=>`
     <div class="cart-item">
       <div class="ci-info">
@@ -1717,9 +2041,22 @@ function renderCart(){
       </div>
       <div class="ci-total">${fmt(item.price*item.qty)}</div>
     </div>`).join('');
-  const total=cart.reduce((a,c)=>a+(c.price*c.qty),0);
+  const sub=cartSubtotal(), disc=discountAmount(sub), total=sub-disc;
+  if(cartDiscount && disc>0){
+    if(subRow){ subRow.style.display='flex'; document.getElementById('cartSub').textContent=fmt(sub); }
+    if(discRow){ discRow.style.display='flex'; document.getElementById('cartDiscLabel').textContent=discountLabel(); document.getElementById('cartDiscVal').textContent='-'+fmt(disc); }
+  } else { if(subRow)subRow.style.display='none'; if(discRow)discRow.style.display='none'; }
   document.getElementById('cartTotal').textContent=fmt(total);
   document.getElementById('checkoutBtn').disabled=false;
+  renderDiscountBtns();
+}
+function renderDiscountBtns(){
+  const map={5:'disc-5',10:'disc-10',20:'disc-20'};
+  ['disc-5','disc-10','disc-20','disc-custom'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  if(cartDiscount){
+    if(cartDiscount.mode==='pct'&&map[cartDiscount.value]) document.getElementById(map[cartDiscount.value])?.classList.add('active');
+    else if(cartDiscount.mode==='php') document.getElementById('disc-custom')?.classList.add('active');
+  }
 }
 
 window.changeQty=function(i,d){
@@ -1737,20 +2074,24 @@ function npRender(){
   if(npMode==='cash'){
     const cash=parseFloat(npBuf)||0, change=cash-npCtx.total;
     ch.innerHTML = `Total ${fmt(npCtx.total)} · Change <span style="color:${change>=0?'var(--green)':'var(--red)'}">${fmt(change)}</span>`;
+  } else if(npMode==='disc'){
+    const d=Math.min(parseFloat(npBuf)||0,npCtx.sub), after=npCtx.sub-d;
+    ch.innerHTML = `Subtotal ${fmt(npCtx.sub)} · New total <span style="color:var(--teal)">${fmt(after)}</span>`;
   } else { ch.textContent=''; }
 }
 function openNumpad(mode, ctx, title, okLabel){
   npMode=mode; npCtx=ctx; npBuf=ctx.initial!=null?String(ctx.initial):'';
   document.getElementById('npTitle').textContent=title;
   document.getElementById('npOkLabel').textContent=okLabel||'OK';
-  document.getElementById('npDecimal').style.visibility = mode==='cash'?'visible':'hidden';
+  document.getElementById('npDecimal').style.visibility = (mode==='cash'||mode==='disc')?'visible':'hidden';
   npRender();
   document.getElementById('numpadModal').classList.add('show');
 }
 window.npKey=function(k){
+  const dec=(npMode==='cash'||npMode==='disc');
   if(k==='back'){ npBuf=npBuf.slice(0,-1); }
-  else if(k==='.'){ if(npMode==='cash'&&!npBuf.includes('.')) npBuf=(npBuf||'0')+'.'; }
-  else { if(npMode==='qty'&&npBuf.length>=4)return; if(npMode==='cash'){const parts=npBuf.split('.'); if(parts[1]&&parts[1].length>=2)return;} npBuf+=k; }
+  else if(k==='.'){ if(dec&&!npBuf.includes('.')) npBuf=(npBuf||'0')+'.'; }
+  else { if(npMode==='qty'&&npBuf.length>=4)return; if(dec){const parts=npBuf.split('.'); if(parts[1]&&parts[1].length>=2)return;} npBuf+=k; }
   npRender();
 };
 window.closeNumpad=function(){ document.getElementById('numpadModal').classList.remove('show'); npCtx=null; };
@@ -1764,6 +2105,10 @@ window.npConfirm=function(){
     if(npCtx.target==='modal'){ document.getElementById('modalQty').value=Math.max(1,q||1); }
     else { if(q<=0) cart.splice(npCtx.target,1); else cart[npCtx.target].qty=q; renderCart(); }
     closeNumpad();
+  } else if(npMode==='disc'){
+    const d=parseFloat(npBuf)||0;
+    if(d<=0){ cartDiscount=null; } else { cartDiscount={mode:'php',value:d}; }
+    closeNumpad(); renderCart();
   } else { // cash
     const cash=parseFloat(npBuf)||0, total=npCtx.total;
     if(cash < total){ toast('Cash is less than total','err'); return; }
@@ -1782,7 +2127,7 @@ window.selectPayMode=function(mode){
 
 window.checkout=function(){
   if(!cart.length)return;
-  const total=cart.reduce((a,c)=>a+(c.price*c.qty),0);
+  const total=cartTotalValue();
   if(payMode==='cash'){ openNumpad('cash',{total},'Cash Received','Complete'); }   // ask for cash → show change
   else finalizeSale(total, null);
 };
@@ -1790,10 +2135,13 @@ window.checkout=function(){
 async function finalizeSale(total, cashInfo){
   const now=tnow(), dt=today();
   const sold=cart.slice();   // snapshot for the receipt before we clear
+  const subtotal=cartSubtotal();
+  const discSnap=(cartDiscount && discountAmount(subtotal)>0)?{mode:cartDiscount.mode,value:cartDiscount.value,amount:discountAmount(subtotal)}:null;
   const s=await getShift(curShift,dt);
   // Record the sale as an individual transaction (the POS ledger) so it can be reviewed/voided.
   s.sales=s.sales||[];
   s.sales.push({ id:'sale_'+Date.now(), time:now, ts:Date.now(), mode:payMode, total,
+    subtotal, discount:discSnap,
     cashReceived:cashInfo?cashInfo.received:null, change:cashInfo?cashInfo.change:null,
     cashier:session?.name||'',
     items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty})) });
@@ -1826,6 +2174,8 @@ async function finalizeSale(total, cashInfo){
       <div style="font-size:10px;color:var(--text3);margin-top:2px">${dt} ${now}</div>
     </div>
     ${sold.map(item=>`<div class="receipt-row"><span>${item.name}${item.size?' ('+item.size+')':''} x${item.qty}</span><span>${fmtShort(item.price*item.qty)}</span></div>`).join('')}
+    ${discSnap?`<div class="receipt-row" style="margin-top:4px"><span>Subtotal</span><span>${fmtShort(subtotal)}</span></div>
+    <div class="receipt-row" style="color:var(--amber)"><span>Discount${discSnap.mode==='pct'?' ('+discSnap.value+'%)':''}</span><span>-${fmtShort(discSnap.amount)}</span></div>`:''}
     <div class="receipt-total"><span>TOTAL</span><span>${fmtShort(total)}</span></div>
     <div class="receipt-row" style="margin-top:4px"><span>Payment</span><span style="text-transform:uppercase">${payMode}</span></div>
     ${cashInfo?`<div class="receipt-row"><span>Cash</span><span>${fmtShort(cashInfo.received)}</span></div>
@@ -1833,7 +2183,7 @@ async function finalizeSale(total, cashInfo){
   </div>`;
   document.getElementById('receiptContent').innerHTML=receiptHtml;
   document.getElementById('receiptModal').classList.add('show');
-  cart=[]; renderCart(); loadProducts();
+  cart=[]; cartDiscount=null; renderCart(); loadProducts();
 }
 
 window.newSale=function(){   // close receipt and prep the search box for the next customer
@@ -2048,8 +2398,14 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.1';
+const APP_VERSION='v4.2';
 const CHANGELOG=[
+  {v:'v4.2', date:'2026-06-29', notes:[
+    'Cross-device sync fix: the app now refreshes staff, shifts, and categories from the server in the background, so your laptop and tablet stay in sync (before, each device could get stuck showing its own old cached copy — that\'s why the laptop showed different staff names and no sales)',
+    'POS: quick discount buttons — 5%, 10%, 20%, or a custom ₱ amount — shown on the cart, the receipt, and saved with each sale',
+    'POS: Returns / Refunds / Exchanges — refund a sale (returns stock & reduces the drawer), or exchange items for others and settle the difference; logged per shift (Owner/Manager only)',
+    'Products: categories can use either Markup % or Margin % to auto-suggest the selling price',
+    'Products: tapping Edit now scrolls the edit form into view and highlights it (phone, tablet, and desktop)']},
   {v:'v4.1', date:'2026-06-28', notes:['POS Transactions: voiding a sale is now restricted to Owner and Manager accounts (staff can view sales but no longer see/use the void button)']},
   {v:'v4.0', date:'2026-06-27', notes:['Real POS sales ledger: every checkout is now a logged transaction you can review and VOID (voiding reverses the totals and returns stock)','Owner can Reset a shift\'s POS figures to clear old/test data','POS search has a clear (✕) button; fixed POS cart overflow on iPhone','Current date now shown in the header on phones','Business day now rolls over at local midnight (fixes early-morning sales landing on the wrong day)']},
   {v:'v3.9', date:'2026-06-27', notes:['Fixed input boxes overflowing the screen edge on iPhone (payment breakdown, forms, header)','Phones now stack all two-column forms and keep only the user + Close Shift chips in the header','Shift hand-off: starting cash now carries over automatically (morning→evening, and last night→next morning); each new day starts fresh']},
