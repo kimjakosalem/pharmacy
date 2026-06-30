@@ -328,8 +328,28 @@ select option{background:var(--bg3)}
 .inv-out{color:var(--red);font-weight:500}
 .inv-ok{color:var(--green)}
 /* PRODUCT FORM */
+.filter-bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+.filter-bar input[type=text]{flex:1 1 160px;min-width:0}
+.filter-bar input{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 9px;border-radius:7px;outline:none}
+.filter-bar input:focus{border-color:var(--teal)}
+.archive-toggle{display:flex;align-items:center;gap:6px;width:100%;margin-top:10px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.04em;cursor:pointer;text-align:left}
+.archive-toggle:hover{border-color:var(--border2)}
+.archive-toggle .chev{margin-left:auto;transition:transform .2s}
+.archive-toggle.open .chev{transform:rotate(90deg)}
+.archive-body{margin-top:8px;opacity:.82}
+.sup-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.sup-chips:empty{display:none}
+.sup-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;background:var(--teal-dim);border:1px solid var(--teal-mid);color:var(--teal);border-radius:20px;font-size:11px;font-weight:500}
+.sup-chip button{background:none;border:none;color:var(--teal);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7}
+.sup-chip button:hover{opacity:1;color:var(--red)}
+.sup-results{margin-top:5px;display:flex;flex-direction:column;gap:4px;max-height:170px;overflow-y:auto}
+.sup-results:empty{display:none}
+.sup-opt{padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);cursor:pointer;font-size:12px;transition:border-color .15s}
+.sup-opt:hover{border-color:var(--teal)}
+.sup-opt-new{color:var(--teal);display:flex;align-items:center;gap:5px}
 .variant-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-.variant-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px}
+.variant-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px}
+.variant-row .field{flex:1 1 110px;min-width:90px}
 /* RECEIPT */
 .receipt{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:14px;font-family:var(--mono);font-size:12px}
 .receipt-header{text-align:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px dashed var(--border2)}
@@ -362,6 +382,10 @@ select option{background:var(--bg3)}
   .variant-grid{grid-template-columns:1fr}
   .modal{padding:18px}
   .ptoggle{flex-wrap:wrap}
+  /* Order/PO rows: product info on its own line, the cost/qty/price controls wrap below */
+  .po-item{flex-wrap:wrap}
+  .po-info{flex:1 1 100%}
+  .po-qty-wrap{flex-wrap:wrap}
 }
 @media(max-width:380px){
   .m4,.m3{grid-template-columns:1fr}
@@ -830,7 +854,7 @@ select option{background:var(--bg3)}
   <!-- ═══ PRODUCTS ═══ -->
   <div class="panel" id="panel-products">
     <!-- Import/Export toolbar -->
-    <div class="card" style="margin-bottom:10px">
+    <div class="card" id="importExportCard" style="margin-bottom:10px">
       <div class="card-title"><i class="ti ti-database-import"></i> Import / Export</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()"><i class="ti ti-download"></i> Download Template</button>
@@ -847,7 +871,7 @@ select option{background:var(--bg3)}
     </div>
 
     <!-- Categories & Suppliers databases -->
-    <div class="card" style="margin-bottom:10px">
+    <div class="card" id="catSupCard" style="margin-bottom:10px">
       <div class="card-title"><i class="ti ti-tags"></i> Categories &amp; Suppliers <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">two separate lists</span></div>
       <div class="fg fg2">
         <div>
@@ -882,7 +906,11 @@ select option{background:var(--bg3)}
         <div class="field"><label>Margin / Markup</label><input type="text" id="pMargin" placeholder="auto-calculated" readonly style="color:var(--teal)"></div>
         <div class="field"><label>Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
         <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
-        <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(comma-separated, e.g. Zuellig,Mediline)</span></label><input type="text" id="pSuppliers" placeholder="Supplier A, Supplier B"></div>
+        <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(search registered suppliers — multiple allowed)</span></label>
+          <div id="supChips" class="sup-chips"></div>
+          <input type="text" id="supSearch" placeholder="Search suppliers..." autocomplete="off" oninput="renderSupSearch()" onkeydown="supSearchKey(event)">
+          <div id="supSearchResults" class="sup-results"></div>
+        </div>
       </div>
       <div class="sep"></div>
       <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.07em;margin-bottom:8px">VARIANTS <span style="font-weight:400;color:var(--text3)">(optional — leave blank if no variants)</span></div>
@@ -909,7 +937,7 @@ select option{background:var(--bg3)}
           <thead><tr>
             <th>SKU</th><th>Name</th><th>Category</th>
             <th style="text-align:right">Cost</th><th style="text-align:right">Price</th>
-            <th style="text-align:right">Margin</th><th style="text-align:right">Stock</th><th style="text-align:right">Actions</th>
+            <th style="text-align:right">Margin</th><th style="text-align:right">Markup</th><th style="text-align:right">Stock</th><th style="text-align:right">Actions</th>
           </tr></thead>
           <tbody id="prodTbody"></tbody>
         </table>
@@ -954,7 +982,14 @@ select option{background:var(--bg3)}
     <div class="card">
       <div class="card-title"><i class="ti ti-file-invoice"></i> Saved Purchase Orders <span id="poListCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span></div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Save a PO above to track it. When the order arrives, tap <strong style="color:var(--teal)">Receive</strong> to verify quantities &amp; costs — inventory updates automatically.</div>
+      <div class="filter-bar">
+        <input type="text" id="poFilterQ" placeholder="Search PO / DR no. or supplier..." oninput="setPoFilter()">
+        <input type="date" id="poFilterFrom" oninput="setPoFilter()" title="From date">
+        <input type="date" id="poFilterTo" oninput="setPoFilter()" title="To date">
+        <button class="btn btn-ghost btn-xs" onclick="clearPoFilter()" title="Clear filters"><i class="ti ti-x"></i></button>
+      </div>
       <div id="poListContainer"></div>
+      <div id="poArchiveContainer"></div>
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> Low / Out of Stock <span id="lowStockCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
@@ -980,8 +1015,15 @@ select option{background:var(--bg3)}
       <div class="btn-row"><button class="btn btn-teal btn-sm" onclick="addPayable()"><i class="ti ti-plus"></i> Add</button></div>
     </div>
     <div class="card">
-      <div class="card-title"><i class="ti ti-list"></i> Payables Log</div>
+      <div class="card-title"><i class="ti ti-list"></i> Payables Log <span id="payListCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span></div>
+      <div class="filter-bar">
+        <input type="text" id="payFilterQ" placeholder="Search payee / category..." oninput="renderPayables()">
+        <input type="date" id="payFilterFrom" oninput="renderPayables()" title="From date">
+        <input type="date" id="payFilterTo" oninput="renderPayables()" title="To date">
+        <button class="btn btn-ghost btn-xs" onclick="clearPayFilter()" title="Clear filters"><i class="ti ti-x"></i></button>
+      </div>
       <div class="elist" style="max-height:400px" id="payList"></div>
+      <div id="payArchiveContainer"></div>
     </div>
   </div>
 
@@ -1291,6 +1333,9 @@ function applyRole(){
   const owner = session?.role==='owner';
   document.getElementById('tab-reports').style.display = owner?'':'none';
   document.getElementById('tab-settings').style.display = owner?'':'none';
+  // Products tab is open to all roles, but bulk import/export and the category/supplier
+  // databases are owner-only management tools.
+  ['importExportCard','catSupCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=owner?'':'none'; });
   document.getElementById('userChip').style.display = session?'flex':'none';
   document.getElementById('closeShiftBtn').style.display = session?'inline-flex':'none';
   document.getElementById('logoutBtn').style.display = session?'inline-flex':'none';
@@ -1454,7 +1499,7 @@ async function flushFields(){
   s.takehome=parseFloat(document.getElementById('takehome').value)||0;
   s.nextCash=parseFloat(document.getElementById('nextCash').value)||0;
 }
-window.saveShift=async function(){ await flushFields(); const s=await getShift(curShift); s.saved=true; s.savedAt=tnow(); await persistShift(curShift); document.getElementById('savingInd').classList.remove('show'); toast(`Shift ${curShift} saved OK`,'ok'); };
+window.saveShift=async function(){ await flushFields(); const s=await getShift(curShift); s.saved=true; s.savedAt=tnow(); await persistShift(curShift); document.getElementById('savingInd').classList.remove('show'); toast(`${curShift===1?'Morning':'Evening'} shift saved OK`,'ok'); };
 window.clearShift=async function(){ const k=shiftKey(curShift); shiftCache[k]=emptyShift(curShift); await fsDel('shifts',k); loadShiftFields(); toast('Shift cleared','info'); };
 window.toggleStockNote=function(){ document.getElementById('stockNote').style.display=document.getElementById('coType').value==='Personal Stock Use'?'block':'none'; };
 window.updatePaySum=function(){
@@ -1899,6 +1944,17 @@ window.addSupplier=async function(){
   renderSuppliersDb(); populateSupplierList();
 };
 window.delSupplier=async function(i){ suppliers.splice(i,1); await saveSuppliersDb(); renderSuppliersDb(); populateSupplierList(); };
+// Auto-register supplier names (from product chips / saved POs) into the suppliers DB so they
+// become reusable, searchable entries instead of one-off free text.
+async function ensureSuppliersRegistered(names){
+  let added=false;
+  for(const raw of (names||[])){
+    const n=(raw||'').trim(); if(!n || n.toLowerCase()==='no supplier') continue;
+    if(!suppliers.some(s=>s.name.toLowerCase()===n.toLowerCase())){ suppliers.push({name:n}); added=true; }
+  }
+  if(added){ await saveSuppliersDb(); try{ renderSuppliersDb(); populateSupplierList(); }catch(_){} }
+  return added;
+}
 
 // Apply a category's recommended markup to suggest a selling price from cost.
 window.applyCategoryMarkup=function(){
@@ -1924,11 +1980,12 @@ function populateCategoryList(){
 
 function renderProductTable(prods){
   const tbody=document.getElementById('prodTbody');
-  if(!prods.length){tbody.innerHTML=`<tr><td colspan="8"><div class="empty"><i class="ti ti-package"></i>No products yet</div></td></tr>`;return;}
+  if(!prods.length){tbody.innerHTML=`<tr><td colspan="9"><div class="empty"><i class="ti ti-package"></i>No products yet</div></td></tr>`;return;}
   tbody.innerHTML=prods.map(p=>{
     const inv=p.inventory||0, low=p.lowStock||10;
     const invClass=inv<=0?'inv-out':inv<=low?'inv-low':'inv-ok';
     const margin=p.cost&&p.price?((p.price-p.cost)/p.price*100).toFixed(1)+'%':'-';
+    const markup=p.cost&&p.price?((p.price-p.cost)/p.cost*100).toFixed(1)+'%':'-';
     return `<tr>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${p.sku||'-'}</td>
       <td><div style="font-weight:500">${p.name}</div>${p.category?`<div style="font-size:10px;color:var(--text3)">${p.category}</div>`:''}</td>
@@ -1936,6 +1993,7 @@ function renderProductTable(prods){
       <td class="c-amb" style="font-family:var(--mono);font-size:12px">${fmtShort(p.cost)}</td>
       <td class="c-tel" style="font-family:var(--mono);font-size:12px">${fmtShort(p.price)}</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${margin}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:var(--blue)">${markup}</td>
       <td class="${invClass}" style="font-family:var(--mono);font-size:12px">${inv}${inv<=low&&inv>0?' ⚠':''}${inv<=0?' ✗':''}</td>
       <td>
         <div style="display:flex;gap:5px;justify-content:flex-end">
@@ -1985,6 +2043,35 @@ window.calcMargin=function(){
   } else { document.getElementById('pMargin').value=''; }
 };
 
+// ── Supplier multi-select (search the registered suppliers DB; chips for the chosen ones) ──
+// Stored back into product.suppliers as a comma string for backward compatibility.
+let selectedSuppliers=[], supSearchList=[];
+function renderSupChips(){
+  const el=document.getElementById('supChips'); if(!el) return;
+  el.innerHTML=selectedSuppliers.map((s,i)=>`<span class="sup-chip">${s}<button type="button" onclick="removeSupplierChip(${i})">&times;</button></span>`).join('');
+}
+window.renderSupSearch=function(){
+  const raw=document.getElementById('supSearch').value.trim(), q=raw.toLowerCase();
+  const box=document.getElementById('supSearchResults');
+  if(!q){ box.innerHTML=''; supSearchList=[]; return; }
+  supSearchList=knownSuppliers().filter(n=>!selectedSuppliers.some(s=>s.toLowerCase()===n.toLowerCase()) && n.toLowerCase().includes(q)).slice(0,8);
+  let html=supSearchList.map((n,i)=>`<div class="sup-opt" onclick="pickSupplier(${i})">${n}</div>`).join('');
+  const exists=knownSuppliers().some(n=>n.toLowerCase()===q)||selectedSuppliers.some(s=>s.toLowerCase()===q);
+  if(raw && !exists) html+=`<div class="sup-opt sup-opt-new" onclick="addTypedSupplier()"><i class="ti ti-plus" style="font-size:11px"></i> Add "${raw}"</div>`;
+  box.innerHTML=html;
+};
+window.pickSupplier=function(i){ const n=supSearchList[i]; if(n) addSupplierChip(n); };
+window.addTypedSupplier=function(){ addSupplierChip(document.getElementById('supSearch').value); };
+window.addSupplierChip=function(name){
+  name=(name||'').trim(); if(!name) return;
+  if(!selectedSuppliers.some(s=>s.toLowerCase()===name.toLowerCase())) selectedSuppliers.push(name);
+  document.getElementById('supSearch').value=''; document.getElementById('supSearchResults').innerHTML=''; supSearchList=[];
+  renderSupChips();
+};
+window.removeSupplierChip=function(i){ selectedSuppliers.splice(i,1); renderSupChips(); };
+window.supSearchKey=function(e){ if(e.key==='Enter'){ e.preventDefault(); addTypedSupplier(); } };
+function setSuppliersFromString(str){ selectedSuppliers=(str||'').split(',').map(s=>s.trim()).filter(Boolean); renderSupChips(); }
+
 let variantRows=[];
 window.addVariantRow=function(v=null){
   const id='vr_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
@@ -1994,6 +2081,7 @@ window.addVariantRow=function(v=null){
   div.innerHTML=`
     <div class="field"><input type="text" placeholder="Size (e.g. 500mg)" value="${v?.size||''}" class="vSize"></div>
     <div class="field"><input type="text" placeholder="Packaging (e.g. Capsule)" value="${v?.packaging||''}" class="vPkg"></div>
+    <div class="field"><input type="number" placeholder="Cost" step="0.01" value="${v?.cost||''}" class="vCost"></div>
     <div class="field"><input type="number" placeholder="Price" step="0.01" value="${v?.price||''}" class="vPrice"></div>
     <button class="del-btn" onclick="removeVariantRow('${id}')"><i class="ti ti-x"></i></button>`;
   document.getElementById('variantList').appendChild(div);
@@ -2004,6 +2092,7 @@ function getVariantsFromForm(){
   return [...document.getElementById('variantList').querySelectorAll('.variant-row')].map(row=>({
     size:row.querySelector('.vSize').value.trim(),
     packaging:row.querySelector('.vPkg').value.trim(),
+    cost:parseFloat(row.querySelector('.vCost').value)||0,
     price:parseFloat(row.querySelector('.vPrice').value)||0
   })).filter(v=>v.size||v.packaging);
 }
@@ -2015,7 +2104,7 @@ window.saveProduct=async function(){
   const id=editingProdId||'prod_'+Date.now();
   const data={
     sku:document.getElementById('pSku').value.trim(),
-    suppliers:document.getElementById('pSuppliers').value.trim(),
+    suppliers:selectedSuppliers.join(', '),
     name,
     category:document.getElementById('pCategory').value.trim(),
     cost:parseFloat(document.getElementById('pCost').value)||0,
@@ -2026,6 +2115,7 @@ window.saveProduct=async function(){
     updatedAt:tnow()
   };
   await fsSet('products',id,data);
+  await ensureSuppliersRegistered(selectedSuppliers);   // new suppliers picked here join the DB
   // Update cache
   allProductsFull[id]=data;
   const existing=allProducts.findIndex(p=>p.id===id);
@@ -2044,7 +2134,8 @@ window.editProduct=async function(id){
   editingProdId=id;
   document.getElementById('prodFormTitle').textContent='Edit Product';
   document.getElementById('pSku').value=p.sku||'';
-  document.getElementById('pSuppliers').value=p.suppliers||'';
+  setSuppliersFromString(p.suppliers);
+  document.getElementById('supSearch').value=''; document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('pName').value=p.name||'';
   document.getElementById('pCategory').value=p.category||'';
   document.getElementById('pCost').value=p.cost||'';
@@ -2063,7 +2154,8 @@ window.editProduct=async function(id){
 window.cancelEditProduct=function(){
   editingProdId=null;
   document.getElementById('prodFormTitle').textContent='Add New Product';
-  ['pSku','pName','pCategory','pSuppliers','pCost','pPrice','pInventory','pLowStock','pMargin'].forEach(id=>document.getElementById(id).value='');
+  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pMargin','supSearch'].forEach(id=>document.getElementById(id).value='');
+  selectedSuppliers=[]; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('variantList').innerHTML=''; variantRows=[];
 };
 
@@ -2158,11 +2250,12 @@ window.confirmAddToCart=function(){
   if(!modalVariant&&modalProd.variants?.length){toast('Select a variant first','err');return;}
   const v=modalVariant||{size:'',packaging:'',price:modalProd.price};
   const price=v.price||modalProd.price;
+  const vcost=(v.cost!=null && v.cost!=='') ? v.cost : (modalProd.cost||0);   // variant cost if set, else base
   const qty=Math.max(1,parseInt(document.getElementById('modalQty').value)||1);
   const name=modalProd.name;
   const existing=cart.find(c=>c.prodId===modalProd.id&&c.size===v.size&&c.packaging===v.packaging);
   if(existing){existing.qty+=qty;}
-  else{cart.push({prodId:modalProd.id,name,size:v.size||'',packaging:v.packaging||'',price,cost:modalProd.cost||0,qty});}
+  else{cart.push({prodId:modalProd.id,name,size:v.size||'',packaging:v.packaging||'',price,cost:vcost,qty});}
   closeModal(); renderCart(); toast(`${name} ×${qty} added`,'ok');
 };
 
@@ -2297,7 +2390,7 @@ async function finalizeSale(total, cashInfo){
     subtotal, discount:discSnap,
     cashReceived:cashInfo?cashInfo.received:null, change:cashInfo?cashInfo.change:null,
     cashier:session?.name||'',
-    items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(allProductsFull[it.prodId]?.cost ?? 0)})) });
+    items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(it.cost!=null?it.cost:(allProductsFull[it.prodId]?.cost ?? 0))})) });
   s.posTot=(s.posTot||0)+total;
   s.posTxn=(s.posTxn||0)+1;
   if(payMode==='cash') s.pbCash=(s.pbCash||0)+total;
@@ -2355,12 +2448,12 @@ window.renderDaily=async function(){
   const s1=await fsGet('shifts',shiftKey(1,dt)), s2=await fsGet('shifts',shiftKey(2,dt));
   if(!s1&&!s2){el.innerHTML='<div class="card"><div class="empty"><i class="ti ti-calendar"></i>No shift data for this date</div></div>';return;}
   const sc=(s,n)=>{
-    if(!s)return `<div class="card"><div class="card-title"><i class="ti ti-${n===1?'sun':'moon'}"></i> Shift ${n} - No data</div><div class="empty">Not recorded</div></div>`;
+    if(!s)return `<div class="card"><div class="card-title"><i class="ti ti-${n===1?'sun':'moon'}"></i> ${n===1?'Morning':'Evening'} Shift - No data</div><div class="empty">Not recorded</div></div>`;
     const c=calcShift(s);
     const vc=Math.abs(c.variance)<0.5?'rec-ok':Math.abs(c.variance)<300?'rec-warn':'rec-err';
     const vi=Math.abs(c.variance)<0.5?'Drawer balanced':`${c.variance>0?'Over':'Short'} by ${fmt(Math.abs(c.variance))}`;
     const pt=[s.pbCash?`<span style="padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;background:var(--teal-dim);color:var(--teal)">Cash ${fmtShort(s.pbCash)}</span>`:'',s.pbGcash?`<span style="padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;background:var(--gcash-dim);color:var(--gcash)">GCash ${fmtShort(s.pbGcash)}</span>`:'',s.pbMaya?`<span style="padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;background:var(--maya-dim);color:var(--maya)">Maya ${fmtShort(s.pbMaya)}</span>`:'',s.pbMcredit?`<span style="padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;background:var(--mcredit-dim);color:var(--mcredit)">M Credit ${fmtShort(s.pbMcredit)}</span>`:''].filter(Boolean).join(' ');
-    return `<div class="card"><div class="card-title"><i class="ti ti-${n===1?'sun':'moon'}"></i> Shift ${n} - ${n===1?'7AM-3PM':'3PM-11PM'} <span class="badge ${s.saved?'b-saved':'b-draft'}" style="margin-left:auto">${s.saved?'Saved':'Draft'}</span></div>
+    return `<div class="card"><div class="card-title"><i class="ti ti-${n===1?'sun':'moon'}"></i> ${n===1?'Morning':'Evening'} Shift - ${n===1?'7AM-3PM':'3PM-11PM'} <span class="badge ${s.saved?'b-saved':'b-draft'}" style="margin-left:auto">${s.saved?'Saved':'Draft'}</span></div>
     <div style="font-size:10px;color:var(--text3);margin-bottom:9px">Cashier: <span style="color:var(--text2)">${s.cashier||'-'}</span></div>
     <table class="stbl">
       <tr><td style="color:var(--text2)">Starting Cash</td><td>${fmt(s.startCash)}</td></tr>
@@ -2411,20 +2504,42 @@ window.addPayable=async function(){
   toast('Payable saved','ok'); renderPayables();
 };
 window.removePayable=async function(id){ await fsDel('payables',id); renderPayables(); };
+let payFilter={q:'',from:'',to:''}, payArchiveOpen=false;
+window.clearPayFilter=function(){ payFilter={q:'',from:'',to:''}; ['payFilterQ','payFilterFrom','payFilterTo'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); renderPayables(); };
+window.togglePayArchive=function(){ payArchiveOpen=!payArchiveOpen; renderPayables(); };
+function payMatchesFilter(p){
+  const q=(payFilter.q||'').trim().toLowerCase();
+  const textOk=!q || (p.desc||'').toLowerCase().includes(q) || (p.category||'').toLowerCase().includes(q) || (p.by||'').toLowerCase().includes(q);
+  const dateOk=(!payFilter.from || (p.date||'')>=payFilter.from) && (!payFilter.to || (p.date||'')<=payFilter.to);
+  return textOk && dateOk;
+}
+function payRowHtml(p){
+  const unpaid=p.status==='unpaid', paid=p.status==='paid';
+  const chip=unpaid?`<span class="chip chip-low">Unpaid</span>`:paid?`<span class="chip chip-ok">Paid</span>`:'';
+  const term=p.payTerm?` · ${p.payTerm}`:'';
+  const paidVia=paid&&p.paidVia?` · via ${p.paidVia}${p.paidBy?' ('+p.paidBy+')':''}`:'';
+  return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''} ${chip}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}${term}${paidVia}</div></div><div style="display:flex;align-items:center;gap:6px">${unpaid?`<button class="btn btn-teal btn-xs" onclick="openPayModal('${p.id}')"><i class="ti ti-cash"></i> Pay</button>`:''}<span class="eval c-neg">-${fmt(p.amount)}</span><button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button></div></div>`;
+}
+// Read the filter inputs live (oninput calls renderPayables directly).
+function syncPayFilter(){ payFilter={q:(document.getElementById('payFilterQ')?.value||''), from:(document.getElementById('payFilterFrom')?.value||''), to:(document.getElementById('payFilterTo')?.value||'')}; }
 window.renderPayables=async function(){
+  syncPayFilter();
   let list=await fsGetAll('payables'); const el=document.getElementById('payList');
+  const arEl=document.getElementById('payArchiveContainer');
   // Privacy: non-owners never see entries logged by an owner.
   if(session?.role!=='owner') list=list.filter(p=>p.byRole!=='owner');
-  if(!list.length){el.innerHTML='<div class="empty"><i class="ti ti-building-bank"></i>No payables yet</div>';return;}
-  // Unpaid first, then by date.
-  list.sort((a,b)=>{ const ap=a.status==='unpaid'?0:1, bp=b.status==='unpaid'?0:1; return ap-bp || b.date.localeCompare(a.date); });
-  el.innerHTML=list.map(p=>{
-    const unpaid=p.status==='unpaid', paid=p.status==='paid';
-    const chip=unpaid?`<span class="chip chip-low">Unpaid</span>`:paid?`<span class="chip chip-ok">Paid</span>`:'';
-    const term=p.payTerm?` · ${p.payTerm}`:'';
-    const paidVia=paid&&p.paidVia?` · via ${p.paidVia}${p.paidBy?' ('+p.paidBy+')':''}`:'';
-    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''} ${chip}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}${term}${paidVia}</div></div><div style="display:flex;align-items:center;gap:6px">${unpaid?`<button class="btn btn-teal btn-xs" onclick="openPayModal('${p.id}')"><i class="ti ti-cash"></i> Pay</button>`:''}<span class="eval c-neg">-${fmt(p.amount)}</span><button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button></div></div>`;
-  }).join('');
+  list=list.filter(payMatchesFilter);
+  const sortFn=(a,b)=>(b.date||'').localeCompare(a.date||'');
+  // Archive = paid transactions. Active = everything still open (unpaid).
+  const active=list.filter(p=>p.status!=='paid').sort(sortFn);
+  const archived=list.filter(p=>p.status==='paid').sort(sortFn);
+  const cnt=document.getElementById('payListCount'); if(cnt) cnt.textContent=`${active.length} open · ${archived.length} archived`;
+  el.innerHTML=active.length?active.map(payRowHtml).join(''):'<div class="empty"><i class="ti ti-building-bank"></i>No open payables</div>';
+  if(arEl){
+    arEl.innerHTML = archived.length
+      ? `<button class="archive-toggle ${payArchiveOpen?'open':''}" onclick="togglePayArchive()"><i class="ti ti-archive"></i> ARCHIVE — Paid (${archived.length}) <i class="ti ti-chevron-right chev"></i></button>${payArchiveOpen?`<div class="archive-body elist" style="max-height:400px">${archived.map(payRowHtml).join('')}</div>`:''}`
+      : '';
+  }
 };
 async function renderPayables(){ await window.renderPayables(); }
 
@@ -2556,8 +2671,21 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.33';
+const APP_VERSION='v4.35';
 const CHANGELOG=[
+  {v:'v4.35', date:'2026-06-30', notes:[
+    'New suppliers you pick in a product or use on a purchase order are now auto-saved to your Suppliers list',
+    'Saving a purchase order now tags its supplier onto each included product automatically',
+    'Order list: you can now edit each item\'s unit cost when building the order (as well as at delivery)',
+    'Variant cost now flows into Reports — profit & margin use the specific variant\'s cost when a variant is sold',
+    'Saved Purchase Orders: Delivered & Paid POs move to a collapsible Archive; list is searchable by PO/DR number, supplier, and date range',
+    'Payables Log: Paid entries move to a collapsible Archive; searchable by payee/category and date range',
+    'Reports: shifts are now labelled Morning / Evening instead of Shift 1 / Shift 2']},
+  {v:'v4.34', date:'2026-06-29', notes:[
+    'Add/Edit product: Suppliers is now a search box over your registered suppliers with selectable chips (still supports multiple, and you can add a new one on the fly) instead of free-typing a comma list',
+    'Products: variants now have their own Cost field (alongside Size, Packaging, Price)',
+    'Products: inventory table now shows a Markup % column beside Margin %',
+    'Products: Import/Export and the Categories & Suppliers manager are now visible to the owner only (staff/managers still use the rest of the Products tab)']},
   {v:'v4.33', date:'2026-06-29', notes:[
     'Reports now include a Sales & Profitability breakdown in every view (Daily, Weekly, Monthly, Yearly): Gross Sales, Discounts, Refunds, Net Sales, Cost of Goods, Gross Profit, and Margin %',
     'Each POS sale now records the item cost at the time of sale, so profit/margin figures are exact going forward (older sales estimate cost from the product\'s current cost)']},
@@ -2833,10 +2961,13 @@ window.renderOrderSearch = function() {
 };
 
 function orderSupplierOf(){ return orderSupplier.trim() || 'No Supplier'; }
+// Editable ordered cost per line — defaults to the product's current cost but can be overridden
+// in the order list (and again at delivery). null/undefined falls back to the product cost.
+function oiCost(oi){ return (oi && oi.cost!=null) ? oi.cost : (oi&&oi.prod?(oi.prod.cost||0):0); }
 window.setOrderSupplier=function(val){ orderSupplier=(val||'').trim(); renderOrderList(); };
 window.addToOrder = function(id) {
   const prod=allProducts.find(p=>p.id===id); if(!prod)return;
-  if(!orderItems[id]) orderItems[id]={prod,qty:1};
+  if(!orderItems[id]) orderItems[id]={prod,qty:1,cost:(prod.cost||0)};
   else orderItems[id].qty++;
   // Default the order's supplier to the product's first supplier if none chosen yet.
   if(!orderSupplier){ const ps=((allProductsFull[id]?.suppliers||'').split(',')[0]||'').trim(); if(ps){ orderSupplier=ps; document.getElementById('orderSupplierInput').value=ps; } }
@@ -2873,21 +3004,23 @@ function renderOrderList() {
   el.innerHTML=`
     <div class="supplier-section">
       <div class="supplier-header"><i class="ti ti-building-store" style="font-size:11px;margin-right:4px"></i>${supplier}</div>
-      ${items.map(({prod,qty})=>`
+      ${items.map(oi=>{const prod=oi.prod,qty=oi.qty;return `
         <div class="po-item">
           <div class="po-info">
             <div class="po-name">${prod.name}</div>
-            <div class="po-meta">${prod.sku||'No SKU'} · Cost: ${fmt(prod.cost||0)} · Stock: ${prod.inventory||0}</div>
+            <div class="po-meta">${prod.sku||'No SKU'} · Stock: ${prod.inventory||0}</div>
           </div>
           <div class="po-qty-wrap">
-            <label style="font-size:10px;color:var(--text3)">Qty:</label>
+            <label style="font-size:10px;color:var(--text3)">Cost:</label>
+            <input type="number" class="po-qty" style="width:70px" step="0.01" min="0" value="${oiCost(oi)}" oninput="updateOrderCost('${prod.id}',this.value)" title="Editable unit cost">
+            <label style="font-size:10px;color:var(--text3);margin-left:6px">Qty:</label>
             <input type="number" class="po-qty" value="${qty}" min="1" oninput="updateOrderQty('${prod.id}',this.value)">
           </div>
-          <div class="po-price" id="opx-${prod.id}">${fmt((prod.cost||0)*qty)}</div>
+          <div class="po-price" id="opx-${prod.id}">${fmt(oiCost(oi)*qty)}</div>
           <button class="del-btn" onclick="removeFromOrder('${prod.id}')"><i class="ti ti-x"></i></button>
-        </div>`).join('')}
+        </div>`}).join('')}
       <div style="text-align:right;font-size:11px;color:var(--amber);font-family:var(--mono);padding:4px 10px">
-        Subtotal: <span id="orderSubtotal">${fmt(items.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0))}</span>
+        Subtotal: <span id="orderSubtotal">${fmt(items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0))}</span>
       </div>
     </div>`;
 
@@ -2898,20 +3031,27 @@ function renderOrderList() {
 // without re-rendering the list (which would blur the number input mid-typing).
 window.updateOrderQty=function(id,val){
   if(!orderItems[id]) return;
-  const q=Math.max(1,parseInt(val)||1);
-  orderItems[id].qty=q;
-  const cost=orderItems[id].prod.cost||0;
-  const pe=document.getElementById('opx-'+id); if(pe) pe.textContent=fmt(cost*q);
-  const sub=Object.values(orderItems).reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0);
+  orderItems[id].qty=Math.max(1,parseInt(val)||1);
+  refreshOrderLine(id);
+};
+window.updateOrderCost=function(id,val){
+  if(!orderItems[id]) return;
+  orderItems[id].cost=Math.max(0,parseFloat(val)||0);
+  refreshOrderLine(id);
+};
+function refreshOrderLine(id){
+  const oi=orderItems[id]; if(!oi) return;
+  const pe=document.getElementById('opx-'+id); if(pe) pe.textContent=fmt(oiCost(oi)*oi.qty);
+  const sub=Object.values(orderItems).reduce((a,o)=>a+oiCost(o)*o.qty,0);
   const se=document.getElementById('orderSubtotal'); if(se) se.textContent=fmt(sub);
   renderPOPreview({[orderSupplierOf()]:Object.values(orderItems)});
-};
+}
 
 function renderPOPreview(bySupplier) {
   const poNum=document.getElementById('poNumber').value||'PO-001';
   const poDate=document.getElementById('poDate').value||today();
   const poNotes=document.getElementById('poNotes').value||'';
-  const grandTotal=Object.values(orderItems).reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0);
+  const grandTotal=Object.values(orderItems).reduce((a,o)=>a+oiCost(o)*o.qty,0);
   const totalItems=Object.values(orderItems).reduce((a,{qty})=>a+qty,0);
 
   let html=`<div class="po-preview">
@@ -2927,12 +3067,12 @@ function renderPOPreview(bySupplier) {
       <div style="font-size:10px;font-weight:600;color:var(--purple);margin-bottom:4px;text-transform:uppercase">SUPPLIER: ${supplier}</div>
       <table class="po-tbl">
         <tr><th>SKU</th><th>Product</th><th style="text-align:right">Cost</th><th style="text-align:right">Qty</th><th style="text-align:right">Total</th></tr>
-        ${sitems.map(({prod,qty})=>`<tr>
-          <td style="color:var(--text3)">${prod.sku||'-'}</td>
-          <td>${prod.name}</td>
-          <td style="text-align:right">${fmtShort(prod.cost||0)}</td>
-          <td style="text-align:right">${qty}</td>
-          <td style="text-align:right;color:var(--amber)">${fmtShort((prod.cost||0)*qty)}</td>
+        ${sitems.map(oi=>`<tr>
+          <td style="color:var(--text3)">${oi.prod.sku||'-'}</td>
+          <td>${oi.prod.name}</td>
+          <td style="text-align:right">${fmtShort(oiCost(oi))}</td>
+          <td style="text-align:right">${oi.qty}</td>
+          <td style="text-align:right;color:var(--amber)">${fmtShort(oiCost(oi)*oi.qty)}</td>
         </tr>`).join('')}
       </table>
     </div>`;
@@ -2952,9 +3092,10 @@ window.exportPO = function() {
   const poDate=document.getElementById('poDate').value||today();
   const header='PO Number,Date,Supplier,SKU,Product,Cost,Qty,Total';
   const sup=orderSupplierOf();
-  const rows=items.map(({prod,qty})=>{
+  const rows=items.map(oi=>{
+    const prod=oi.prod,qty=oi.qty,c=oiCost(oi);
     const esc=s=>`"${(s||'').toString().replace(/"/g,'""')}"`;
-    return [esc(poNum),esc(poDate),esc(sup),esc(prod.sku),esc(prod.name),prod.cost||0,qty,((prod.cost||0)*qty).toFixed(2)].join(',');
+    return [esc(poNum),esc(poDate),esc(sup),esc(prod.sku),esc(prod.name),c,qty,(c*qty).toFixed(2)].join(',');
   });
   const csv=[header,...rows].join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
@@ -2971,7 +3112,7 @@ window.printPO = function() {
   const poNotes=document.getElementById('poNotes').value||'';
   const items=Object.values(orderItems);
   if(!items.length){toast('No items in order','err');return;}
-  const grandTotal=items.reduce((a,{prod,qty})=>a+(prod.cost||0)*qty,0);
+  const grandTotal=items.reduce((a,o)=>a+oiCost(o)*o.qty,0);
 
   // One supplier per order
   const bySupplier={[orderSupplierOf()]:items};
@@ -2982,7 +3123,7 @@ window.printPO = function() {
       <div style="font-weight:600;font-size:13px;margin-bottom:6px;border-bottom:2px solid #000;padding-bottom:4px">SUPPLIER: ${supplier}</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <tr style="background:#f0f0f0"><th style="padding:6px;border:1px solid #ccc;text-align:left">SKU</th><th style="padding:6px;border:1px solid #ccc;text-align:left">Product</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Unit Cost</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Qty</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Total</th></tr>
-        ${sitems.map(({prod,qty})=>`<tr><td style="padding:6px;border:1px solid #ccc">${prod.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${prod.name}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(prod.cost||0).toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${qty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${((prod.cost||0)*qty).toFixed(2)}</td></tr>`).join('')}
+        ${sitems.map(oi=>{const prod=oi.prod,qty=oi.qty,c=oiCost(oi);return `<tr><td style="padding:6px;border:1px solid #ccc">${prod.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${prod.name}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${c.toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${qty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(c*qty).toFixed(2)}</td></tr>`}).join('')}
       </table>
     </div>`;
   });
@@ -3027,14 +3168,27 @@ window.savePO=async function(){
   const po={
     id, poNumber:poNum, date:document.getElementById('poDate').value||today(),
     notes:document.getElementById('poNotes').value||'', status:'pending', supplier,
-    items: items.map(({prod,qty})=>{
+    items: items.map(oi=>{
+      const prod=oi.prod, qty=oi.qty, c=oiCost(oi);
       return { prodId:prod.id, sku:prod.sku||'', name:prod.name, supplier,
-               orderedQty:qty, orderedCost:prod.cost||0, recvQty:qty, recvCost:prod.cost||0 };
+               orderedQty:qty, orderedCost:c, recvQty:qty, recvCost:c };
     }),
     createdAt:tnow(), createdBy:session?.name||''
   };
   await fsSet('purchaseOrders', id, po);
   savedPOs.push(po);
+  // Register the order's supplier and tag it onto every product that doesn't already list it.
+  if(supplier && supplier!=='No Supplier'){
+    await ensureSuppliersRegistered([supplier]);
+    for(const oi of items){
+      const fp=allProductsFull[oi.prod.id]; if(!fp) continue;
+      const cur=(fp.suppliers||'').split(',').map(x=>x.trim()).filter(Boolean);
+      if(!cur.some(x=>x.toLowerCase()===supplier.toLowerCase())){
+        cur.push(supplier); fp.suppliers=cur.join(', '); fp.updatedAt=tnow();
+        await fsSet('products', oi.prod.id, fp);
+      }
+    }
+  }
   orderItems={}; orderSupplier=''; document.getElementById('poNumber').value='';
   initOrderTab();
   toast(`PO saved for ${supplier}`,'ok');
@@ -3046,18 +3200,23 @@ window.deletePO=async function(id){
   renderPOList();
 };
 
-function renderPOList(){
-  const el=document.getElementById('poListContainer'); if(!el) return;
-  const pos=[...savedPOs].sort((a,b)=>b.id.localeCompare(a.id));
-  document.getElementById('poListCount').textContent=pos.length+' POs';
-  if(!pos.length){ el.innerHTML='<div class="empty"><i class="ti ti-file-invoice"></i>No saved purchase orders</div>'; return; }
-  el.innerHTML=pos.map(po=>{
-    const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
-    const delivered=po.status==='delivered';
-    const paid=po.payStatus==='paid';
-    const statusChip=delivered?`<span class="chip chip-ok">Delivered</span>`:`<span class="chip chip-low">Pending</span>`;
-    const payChip=delivered?(paid?`<span class="chip chip-ok">Paid</span>`:`<span class="chip chip-low">Unpaid</span>`):'';
-    return `<div class="po-item">
+let poFilter={q:'',from:'',to:''}, poArchiveOpen=false;
+window.setPoFilter=function(){ poFilter={q:document.getElementById('poFilterQ').value, from:document.getElementById('poFilterFrom').value, to:document.getElementById('poFilterTo').value}; renderPOList(); };
+window.clearPoFilter=function(){ poFilter={q:'',from:'',to:''}; ['poFilterQ','poFilterFrom','poFilterTo'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); renderPOList(); };
+window.togglePoArchive=function(){ poArchiveOpen=!poArchiveOpen; renderPOList(); };
+function poMatchesFilter(po){
+  const q=(poFilter.q||'').trim().toLowerCase();
+  const textOk=!q || (po.poNumber||'').toLowerCase().includes(q) || (po.supplier||'').toLowerCase().includes(q);
+  const dateOk=(!poFilter.from || (po.date||'')>=poFilter.from) && (!poFilter.to || (po.date||'')<=poFilter.to);
+  return textOk && dateOk;
+}
+function poRowHtml(po){
+  const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
+  const delivered=po.status==='delivered';
+  const paid=po.payStatus==='paid';
+  const statusChip=delivered?`<span class="chip chip-ok">Delivered</span>`:`<span class="chip chip-low">Pending</span>`;
+  const payChip=delivered?(paid?`<span class="chip chip-ok">Paid</span>`:`<span class="chip chip-low">Unpaid</span>`):'';
+  return `<div class="po-item">
       <div class="po-info">
         <div class="po-name">${po.poNumber} <span style="font-size:10px;color:var(--text3);font-weight:400">${po.supplier||''}</span> ${statusChip} ${payChip}</div>
         <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}${paid&&po.paidVia?' · paid '+po.paidVia:''}</div>
@@ -3068,7 +3227,21 @@ function renderPOList(){
         <button class="del-btn" onclick="deletePO('${po.id}')"><i class="ti ti-x"></i></button>
       </div>
     </div>`;
-  }).join('');
+}
+function renderPOList(){
+  const el=document.getElementById('poListContainer'); if(!el) return;
+  const arEl=document.getElementById('poArchiveContainer');
+  const all=[...savedPOs].sort((a,b)=>b.id.localeCompare(a.id)).filter(poMatchesFilter);
+  // Archive = fully closed POs (Delivered AND Paid). Everything else stays in the active list.
+  const active=all.filter(po=>!(po.status==='delivered'&&po.payStatus==='paid'));
+  const archived=all.filter(po=>po.status==='delivered'&&po.payStatus==='paid');
+  document.getElementById('poListCount').textContent=`${active.length} active · ${archived.length} archived`;
+  el.innerHTML=active.length?active.map(poRowHtml).join(''):'<div class="empty"><i class="ti ti-file-invoice"></i>No active purchase orders</div>';
+  if(arEl){
+    arEl.innerHTML = archived.length
+      ? `<button class="archive-toggle ${poArchiveOpen?'open':''}" onclick="togglePoArchive()"><i class="ti ti-archive"></i> ARCHIVE — Delivered &amp; Paid (${archived.length}) <i class="ti ti-chevron-right chev"></i></button>${poArchiveOpen?`<div class="archive-body">${archived.map(poRowHtml).join('')}</div>`:''}`
+      : '';
+  }
 }
 
 // View a saved PO's full itemization again (read-only).
