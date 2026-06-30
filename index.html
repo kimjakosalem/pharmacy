@@ -1768,6 +1768,48 @@ function calcShift(s){
   return {ciTot,coCash,coCashExp,coStock,msTotal,msCash,grossSales,cashPOS,expected,variance};
 }
 
+// ── Sales & profitability metrics (POS transactions only) ──
+// Sales line items store their cost-at-sale (added in finalizeSale); older rows + return
+// items fall back to the product's current cost. So Cost of Goods/Margin are exact for new
+// sales and a best-estimate for sales made before cost-stamping existed.
+function itemUnitCost(it){ return (it && it.cost!=null) ? it.cost : (allProductsFull[it?.prodId]?.cost || 0); }
+function blankMetrics(){ return {gross:0,discounts:0,refunds:0,netSales:0,cogs:0,grossProfit:0}; }
+// Per-shift metrics from its sales[] + returns[]. netSales ties out to s.posTot by construction:
+//   netSales = gross(POS subtotals + exchange replacements) - discounts - refunds(returned value)
+function shiftSalesMetrics(s){
+  const m=blankMetrics();
+  for(const sale of (s?.sales||[])){
+    m.gross += (sale.subtotal!=null ? sale.subtotal : (sale.total||0));
+    m.discounts += sale.discount?.amount || 0;
+    for(const it of (sale.items||[])) m.cogs += itemUnitCost(it)*(it.qty||0);
+  }
+  for(const r of (s?.returns||[])){
+    m.refunds += r.returnValue || 0;                                   // value of goods returned
+    for(const it of (r.returnedItems||[])) m.cogs -= itemUnitCost(it)*(it.qty||0);
+    m.gross += r.newValue || 0;                                        // exchange replacements = new sales
+    for(const it of (r.newItems||[])) m.cogs += itemUnitCost(it)*(it.qty||0);
+  }
+  m.netSales = m.gross - m.discounts - m.refunds;
+  m.grossProfit = m.netSales - m.cogs;
+  return m;
+}
+function addMetrics(acc,m){ acc.gross+=m.gross;acc.discounts+=m.discounts;acc.refunds+=m.refunds;acc.netSales+=m.netSales;acc.cogs+=m.cogs;acc.grossProfit+=m.grossProfit; return acc; }
+function metricsMargin(m){ return m.netSales>0 ? m.grossProfit/m.netSales*100 : 0; }
+// The shared "Sales & Profitability" card, shown identically in Daily / Weekly / Monthly / Yearly.
+function salesProfitCard(m){
+  const margin=metricsMargin(m);
+  return `<div class="card"><div class="card-title"><i class="ti ti-chart-pie"></i> Sales &amp; Profitability <span style="margin-left:auto;font-size:9px;font-weight:400;color:var(--text3)">POS transactions</span></div>
+    <table class="stbl">
+      <tr><td style="color:var(--text2)">Gross Sales</td><td class="c-tel">${fmt(m.gross)}</td></tr>
+      <tr class="tr-ind"><td>Discounts</td><td class="c-amb">-${fmt(m.discounts)}</td></tr>
+      <tr class="tr-ind"><td>Refunds</td><td class="c-neg">-${fmt(m.refunds)}</td></tr>
+      <tr class="tr-total"><td>Net Sales</td><td class="c-tel">${fmt(m.netSales)}</td></tr>
+      <tr><td style="color:var(--text2)">Cost of Goods</td><td class="c-amb">-${fmt(m.cogs)}</td></tr>
+      <tr class="tr-total"><td>Gross Profit</td><td style="color:${m.grossProfit>=0?'var(--green)':'var(--red)'}">${fmt(m.grossProfit)}</td></tr>
+      <tr><td style="color:var(--text2)">Margin</td><td style="color:${margin>=0?'var(--green)':'var(--red)'};font-family:var(--mono)">${margin.toFixed(1)}%</td></tr>
+    </table></div>`;
+}
+
 // ═══════════════════════════════════════
 // ── PRODUCTS ──
 // ═══════════════════════════════════════
@@ -2255,7 +2297,7 @@ async function finalizeSale(total, cashInfo){
     subtotal, discount:discSnap,
     cashReceived:cashInfo?cashInfo.received:null, change:cashInfo?cashInfo.change:null,
     cashier:session?.name||'',
-    items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty})) });
+    items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(allProductsFull[it.prodId]?.cost ?? 0)})) });
   s.posTot=(s.posTot||0)+total;
   s.posTxn=(s.posTxn||0)+1;
   if(payMode==='cash') s.pbCash=(s.pbCash||0)+total;
@@ -2309,6 +2351,7 @@ window.renderDaily=async function(){
   const dt=document.getElementById('sumDate').value||today();
   const el=document.getElementById('dailyContent');
   el.innerHTML='<div class="card"><div class="empty"><i class="ti ti-loader-2 spin" style="font-size:22px"></i>Loading...</div></div>';
+  if(!Object.keys(allProductsFull).length) await loadProducts();   // need product costs for COGS/margin
   const s1=await fsGet('shifts',shiftKey(1,dt)), s2=await fsGet('shifts',shiftKey(2,dt));
   if(!s1&&!s2){el.innerHTML='<div class="card"><div class="empty"><i class="ti ti-calendar"></i>No shift data for this date</div></div>';return;}
   const sc=(s,n)=>{
@@ -2339,12 +2382,13 @@ window.renderDaily=async function(){
   // Privacy: non-owners never see owner-created payables — excluded from the list AND the net totals.
   const ap=await fsGetAll('payables'),dp=ap.filter(p=>p.date===dt && (session?.role==='owner'||p.byRole!=='owner')),dPT=dp.reduce((a,p)=>a+p.amount,0);
   const dNet=dG-dCO-dSt-dPT;
+  const dm=addMetrics(addMetrics(blankMetrics(), shiftSalesMetrics(s1)), shiftSalesMetrics(s2));
   el.innerHTML=`<div class="mrow m4">
-    <div class="metric"><div class="ml">Gross Sales</div><div class="mv c-tel">${fmt(dG)}</div></div>
-    <div class="metric"><div class="ml">POS</div><div class="mv c-blu">${fmt((s1?.posTot||0)+(s2?.posTot||0))}</div></div>
-    <div class="metric"><div class="ml">Manual</div><div class="mv c-blu">${fmt(c1.msTotal+c2.msTotal)}</div></div>
-    <div class="metric"><div class="ml">Net</div><div class="mv" style="color:${dNet>=0?'var(--green)':'var(--red)'}">${fmt(dNet)}</div></div>
-  </div>${sc(s1,1)}${sc(s2,2)}
+    <div class="metric"><div class="ml">Net Sales</div><div class="mv c-tel">${fmt(dm.netSales)}</div></div>
+    <div class="metric"><div class="ml">Gross Profit</div><div class="mv" style="color:${dm.grossProfit>=0?'var(--green)':'var(--red)'}">${fmt(dm.grossProfit)}</div></div>
+    <div class="metric"><div class="ml">Margin</div><div class="mv" style="color:${metricsMargin(dm)>=0?'var(--green)':'var(--red)'}">${metricsMargin(dm).toFixed(1)}%</div></div>
+    <div class="metric"><div class="ml">Net (after exp.)</div><div class="mv" style="color:${dNet>=0?'var(--green)':'var(--red)'}">${fmt(dNet)}</div></div>
+  </div>${salesProfitCard(dm)}${sc(s1,1)}${sc(s2,2)}
   ${dp.length?`<div class="card"><div class="card-title"><i class="ti ti-building-bank"></i> Bank Payables</div><div class="elist" style="max-height:none">${dp.map(p=>`<div class="eitem"><div><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''}</div><div class="ed">${p.date}</div></div><span class="eval c-neg">-${fmt(p.amount)}</span></div>`).join('')}</div><div class="sep"></div><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600"><span style="color:var(--text2)">Total</span><span style="font-family:var(--mono);color:var(--red)">${fmt(dPT)}</span></div></div>`:''}
   <div class="card card-accent"><div class="card-title ct-teal"><i class="ti ti-calculator"></i> Day Consolidation</div>
     <table class="stbl">
@@ -2446,13 +2490,15 @@ window.renderReports=async function(){
   const from=document.getElementById('rpFrom').value,to=document.getElementById('rpTo').value; if(!from||!to)return;
   const el=document.getElementById('reportContent');
   el.innerHTML='<div class="card"><div class="empty"><i class="ti ti-loader-2 spin" style="font-size:22px"></i>Loading...</div></div>';
+  if(!Object.keys(allProductsFull).length) await loadProducts();   // need product costs for COGS/margin
   const dates=[]; let cur=new Date(from); const end=new Date(to);
   while(cur<=end){dates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
   let tG=0,tPOS=0,tMan=0,tCE=0,tSt=0,tPay=0;
+  const tm=blankMetrics();                          // accumulated sales & profitability metrics
   const daily=[],ap=await fsGetAll('payables');
   for(const d of dates){
     let dG=0,dE=0;
-    for(const n of [1,2]){ const s=await fsGet('shifts',shiftKey(n,d)); if(s){const c=calcShift(s);dG+=c.grossSales;dE+=c.coCashExp+c.coStock;tPOS+=s.posTot||0;tMan+=c.msTotal;tCE+=c.coCashExp;tSt+=c.coStock;} }
+    for(const n of [1,2]){ const s=await fsGet('shifts',shiftKey(n,d)); if(s){const c=calcShift(s);dG+=c.grossSales;dE+=c.coCashExp+c.coStock;tPOS+=s.posTot||0;tMan+=c.msTotal;tCE+=c.coCashExp;tSt+=c.coStock;addMetrics(tm,shiftSalesMetrics(s));} }
     const dp=ap.filter(p=>p.date===d).reduce((a,p)=>a+p.amount,0);
     tG+=dG;tPay+=dp;daily.push({date:d,gross:dG,exp:dE+dp});
   }
@@ -2476,6 +2522,7 @@ window.renderReports=async function(){
     </div>
     <div class="chwrap"><canvas id="rChart" role="img" aria-label="Sales vs expenses chart">Chart.</canvas></div>
   </div>
+  ${salesProfitCard(tm)}
   <div class="card"><div class="card-title"><i class="ti ti-report-money"></i> Period Summary</div>
     <table class="stbl">
       <tr><td style="color:var(--text2);font-weight:600">Gross Sales</td><td class="c-tel">${fmt(tG)}</td></tr>
@@ -2509,8 +2556,11 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.32';
+const APP_VERSION='v4.33';
 const CHANGELOG=[
+  {v:'v4.33', date:'2026-06-29', notes:[
+    'Reports now include a Sales & Profitability breakdown in every view (Daily, Weekly, Monthly, Yearly): Gross Sales, Discounts, Refunds, Net Sales, Cost of Goods, Gross Profit, and Margin %',
+    'Each POS sale now records the item cost at the time of sale, so profit/margin figures are exact going forward (older sales estimate cost from the product\'s current cost)']},
   {v:'v4.32', date:'2026-06-29', notes:[
     'POS Transactions "Reset" is now much harder to trigger by accident: it shows exactly how many sales / how much money will be permanently wiped, and requires typing CLEAR to confirm (was a single tap + plain OK popup)']},
   {v:'v4.31', date:'2026-06-29', notes:[
