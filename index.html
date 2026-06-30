@@ -1209,7 +1209,8 @@ let pendingUser=null, loginBuf='', loginShift=1;
 const PERMS=[
   {key:'cashio',label:'Cash In/Out',icon:'ti-cash'},
   {key:'void',label:'Void Sales',icon:'ti-circle-x'},
-  {key:'returns',label:'Returns/Exchange',icon:'ti-arrow-back-up'}
+  {key:'returns',label:'Returns/Exchange',icon:'ti-arrow-back-up'},
+  {key:'voidms',label:'Void Manual Sale',icon:'ti-notebook'}
 ];
 // Defaults preserve pre-existing behavior: manager had everything, staff had nothing,
 // before this per-staff toggle existed. Owner's perms are ignored (always full) but we
@@ -1220,7 +1221,8 @@ function normStaff(s){
   return Object.assign({},s,{perms:{
     cashio: p.cashio!==undefined?!!p.cashio:def,
     void: p.void!==undefined?!!p.void:def,
-    returns: p.returns!==undefined?!!p.returns:def
+    returns: p.returns!==undefined?!!p.returns:def,
+    voidms: p.voidms!==undefined?!!p.voidms:def
   }});
 }
 function hasPerm(key){ return session?.role==='owner' || !!(session?.perms && session.perms[key]); }
@@ -1550,11 +1552,12 @@ window.addMS=async function(){
   const s=await getShift(curShift); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,mode:document.getElementById('msMode').value||'cash',qty:parseInt(document.getElementById('msQty').value)||1,time:tnow()});
   document.getElementById('msAmt').value=''; document.getElementById('msDesc').value=''; document.getElementById('msQty').value='1'; await persistShift(curShift); renderMS();
 };
-window.removeMS=async function(i){ const s=await getShift(curShift); s.manualSales.splice(i,1); await persistShift(curShift); renderMS(); };
+window.removeMS=async function(i){ if(!hasPerm('voidms')){ toast('No permission to void manual sales','err'); return; } const s=await getShift(curShift); s.manualSales.splice(i,1); await persistShift(curShift); renderMS(); };
 async function renderMS(){
   const s=await getShift(curShift); const el=document.getElementById('msList');
   if(!s.manualSales.length){el.innerHTML='<div class="empty"><i class="ti ti-notebook"></i>None</div>';return;}
-  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem"><div><div class="el">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span><button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
+  const canVoidMS=hasPerm('voidms');
+  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem"><div><div class="el">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${canVoidMS?`<button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
 }
 
 // ── POS transactions ledger (this shift) ──
@@ -2673,8 +2676,10 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.37';
+const APP_VERSION='v4.38';
 const CHANGELOG=[
+  {v:'v4.38', date:'2026-06-30', notes:[
+    'Staff privileges now include a "Void Manual Sale" toggle — controls whether a staff member can remove entries from Manual / Logbook Sales (managers on by default, staff off; owner always allowed)']},
   {v:'v4.37', date:'2026-06-30', notes:[
     'Deleting a Saved Purchase Order or a Payables Log entry is now restricted to the owner account (the ✕ is hidden for staff/managers)']},
   {v:'v4.36', date:'2026-06-30', notes:[
