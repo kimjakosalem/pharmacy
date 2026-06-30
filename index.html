@@ -2115,7 +2115,6 @@ window.saveProduct=async function(){
     updatedAt:tnow()
   };
   await fsSet('products',id,data);
-  await ensureSuppliersRegistered(selectedSuppliers);   // new suppliers picked here join the DB
   // Update cache
   allProductsFull[id]=data;
   const existing=allProducts.findIndex(p=>p.id===id);
@@ -2536,8 +2535,11 @@ window.renderPayables=async function(){
   const cnt=document.getElementById('payListCount'); if(cnt) cnt.textContent=`${active.length} open · ${archived.length} archived`;
   el.innerHTML=active.length?active.map(payRowHtml).join(''):'<div class="empty"><i class="ti ti-building-bank"></i>No open payables</div>';
   if(arEl){
+    // Active search/filter forces the archive open so matching paid entries are visible.
+    const filterActive=!!(payFilter.q||payFilter.from||payFilter.to);
+    const showArchive=payArchiveOpen||filterActive;
     arEl.innerHTML = archived.length
-      ? `<button class="archive-toggle ${payArchiveOpen?'open':''}" onclick="togglePayArchive()"><i class="ti ti-archive"></i> ARCHIVE — Paid (${archived.length}) <i class="ti ti-chevron-right chev"></i></button>${payArchiveOpen?`<div class="archive-body elist" style="max-height:400px">${archived.map(payRowHtml).join('')}</div>`:''}`
+      ? `<button class="archive-toggle ${showArchive?'open':''}" onclick="togglePayArchive()"><i class="ti ti-archive"></i> ARCHIVE — Paid (${archived.length})${filterActive?' · matching your search':''} <i class="ti ti-chevron-right chev"></i></button>${showArchive?`<div class="archive-body elist" style="max-height:400px">${archived.map(payRowHtml).join('')}</div>`:''}`
       : '';
   }
 };
@@ -2671,10 +2673,13 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.35';
+const APP_VERSION='v4.36';
 const CHANGELOG=[
+  {v:'v4.36', date:'2026-06-30', notes:[
+    'Suppliers now auto-register to your Suppliers list only when a purchase order is saved (picking a supplier on a product no longer adds it on its own — avoids stray entries from typos)',
+    'Searching the Saved POs or Payables Log now auto-opens the Archive so matching delivered/paid entries show up without tapping to expand']},
   {v:'v4.35', date:'2026-06-30', notes:[
-    'New suppliers you pick in a product or use on a purchase order are now auto-saved to your Suppliers list',
+    'New suppliers used on a purchase order are now auto-saved to your Suppliers list',
     'Saving a purchase order now tags its supplier onto each included product automatically',
     'Order list: you can now edit each item\'s unit cost when building the order (as well as at delivery)',
     'Variant cost now flows into Reports — profit & margin use the specific variant\'s cost when a variant is sold',
@@ -3238,8 +3243,11 @@ function renderPOList(){
   document.getElementById('poListCount').textContent=`${active.length} active · ${archived.length} archived`;
   el.innerHTML=active.length?active.map(poRowHtml).join(''):'<div class="empty"><i class="ti ti-file-invoice"></i>No active purchase orders</div>';
   if(arEl){
+    // When a search/filter is active, force the archive open so matching archived POs are visible.
+    const filterActive=!!(poFilter.q||poFilter.from||poFilter.to);
+    const showArchive=poArchiveOpen||filterActive;
     arEl.innerHTML = archived.length
-      ? `<button class="archive-toggle ${poArchiveOpen?'open':''}" onclick="togglePoArchive()"><i class="ti ti-archive"></i> ARCHIVE — Delivered &amp; Paid (${archived.length}) <i class="ti ti-chevron-right chev"></i></button>${poArchiveOpen?`<div class="archive-body">${archived.map(poRowHtml).join('')}</div>`:''}`
+      ? `<button class="archive-toggle ${showArchive?'open':''}" onclick="togglePoArchive()"><i class="ti ti-archive"></i> ARCHIVE — Delivered &amp; Paid (${archived.length})${filterActive?' · matching your search':''} <i class="ti ti-chevron-right chev"></i></button>${showArchive?`<div class="archive-body">${archived.map(poRowHtml).join('')}</div>`:''}`
       : '';
   }
 }
