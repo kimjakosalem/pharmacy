@@ -730,13 +730,23 @@ select option{background:var(--bg3)}
         <div class="field"><label>Amount (PHP)</label><input type="number" id="coAmt" placeholder="0.00" step="0.01"></div>
         <div class="field"><label>Type</label>
           <select id="coType" onchange="toggleStockNote()">
-            <option>Delivery Payment</option><option>Personal / Family</option>
+            <option>Delivery Payment</option><option>Cash Out</option>
             <option value="Personal Stock Use">Personal Stock Use</option><option>Other</option>
           </select>
         </div>
         <div class="field"><label>Description</label><input type="text" id="coNote" placeholder="Details..." onkeydown="if(event.key==='Enter')addCO()"></div>
       </div>
-      <div class="infonote" id="stockNote" style="display:none"><i class="ti ti-info-circle"></i> <strong>Personal Stock Use</strong> is a non-cash inventory expense — not deducted from drawer, but tracked separately in reports.</div>
+      <div class="infonote" id="stockNote" style="display:none"><i class="ti ti-info-circle"></i> <strong>Personal Stock Use</strong> is a non-cash inventory expense — it does <strong>not</strong> touch the drawer, but the item below <strong>is deducted from inventory</strong> (like a sale) and its cost is tracked in reports.</div>
+      <div id="stockUseBox" style="display:none;margin-top:9px">
+        <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:6px">ITEM TAKEN FROM STOCK</div>
+        <div id="suPicked" class="sup-chips"></div>
+        <input type="text" id="suSearch" placeholder="Search product to take..." autocomplete="off" oninput="renderStockSearch()" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;box-sizing:border-box">
+        <div id="suSearchResults" class="sup-results"></div>
+        <div class="fg fg2" style="margin-top:7px">
+          <div class="field"><label>Quantity</label><input type="number" id="suQty" value="1" min="1" step="1" oninput="updateStockCost()"></div>
+          <div class="field"><label>Total cost (auto)</label><input type="text" id="suCostDisplay" readonly placeholder="—"></div>
+        </div>
+      </div>
       <div class="btn-row"><button class="btn btn-ghost btn-sm" id="coAddBtn" onclick="addCO()"><i class="ti ti-plus"></i> Add</button></div>
       <div class="elist" id="coList"></div>
     </div>
@@ -1503,7 +1513,50 @@ async function flushFields(){
 }
 window.saveShift=async function(){ await flushFields(); const s=await getShift(curShift); s.saved=true; s.savedAt=tnow(); await persistShift(curShift); document.getElementById('savingInd').classList.remove('show'); toast(`${curShift===1?'Morning':'Evening'} shift saved OK`,'ok'); };
 window.clearShift=async function(){ const k=shiftKey(curShift); shiftCache[k]=emptyShift(curShift); await fsDel('shifts',k); loadShiftFields(); toast('Shift cleared','info'); };
-window.toggleStockNote=function(){ document.getElementById('stockNote').style.display=document.getElementById('coType').value==='Personal Stock Use'?'block':'none'; };
+// ── Personal Stock Use: pick a product → deducts inventory (like a sale), cost auto-computed ──
+let stockUseProd=null, stockSearchList=[];
+window.toggleStockNote=function(){
+  const isStock=document.getElementById('coType').value==='Personal Stock Use';
+  document.getElementById('stockNote').style.display=isStock?'block':'none';
+  document.getElementById('stockUseBox').style.display=isStock?'block':'none';
+  const amt=document.getElementById('coAmt');
+  amt.readOnly=isStock;                       // amount auto-computes from the item's cost
+  amt.style.opacity=isStock?'.7':'1';
+  if(isStock){ updateStockCost(); } else { resetStockUse(); }
+};
+function resetStockUse(){
+  stockUseProd=null; stockSearchList=[];
+  const q=document.getElementById('suQty'); if(q) q.value='1';
+  const sr=document.getElementById('suSearchResults'); if(sr) sr.innerHTML='';
+  const ss=document.getElementById('suSearch'); if(ss) ss.value='';
+  renderStockPicked(); const cd=document.getElementById('suCostDisplay'); if(cd) cd.value='';
+}
+function renderStockPicked(){
+  const el=document.getElementById('suPicked'); if(!el) return;
+  el.innerHTML=stockUseProd?`<span class="sup-chip">${stockUseProd.name} <span style="color:var(--text3)">(cost ${fmt(stockUseProd.cost)})</span><button type="button" onclick="clearStockItem()">&times;</button></span>`:'';
+}
+window.renderStockSearch=function(){
+  const q=document.getElementById('suSearch').value.trim().toLowerCase();
+  const box=document.getElementById('suSearchResults');
+  if(!q){ box.innerHTML=''; stockSearchList=[]; return; }
+  stockSearchList=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q)).slice(0,8);
+  box.innerHTML=stockSearchList.length
+    ? stockSearchList.map((p,i)=>`<div class="sup-opt" onclick="pickStockItem(${i})"><span>${p.name}</span><span style="font-family:var(--mono);color:var(--text3)">stock ${p.inventory||0}</span></div>`).join('')
+    : '<div class="empty" style="padding:6px">No match</div>';
+};
+window.pickStockItem=function(i){
+  const p=stockSearchList[i]; if(!p) return;
+  stockUseProd={id:p.id, name:p.name, cost:(allProductsFull[p.id]?.cost ?? p.cost ?? 0)};
+  document.getElementById('suSearch').value=''; document.getElementById('suSearchResults').innerHTML=''; stockSearchList=[];
+  renderStockPicked(); updateStockCost();
+};
+window.clearStockItem=function(){ stockUseProd=null; renderStockPicked(); updateStockCost(); };
+window.updateStockCost=function(){
+  const qty=Math.max(1,parseInt(document.getElementById('suQty').value)||1);
+  const total=stockUseProd?Math.round(stockUseProd.cost*qty*100)/100:0;
+  const cd=document.getElementById('suCostDisplay'); if(cd) cd.value=stockUseProd?fmt(total):'';
+  document.getElementById('coAmt').value=stockUseProd?total:'';   // mirror into the shared amount field
+};
 window.updatePaySum=function(){
   const tot=parseFloat(document.getElementById('posTot').value)||0;
   const s=(parseFloat(document.getElementById('pbCash').value)||0)+(parseFloat(document.getElementById('pbGcash').value)||0)+(parseFloat(document.getElementById('pbMaya').value)||0)+(parseFloat(document.getElementById('pbMcredit').value)||0);
@@ -1532,19 +1585,40 @@ async function renderCI(){
 }
 window.addCO=async function(){
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
-  const amt=parseFloat(document.getElementById('coAmt').value); if(!amt){toast('Enter amount','err');return;}
   const type=document.getElementById('coType').value;
-  const s=await getShift(curShift); s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow()});
+  const s=await getShift(curShift);
+  if(type==='Personal Stock Use'){
+    // Stock use: must reference a product; cost is auto, and the qty is deducted from inventory.
+    if(!stockUseProd){ toast('Search and pick the item taken','err'); return; }
+    const qty=Math.max(1,parseInt(document.getElementById('suQty').value)||1);
+    const unitCost=stockUseProd.cost||0, amt=Math.round(unitCost*qty*100)/100;
+    s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost});
+    const fp=allProductsFull[stockUseProd.id];
+    if(fp){ fp.inventory=(fp.inventory||0)-qty; fp.updatedAt=tnow(); await fsSet('products',stockUseProd.id,fp); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
+    document.getElementById('coNote').value=''; resetStockUse();
+    await persistShift(curShift); renderCO();
+    toast(`${qty} ${stockUseProd?stockUseProd.name:'item'} taken from stock`,'ok');
+    return;
+  }
+  const amt=parseFloat(document.getElementById('coAmt').value); if(!amt){toast('Enter amount','err');return;}
+  s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow()});
   document.getElementById('coAmt').value=''; document.getElementById('coNote').value=''; await persistShift(curShift); renderCO();
 };
 window.removeCO=async function(i){
-  if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
-  const s=await getShift(curShift); s.cashOuts.splice(i,1); await persistShift(curShift); renderCO();
+  if(session?.role!=='owner'){ toast('Only the owner can delete a cash-out','err'); return; }
+  const s=await getShift(curShift); const c=s.cashOuts[i];
+  // Reverse a stock-use deduction: return the qty back into inventory.
+  if(c && c.type==='Personal Stock Use' && c.prodId && c.qty){
+    const fp=allProductsFull[c.prodId];
+    if(fp){ fp.inventory=(fp.inventory||0)+c.qty; fp.updatedAt=tnow(); await fsSet('products',c.prodId,fp); const lp=allProducts.find(p=>p.id===c.prodId); if(lp) lp.inventory=fp.inventory; }
+  }
+  s.cashOuts.splice(i,1); await persistShift(curShift); renderCO();
 };
 async function renderCO(){
   const s=await getShift(curShift); const el=document.getElementById('coList');
   if(!s.cashOuts.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
-  el.innerHTML=s.cashOuts.map((c,i)=>`<div class="eitem"><div><div class="el"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval ${c.type==='Personal Stock Use'?'c-amb':'c-neg'}">${c.type==='Personal Stock Use'?'INV':'-'}${fmt(c.amount)}</span><button class="del-btn" onclick="removeCO(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
+  const canDel=session?.role==='owner';
+  el.innerHTML=s.cashOuts.map((c,i)=>`<div class="eitem"><div><div class="el"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}${(c.type==='Personal Stock Use'&&c.qty)?` · ×${c.qty} deducted from stock`:''}</div></div><div style="display:flex;align-items:center"><span class="eval ${c.type==='Personal Stock Use'?'c-amb':'c-neg'}">${c.type==='Personal Stock Use'?'INV':'-'}${fmt(c.amount)}</span>${canDel?`<button class="del-btn" onclick="removeCO(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
 }
 const MODE_LABEL={cash:'CASH',gcash:'GCASH',maya:'MAYA',mcredit:'M-CREDIT'};
 window.addMS=async function(){
@@ -2676,8 +2750,12 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.38';
+const APP_VERSION='v4.39';
 const CHANGELOG=[
+  {v:'v4.39', date:'2026-07-01', notes:[
+    'Personal Stock Use now deducts from inventory: pick the item + quantity, the cost auto-fills from the product, and the stock is reduced like a sale. Owner-deleting the entry returns the stock.',
+    'Cash Outs / Expenses entries can now only be deleted by the owner account',
+    'Renamed the "Personal / Family" cash-out type to "Cash Out"']},
   {v:'v4.38', date:'2026-06-30', notes:[
     'Staff privileges now include a "Void Manual Sale" toggle — controls whether a staff member can remove entries from Manual / Logbook Sales (managers on by default, staff off; owner always allowed)']},
   {v:'v4.37', date:'2026-06-30', notes:[
