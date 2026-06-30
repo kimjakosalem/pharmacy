@@ -671,6 +671,22 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- Edit the supplier on a saved PO -->
+<div class="modal-overlay" id="editSupModal">
+  <div class="modal" style="width:360px;text-align:left">
+    <h3 style="color:var(--teal)"><i class="ti ti-building-store" style="margin-right:6px"></i>Edit Supplier</h3>
+    <div style="font-size:11px;color:var(--text3);margin:6px 0 12px" id="editSupPoLabel"></div>
+    <div class="field"><label>Supplier <span style="color:var(--red)">*</span></label>
+      <select id="editSupSelect" onchange="onEditSupSelect()"></select>
+      <input type="text" id="editSupOther" placeholder="Enter supplier name..." autocomplete="off" style="display:none;margin-top:6px">
+    </div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-teal" style="flex:1" onclick="saveEditedSupplier()"><i class="ti ti-device-floppy"></i> Save</button>
+      <button class="btn btn-ghost" onclick="closeEditSup()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="app"><div class="app-inner">
   <div class="header">
     <div class="logo">
@@ -961,7 +977,10 @@ select option{background:var(--bg3)}
     <div class="card">
       <div class="card-title"><i class="ti ti-settings"></i> Create Order <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">one supplier per order</span></div>
       <div class="fg fg2" style="margin-bottom:9px">
-        <div class="field"><label><i class="ti ti-building-store" style="font-size:12px"></i> Supplier (this order)</label><input type="text" id="orderSupplierInput" list="supplierList" placeholder="Search or type supplier..." autocomplete="off" oninput="setOrderSupplier(this.value)"></div>
+        <div class="field"><label><i class="ti ti-building-store" style="font-size:12px"></i> Supplier (this order) <span style="color:var(--red)">*</span></label>
+          <select id="orderSupplierSelect" onchange="onOrderSupplierSelect()"></select>
+          <input type="text" id="orderSupplierOther" placeholder="Enter supplier name..." autocomplete="off" oninput="setOrderSupplier(this.value)" style="display:none;margin-top:6px">
+        </div>
         <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001"></div>
       </div>
       <div class="fg fg2">
@@ -2750,8 +2769,12 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.39';
+const APP_VERSION='v4.40';
 const CHANGELOG=[
+  {v:'v4.40', date:'2026-07-01', notes:[
+    'Orders: a supplier is now REQUIRED to save a purchase order — saving without one shows a prompt to enter the supplier',
+    'Orders: the supplier field is now a dropdown of your saved suppliers plus an "Others (enter name)" choice for one-off / non-recurrent suppliers',
+    'Orders: you can now edit the supplier on an already-saved PO (the building icon next to View) — handy for POs saved without a supplier; they\'re flagged "⚠ No supplier" in the list']},
   {v:'v4.39', date:'2026-07-01', notes:[
     'Personal Stock Use now deducts from inventory: pick the item + quantity, the cost auto-fills from the product, and the stock is reduced like a sale. Owner-deleting the entry returns the stock.',
     'Cash Outs / Expenses entries can now only be deleted by the owner account',
@@ -2928,7 +2951,6 @@ function initOrderTab() {
   document.getElementById('poDate').value = today();
   const num = 'PO-'+today().replace(/-/g,'').slice(2)+'-001';
   if(!document.getElementById('poNumber').value) document.getElementById('poNumber').value = num;
-  document.getElementById('orderSupplierInput').value = orderSupplier;
   populateSupplierList();
   lowStockPageIndex = 0;
   renderLowStock();
@@ -3029,10 +3051,29 @@ function knownSuppliers(){
   if(orderSupplier) set.add(orderSupplier);
   return [...set].sort();
 }
+// Fill the order-supplier dropdown from the known suppliers + an explicit "Others" option
+// (for one-off / non-recurrent suppliers the staff types in a free-text box).
 function populateSupplierList(){
-  const dl=document.getElementById('supplierList'); if(!dl)return;
-  dl.innerHTML=knownSuppliers().map(s=>`<option value="${s.replace(/"/g,'&quot;')}">`).join('');
+  const sel=document.getElementById('orderSupplierSelect'); if(!sel)return;
+  const esc=s=>s.replace(/"/g,'&quot;');
+  const cur=orderSupplier||'';
+  const names=knownSuppliers();
+  const isKnown = !cur || names.some(n=>n.toLowerCase()===cur.toLowerCase());
+  let opts='<option value="">— Select supplier —</option>';
+  opts+=names.map(n=>`<option value="${esc(n)}"${(cur&&n.toLowerCase()===cur.toLowerCase())?' selected':''}>${n}</option>`).join('');
+  opts+=`<option value="__OTHER__"${(cur&&!isKnown)?' selected':''}>Others (enter name)…</option>`;
+  sel.innerHTML=opts;
+  const oth=document.getElementById('orderSupplierOther');
+  if(oth){
+    if(cur && !isKnown){ oth.style.display=''; if(document.activeElement!==oth) oth.value=cur; }
+    else { oth.style.display='none'; if(document.activeElement!==oth) oth.value=''; }
+  }
 }
+window.onOrderSupplierSelect=function(){
+  const sel=document.getElementById('orderSupplierSelect'), oth=document.getElementById('orderSupplierOther');
+  if(sel.value==='__OTHER__'){ oth.style.display=''; oth.value=''; setOrderSupplier(''); oth.focus(); }
+  else { oth.style.display='none'; oth.value=''; setOrderSupplier(sel.value); }
+};
 window.renderOrderSearch = function() {
   const q=document.getElementById('orderSearch').value.trim().toLowerCase();
   const el=document.getElementById('orderSearchResults');
@@ -3060,7 +3101,8 @@ window.addToOrder = function(id) {
   if(!orderItems[id]) orderItems[id]={prod,qty:1,cost:(prod.cost||0)};
   else orderItems[id].qty++;
   // Default the order's supplier to the product's first supplier if none chosen yet.
-  if(!orderSupplier){ const ps=((allProductsFull[id]?.suppliers||'').split(',')[0]||'').trim(); if(ps){ orderSupplier=ps; document.getElementById('orderSupplierInput').value=ps; } }
+  // (The dropdown reflects this via populateSupplierList inside renderOrderList below.)
+  if(!orderSupplier){ const ps=((allProductsFull[id]?.suppliers||'').split(',')[0]||'').trim(); if(ps){ orderSupplier=ps; } }
   // Check the checkbox if in low stock list
   const chk=document.getElementById('chk_'+id);
   if(chk) chk.checked=true;
@@ -3252,6 +3294,12 @@ async function loadPOs(){ savedPOs=await fsGetAll('purchaseOrders'); renderPOLis
 window.savePO=async function(){
   const items=Object.values(orderItems);
   if(!items.length){ toast('No items in order','err'); return; }
+  // A supplier is REQUIRED — staff were saving POs with no supplier and losing track of them.
+  if(!orderSupplier.trim()){
+    toast('Please enter a supplier for this order','err');
+    document.getElementById('orderSupplierSelect')?.focus();
+    return;
+  }
   const poNum=document.getElementById('poNumber').value||('PO-'+Date.now());
   const id='po_'+Date.now();
   const supplier=orderSupplierOf();
@@ -3307,12 +3355,16 @@ function poRowHtml(po){
   const paid=po.payStatus==='paid';
   const statusChip=delivered?`<span class="chip chip-ok">Delivered</span>`:`<span class="chip chip-low">Pending</span>`;
   const payChip=delivered?(paid?`<span class="chip chip-ok">Paid</span>`:`<span class="chip chip-low">Unpaid</span>`):'';
+  const supLabel=(po.supplier && po.supplier!=='No Supplier')
+    ? `<span style="font-size:10px;color:var(--text3);font-weight:400">${po.supplier}</span>`
+    : `<span style="font-size:10px;color:var(--amber);font-weight:600">⚠ No supplier</span>`;
   return `<div class="po-item">
       <div class="po-info">
-        <div class="po-name">${po.poNumber} <span style="font-size:10px;color:var(--text3);font-weight:400">${po.supplier||''}</span> ${statusChip} ${payChip}</div>
+        <div class="po-name">${po.poNumber} ${supLabel} ${statusChip} ${payChip}</div>
         <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}${paid&&po.paidVia?' · paid '+po.paidVia:''}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost btn-xs" onclick="openEditSup('${po.id}')" title="Edit supplier"><i class="ti ti-building-store"></i></button>
         <button class="btn btn-ghost btn-xs" onclick="viewPO('${po.id}')"><i class="ti ti-eye"></i> View</button>
         ${delivered?'':`<button class="btn btn-teal btn-xs" onclick="openIntake('${po.id}')"><i class="ti ti-truck-delivery"></i> Receive</button>`}
         ${session?.role==='owner'?`<button class="del-btn" onclick="deletePO('${po.id}')"><i class="ti ti-x"></i></button>`:''}
@@ -3363,6 +3415,43 @@ window.viewPO=function(id){
   document.getElementById('poViewModal').classList.add('show');
 };
 window.closePoView=function(){ document.getElementById('poViewModal').classList.remove('show'); };
+
+// ── Edit the supplier on an already-saved PO (fixes POs staff saved without one) ──
+let editSupPoId=null;
+window.openEditSup=function(id){
+  const po=savedPOs.find(p=>p.id===id); if(!po) return;
+  editSupPoId=id;
+  document.getElementById('editSupPoLabel').textContent=`${po.poNumber} · ${po.date||''}`;
+  const cur=(po.supplier && po.supplier!=='No Supplier')?po.supplier:'';
+  const names=knownSuppliers();
+  const isKnown=cur && names.some(n=>n.toLowerCase()===cur.toLowerCase());
+  const esc=s=>s.replace(/"/g,'&quot;');
+  let opts='<option value="">— Select supplier —</option>';
+  opts+=names.map(n=>`<option value="${esc(n)}"${(cur&&n.toLowerCase()===cur.toLowerCase())?' selected':''}>${n}</option>`).join('');
+  opts+=`<option value="__OTHER__"${(cur&&!isKnown)?' selected':''}>Others (enter name)…</option>`;
+  document.getElementById('editSupSelect').innerHTML=opts;
+  const oth=document.getElementById('editSupOther');
+  if(cur && !isKnown){ oth.style.display=''; oth.value=cur; } else { oth.style.display='none'; oth.value=''; }
+  document.getElementById('editSupModal').classList.add('show');
+};
+window.onEditSupSelect=function(){
+  const sel=document.getElementById('editSupSelect'), oth=document.getElementById('editSupOther');
+  if(sel.value==='__OTHER__'){ oth.style.display=''; oth.value=''; oth.focus(); } else { oth.style.display='none'; oth.value=''; }
+};
+window.closeEditSup=function(){ document.getElementById('editSupModal').classList.remove('show'); editSupPoId=null; };
+window.saveEditedSupplier=async function(){
+  const po=savedPOs.find(p=>p.id===editSupPoId); if(!po){ closeEditSup(); return; }
+  const sel=document.getElementById('editSupSelect');
+  const supplier=(sel.value==='__OTHER__'? document.getElementById('editSupOther').value : sel.value).trim();
+  if(!supplier){ toast('Please enter a supplier','err'); return; }
+  po.supplier=supplier;
+  (po.items||[]).forEach(it=>{ it.supplier=supplier; });
+  po.updatedAt=tnow();
+  await fsSet('purchaseOrders', po.id, po);
+  await ensureSuppliersRegistered([supplier]);   // make it reusable for next time
+  closeEditSup(); renderPOList();
+  toast(`Supplier set to ${supplier}`,'ok');
+};
 
 window.openIntake=function(id){
   const po=savedPOs.find(p=>p.id===id); if(!po) return;
