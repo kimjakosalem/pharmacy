@@ -1896,7 +1896,9 @@ window.confirmReturn=async function(){
 function calcShift(s){
   const ciTot=s.cashIns.reduce((a,c)=>a+c.amount,0);
   const coAll=s.cashOuts.filter(c=>c.type!=='Personal Stock Use');
-  const coCash=coAll.reduce((a,c)=>a+c.amount,0);                              // all non-stock cash-outs — drawer reconciliation
+  // Drawer reconciliation: exclude `nonDrawer` cash-outs (e.g. Take-Home payments paid from
+  // take-home cash, not the register) so they don't make the drawer look short.
+  const coCash=coAll.filter(c=>!c.nonDrawer).reduce((a,c)=>a+c.amount,0);       // cash that actually left the drawer
   const coCashExp=coAll.filter(c=>!c.settlement).reduce((a,c)=>a+c.amount,0);  // excludes payable settlements — report expenses
   const coStock=s.cashOuts.filter(c=>c.type==='Personal Stock Use').reduce((a,c)=>a+c.amount,0);
   const msTotal=s.manualSales.reduce((a,m)=>a+m.amount,0);
@@ -2677,7 +2679,9 @@ window.confirmPay=async function(){
   // Cash payments (Take Home or Drawer) log a settlement cash-out in the current shift — the usual way.
   if(isCash){
     const s=await getShift(curShift);
-    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})`, time:tnow(), settlement:true, payableId:p.id});
+    // Take-Home cash isn't register cash → flag nonDrawer so it's still listed as an expense
+    // but doesn't reduce the expected drawer. Drawer Cash does reduce it.
+    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})`, time:tnow(), settlement:true, nonDrawer:(sub==='Take Home'), payableId:p.id});
     await persistShift(curShift);
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
   }
@@ -2783,8 +2787,10 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.41';
+const APP_VERSION='v4.42';
 const CHANGELOG=[
+  {v:'v4.42', date:'2026-07-01', notes:[
+    'Take Home payments no longer affect the drawer reconciliation — they still show in the shift\'s Cash Outs list, but no longer make the expected drawer look short (Drawer Cash still reduces the drawer as before)']},
   {v:'v4.41', date:'2026-07-01', notes:[
     'Orders: the PO number now auto-increments — after you save a PO, the next one defaults to the next number for the day (you can still type your own)',
     'Receive: removed the payment-terms dropdown — receiving just logs the delivery to Payables; you now choose payment terms when you actually pay',
