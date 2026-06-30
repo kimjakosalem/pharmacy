@@ -497,6 +497,19 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ═══ POS SALES RESET (typed confirm — was a plain confirm(), too easy to tap by accident) ═══ -->
+<div class="modal-overlay" id="posResetModal">
+  <div class="modal" style="width:360px;text-align:left">
+    <h3 style="color:var(--red)"><i class="ti ti-alert-triangle" style="margin-right:6px"></i>Reset POS Sales Log</h3>
+    <div class="modal-sub" style="margin-bottom:6px;line-height:1.6">This permanently deletes <strong>this shift's entire sales log</strong> (<span id="posResetCount">0</span> sale<span id="posResetPlural">s</span>, <span id="posResetTotal">PHP 0.00</span>) and zeroes its POS totals. <strong>Cannot be undone</strong> — inventory already deducted by these sales is NOT reversed. Only use this to clear old/test data, never during a normal shift.</div>
+    <div class="field" style="margin-top:10px"><label>Type <strong style="color:var(--red)">CLEAR</strong> to confirm</label><input type="text" id="posResetConfirm" placeholder="CLEAR" autocomplete="off"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn" style="background:var(--red);color:#fff" onclick="doResetPosSales()"><i class="ti ti-trash"></i> Clear Sales Log</button>
+      <button class="btn btn-ghost" onclick="closePosResetModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ DELIVERY INTAKE ═══ -->
 <div class="modal-overlay" id="intakeModal">
   <div class="modal" style="width:460px;max-width:94vw;text-align:left">
@@ -725,9 +738,9 @@ select option{background:var(--bg3)}
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-receipt"></i> POS Transactions <span id="salesCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
-        <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="resetPosSales()" title="Owner: zero this shift's POS totals"><i class="ti ti-refresh"></i> Reset</button>
+        <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="openPosResetModal()" title="Owner: clear this shift's sales log"><i class="ti ti-refresh"></i> Reset</button>
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Each POS checkout is logged here for this shift. Tap ✕ to <strong style="color:var(--text2)">void</strong> a sale (reverses the totals &amp; returns stock). <strong style="color:var(--text2)">Reset</strong> clears this shift's POS figures (owner).</div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Each POS checkout is logged here for this shift. Tap ✕ to <strong style="color:var(--text2)">void</strong> a sale (reverses the totals &amp; returns stock). <strong style="color:var(--text2)">Reset</strong> permanently clears this shift's entire sales log (owner) — use only to clear old/test data, not as a daily action.</div>
       <div class="elist" style="max-height:280px" id="salesList"></div>
     </div>
     <div class="card">
@@ -1525,15 +1538,32 @@ async function renderSales(){
     </div>`;
   }).join('');
 }
-window.resetPosSales=async function(){
+// Resetting the sales log is destructive and irreversible (no undo, inventory deductions
+// are NOT reversed) — a plain confirm() was too easy to tap by accident mid-shift and wipe
+// real transactions. Now requires typing CLEAR, same pattern as Master Reset, and shows
+// exactly how many sales / how much will be lost before the owner commits.
+window.openPosResetModal=async function(){
   if(session?.role!=='owner'){ toast('Owner only','err'); return; }
-  if(!confirm("Reset this shift's POS sales totals to zero? Clears the POS sale figures and transaction log for the current shift (inventory is left unchanged).")) return;
+  const s=await getShift(curShift);
+  const sales=s.sales||[];
+  const total=sales.reduce((a,t)=>a+(t.total||0),0);
+  document.getElementById('posResetCount').textContent=sales.length;
+  document.getElementById('posResetPlural').textContent=sales.length===1?'':'s';
+  document.getElementById('posResetTotal').textContent=fmt(total);
+  document.getElementById('posResetConfirm').value='';
+  document.getElementById('posResetModal').classList.add('show');
+};
+window.closePosResetModal=function(){ document.getElementById('posResetModal').classList.remove('show'); };
+window.doResetPosSales=async function(){
+  if(session?.role!=='owner'){ toast('Owner only','err'); return; }
+  if(document.getElementById('posResetConfirm').value!=='CLEAR'){ toast('Type CLEAR to confirm','err'); return; }
   const s=await getShift(curShift);
   s.posTot=0; s.posTxn=0; s.pbCash=0; s.pbGcash=0; s.pbMaya=0; s.pbMcredit=0; s.sales=[];
   await persistShift(curShift);
   ['posTot','posTxn','pbCash','pbGcash','pbMaya','pbMcredit'].forEach(id=>document.getElementById(id).value='');
   updatePaySum(); renderSales();
-  toast('POS sales reset for this shift','ok');
+  closePosResetModal();
+  toast('POS sales log cleared for this shift','ok');
 };
 window.voidSale=async function(id){
   if(!hasPerm('void')){ toast('No permission to void sales','err'); return; }
@@ -2479,8 +2509,10 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.31';
+const APP_VERSION='v4.32';
 const CHANGELOG=[
+  {v:'v4.32', date:'2026-06-29', notes:[
+    'POS Transactions "Reset" is now much harder to trigger by accident: it shows exactly how many sales / how much money will be permanently wiped, and requires typing CLEAR to confirm (was a single tap + plain OK popup)']},
   {v:'v4.31', date:'2026-06-29', notes:[
     'Settings: each staff member now has individual privilege pills — Cash In/Out, Void Sales, Returns/Exchange — that the owner can toggle on or off per person (instead of privileges being fixed by role)',
     'Manager keeps all privileges by default and Staff starts with none, but the owner can adjust either at any time',
