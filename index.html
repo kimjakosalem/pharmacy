@@ -2502,7 +2502,7 @@ window.addPayable=async function(){
   document.getElementById('payAmt').value=''; document.getElementById('payDesc').value='';
   toast('Payable saved','ok'); renderPayables();
 };
-window.removePayable=async function(id){ await fsDel('payables',id); renderPayables(); };
+window.removePayable=async function(id){ if(session?.role!=='owner'){ toast('Only the owner can delete a payable','err'); return; } await fsDel('payables',id); renderPayables(); };
 let payFilter={q:'',from:'',to:''}, payArchiveOpen=false;
 window.clearPayFilter=function(){ payFilter={q:'',from:'',to:''}; ['payFilterQ','payFilterFrom','payFilterTo'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); renderPayables(); };
 window.togglePayArchive=function(){ payArchiveOpen=!payArchiveOpen; renderPayables(); };
@@ -2517,7 +2517,7 @@ function payRowHtml(p){
   const chip=unpaid?`<span class="chip chip-low">Unpaid</span>`:paid?`<span class="chip chip-ok">Paid</span>`:'';
   const term=p.payTerm?` · ${p.payTerm}`:'';
   const paidVia=paid&&p.paidVia?` · via ${p.paidVia}${p.paidBy?' ('+p.paidBy+')':''}`:'';
-  return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''} ${chip}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}${term}${paidVia}</div></div><div style="display:flex;align-items:center;gap:6px">${unpaid?`<button class="btn btn-teal btn-xs" onclick="openPayModal('${p.id}')"><i class="ti ti-cash"></i> Pay</button>`:''}<span class="eval c-neg">-${fmt(p.amount)}</span><button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button></div></div>`;
+  return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''} ${chip}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}${term}${paidVia}</div></div><div style="display:flex;align-items:center;gap:6px">${unpaid?`<button class="btn btn-teal btn-xs" onclick="openPayModal('${p.id}')"><i class="ti ti-cash"></i> Pay</button>`:''}<span class="eval c-neg">-${fmt(p.amount)}</span>${session?.role==='owner'?`<button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button>`:''}</div></div>`;
 }
 // Read the filter inputs live (oninput calls renderPayables directly).
 function syncPayFilter(){ payFilter={q:(document.getElementById('payFilterQ')?.value||''), from:(document.getElementById('payFilterFrom')?.value||''), to:(document.getElementById('payFilterTo')?.value||'')}; }
@@ -2673,8 +2673,10 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.36';
+const APP_VERSION='v4.37';
 const CHANGELOG=[
+  {v:'v4.37', date:'2026-06-30', notes:[
+    'Deleting a Saved Purchase Order or a Payables Log entry is now restricted to the owner account (the ✕ is hidden for staff/managers)']},
   {v:'v4.36', date:'2026-06-30', notes:[
     'Suppliers now auto-register to your Suppliers list only when a purchase order is saved (picking a supplier on a product no longer adds it on its own — avoids stray entries from typos)',
     'Searching the Saved POs or Payables Log now auto-opens the Archive so matching delivered/paid entries show up without tapping to expand']},
@@ -3200,6 +3202,7 @@ window.savePO=async function(){
 };
 
 window.deletePO=async function(id){
+  if(session?.role!=='owner'){ toast('Only the owner can delete a PO','err'); return; }
   await fsDel('purchaseOrders',id);
   savedPOs=savedPOs.filter(p=>p.id!==id);
   renderPOList();
@@ -3229,7 +3232,7 @@ function poRowHtml(po){
       <div style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-ghost btn-xs" onclick="viewPO('${po.id}')"><i class="ti ti-eye"></i> View</button>
         ${delivered?'':`<button class="btn btn-teal btn-xs" onclick="openIntake('${po.id}')"><i class="ti ti-truck-delivery"></i> Receive</button>`}
-        <button class="del-btn" onclick="deletePO('${po.id}')"><i class="ti ti-x"></i></button>
+        ${session?.role==='owner'?`<button class="del-btn" onclick="deletePO('${po.id}')"><i class="ti ti-x"></i></button>`:''}
       </div>
     </div>`;
 }
