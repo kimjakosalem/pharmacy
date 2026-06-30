@@ -544,16 +544,8 @@ select option{background:var(--bg3)}
       <div><div style="font-size:11px;color:var(--text);font-weight:500">Extra Delivery Fee (PHP)</div><div style="font-size:9px;color:var(--text3)">Spread across all received units as added cost</div></div>
       <input type="number" id="intakeFee" class="po-qty" value="0" min="0" step="0.01" style="width:110px" oninput="updateIntakeSummary()">
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
-      <div><div style="font-size:11px;color:var(--text);font-weight:500">Payment Terms</div><div style="font-size:9px;color:var(--text3)">Creates an entry in Payables to settle</div></div>
-      <select id="intakeTerm" style="width:210px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 9px;border-radius:7px;outline:none">
-        <option value="COD">Cash on Delivery (COD)</option>
-        <option value="Check on Delivery">Check on Delivery</option>
-        <option value="30-day PDC">Payment Terms — 30 days (PDC)</option>
-        <option value="60-day PDC">Payment Terms — 60 days (PDC)</option>
-      </select>
-    </div>
     <div id="intakeSummary" style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.7"></div>
+    <div style="font-size:9px;color:var(--text3);margin-top:6px">Confirming logs this delivery into Payables to settle later (payment terms are chosen when you pay).</div>
     <div class="btn-row" style="margin-top:12px">
       <button class="btn btn-teal" onclick="confirmDelivery()"><i class="ti ti-check"></i> Confirm &amp; Update Inventory</button>
       <button class="btn btn-ghost" onclick="closeIntake()">Cancel</button>
@@ -566,10 +558,17 @@ select option{background:var(--bg3)}
   <div class="modal" style="width:360px;text-align:left">
     <h3 style="color:var(--teal)"><i class="ti ti-cash" style="margin-right:6px"></i>Issue Payment</h3>
     <div class="modal-sub" id="payModalInfo" style="margin-bottom:12px"></div>
-    <div class="field"><label>Funding Source</label>
-      <select id="payFund"></select>
+    <div class="field"><label>Payment Terms</label>
+      <select id="payTerms" onchange="onPayTermsChange()">
+        <option value="cod">Cash on Delivery</option>
+        <option value="check">Check</option>
+      </select>
     </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:6px">Drawer Cash logs a “Delivery Payment” cash-out in the current shift.</div>
+    <div class="field" id="paySubWrap" style="margin-top:8px">
+      <label id="paySubLabel">Cash source</label>
+      <select id="paySub"></select>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px" id="payHint"></div>
     <div class="btn-row" style="margin-top:14px">
       <button class="btn btn-teal" onclick="confirmPay()"><i class="ti ti-check"></i> Confirm Payment</button>
       <button class="btn btn-ghost" onclick="closePayModal()">Cancel</button>
@@ -981,7 +980,7 @@ select option{background:var(--bg3)}
           <select id="orderSupplierSelect" onchange="onOrderSupplierSelect()"></select>
           <input type="text" id="orderSupplierOther" placeholder="Enter supplier name..." autocomplete="off" oninput="setOrderSupplier(this.value)" style="display:none;margin-top:6px">
         </div>
-        <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001"></div>
+        <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001" oninput="markPoNumberManual()"></div>
       </div>
       <div class="fg fg2">
         <div class="field"><label>Order Date</label><input type="date" id="poDate"></div>
@@ -2646,35 +2645,50 @@ let payingId=null;
 window.openPayModal=async function(id){
   const list=await fsGetAll('payables'); const p=list.find(x=>x.id===id); if(!p) return;
   payingId=id;
-  document.getElementById('payModalInfo').innerHTML=`<strong>${p.desc||p.category}</strong><br>Amount: <strong style="color:var(--red)">${fmt(p.amount)}</strong>${p.payTerm?(' · '+p.payTerm):''}`;
-  // Staff/Manager: cash sources only. Owner: also bank.
-  const opts=[['Take-Home Cash','Take-Home / Remittance Cash'],['Drawer Cash','Drawer Cash (logs a cash-out)']];
-  if(session?.role==='owner') opts.push(['Bank Cash','Bank Cash'],['Bank Check','Bank Check']);
-  document.getElementById('payFund').innerHTML=opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  document.getElementById('payModalInfo').innerHTML=`<strong>${p.desc||p.category}</strong><br>Amount: <strong style="color:var(--red)">${fmt(p.amount)}</strong>`;
+  document.getElementById('payTerms').value='cod';
+  onPayTermsChange();
   document.getElementById('payModal').classList.add('show');
+};
+// Payment Terms branches: Cash on Delivery → Take Home / Drawer Cash; Check → on delivery / 30 / 60 days.
+window.onPayTermsChange=function(){
+  const terms=document.getElementById('payTerms').value;
+  const sub=document.getElementById('paySub'); const lbl=document.getElementById('paySubLabel'); const hint=document.getElementById('payHint');
+  if(terms==='check'){
+    lbl.textContent='Check terms';
+    sub.innerHTML=[['Check on Delivery','Check on Delivery'],['30 days','30 days (post-dated)'],['60 days','60 days (post-dated)']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+    hint.textContent='Recorded as a check payment (no drawer cash-out).';
+  } else {
+    lbl.textContent='Cash source';
+    sub.innerHTML=[['Take Home','Take Home'],['Drawer Cash','Drawer Cash']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+    hint.textContent='Logs a “Delivery Payment” cash-out in the current shift.';
+  }
 };
 window.closePayModal=function(){ document.getElementById('payModal').classList.remove('show'); payingId=null; };
 window.confirmPay=async function(){
   const list=await fsGetAll('payables'); const p=list.find(x=>x.id===payingId);
   if(!p){ closePayModal(); return; }
-  const fund=document.getElementById('payFund').value;
-  p.status='paid'; p.paidVia=fund; p.paidBy=session?.name||''; p.paidByRole=session?.role||'staff'; p.paidAt=tnow(); p.paidDate=today();
+  const terms=document.getElementById('payTerms').value;          // 'cod' | 'check'
+  const sub=document.getElementById('paySub').value;              // cash source OR check term
+  const isCash=terms==='cod';
+  const label=(isCash?'Cash on Delivery':'Check')+' — '+sub;
+  p.status='paid'; p.paidVia=label; p.payTerm=label; p.paidBy=session?.name||''; p.paidByRole=session?.role||'staff'; p.paidAt=tnow(); p.paidDate=today();
   await fsSet('payables', p.id, p);
-  // Drawer cash → log a settlement cash-out in the current shift (Tab 1).
-  if(fund==='Drawer Cash'){
+  // Cash payments (Take Home or Drawer) log a settlement cash-out in the current shift — the usual way.
+  if(isCash){
     const s=await getShift(curShift);
-    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:p.desc||p.supplier||'Payable settlement', time:tnow(), settlement:true, payableId:p.id});
+    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})`, time:tnow(), settlement:true, payableId:p.id});
     await persistShift(curShift);
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
   }
-  // Tag the linked PO as Paid (SS5).
+  // Tag the linked PO as Paid.
   if(p.poId){
     let po=savedPOs.find(x=>x.id===p.poId);
-    if(po){ po.payStatus='paid'; po.paidVia=fund; await fsSet('purchaseOrders', po.id, po); renderPOList(); }
-    else { const fresh=await fsGet('purchaseOrders', p.poId); if(fresh){ fresh.payStatus='paid'; fresh.paidVia=fund; await fsSet('purchaseOrders', p.poId, fresh); } }
+    if(po){ po.payStatus='paid'; po.paidVia=label; await fsSet('purchaseOrders', po.id, po); renderPOList(); }
+    else { const fresh=await fsGet('purchaseOrders', p.poId); if(fresh){ fresh.payStatus='paid'; fresh.paidVia=label; await fsSet('purchaseOrders', p.poId, fresh); } }
   }
   closePayModal(); renderPayables();
-  toast('Payment issued via '+fund,'ok');
+  toast('Payment recorded — '+label,'ok');
 };
 
 let rChart=null, curPeriod='week', reportView='daily';
@@ -2769,8 +2783,13 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.40';
+const APP_VERSION='v4.41';
 const CHANGELOG=[
+  {v:'v4.41', date:'2026-07-01', notes:[
+    'Orders: the PO number now auto-increments — after you save a PO, the next one defaults to the next number for the day (you can still type your own)',
+    'Receive: removed the payment-terms dropdown — receiving just logs the delivery to Payables; you now choose payment terms when you actually pay',
+    'Payables → Issue Payment: "Funding Source" is now "Payment Terms" → Cash on Delivery (Take Home / Drawer Cash) or Check (Check on Delivery / 30 days / 60 days)',
+    'Both cash options (Take Home & Drawer Cash) log a Delivery Payment cash-out in the current shift; check payments do not']},
   {v:'v4.40', date:'2026-07-01', notes:[
     'Orders: a supplier is now REQUIRED to save a purchase order — saving without one shows a prompt to enter the supplier',
     'Orders: the supplier field is now a dropdown of your saved suppliers plus an "Others (enter name)" choice for one-off / non-recurrent suppliers',
@@ -2949,8 +2968,7 @@ let orderItems = {}, orderSupplier = '', lowStockPageIndex = 0, lowStockPageSize
 
 function initOrderTab() {
   document.getElementById('poDate').value = today();
-  const num = 'PO-'+today().replace(/-/g,'').slice(2)+'-001';
-  if(!document.getElementById('poNumber').value) document.getElementById('poNumber').value = num;
+  refreshDefaultPoNumber();
   populateSupplierList();
   lowStockPageIndex = 0;
   renderLowStock();
@@ -3289,7 +3307,18 @@ window.printPO = function() {
 // ═══════════════════════════════════════════════════
 let savedPOs=[], intakePOId=null;
 
-async function loadPOs(){ savedPOs=await fsGetAll('purchaseOrders'); renderPOList(); }
+async function loadPOs(){ savedPOs=await fsGetAll('purchaseOrders'); renderPOList(); refreshDefaultPoNumber(); }
+// Auto-increment the PO number: PO-<YYMMDD>-NNN where NNN is the next free sequence for today.
+let poNumberManual=false;
+window.markPoNumberManual=function(){ poNumberManual=true; };
+function nextPoNumber(){
+  const datePart=today().replace(/-/g,'').slice(2);
+  const prefix='PO-'+datePart+'-';
+  let max=0;
+  savedPOs.forEach(po=>{ const m=(po.poNumber||'').match(/-(\d+)$/); if(m && (po.poNumber||'').startsWith(prefix)){ const n=parseInt(m[1]); if(n>max) max=n; } });
+  return prefix+String(max+1).padStart(3,'0');
+}
+function refreshDefaultPoNumber(){ if(poNumberManual) return; const el=document.getElementById('poNumber'); if(el) el.value=nextPoNumber(); }
 
 window.savePO=async function(){
   const items=Object.values(orderItems);
@@ -3327,7 +3356,7 @@ window.savePO=async function(){
       }
     }
   }
-  orderItems={}; orderSupplier=''; document.getElementById('poNumber').value='';
+  orderItems={}; orderSupplier=''; document.getElementById('poNumber').value=''; poNumberManual=false;
   initOrderTab();
   toast(`PO saved for ${supplier}`,'ok');
 };
@@ -3515,8 +3544,7 @@ window.confirmDelivery=async function(){
       updated++;
     }
   }
-  // Create an Accounts Payable for the supplier (SS4) — settled later from Payables.
-  const term=document.getElementById('intakeTerm').value;
+  // Create an Accounts Payable for the supplier — payment terms are chosen later when paying.
   const landedTotal=Math.round(((t?.grand)||0)*100)/100;
   const payId='pay_'+Date.now();
   await fsSet('payables', payId, {
@@ -3524,13 +3552,13 @@ window.confirmDelivery=async function(){
     desc:`Delivery: ${po.poNumber}${po.supplier?(' — '+po.supplier):''}`,
     createdAt:tnow(), by:session?.name||'', byRole:session?.role||'staff',
     source:'delivery', poId:po.id, poNumber:po.poNumber, supplier:po.supplier||'',
-    payTerm:term, status:'unpaid'
+    payTerm:'', status:'unpaid'
   });
   po.status='delivered'; po.deliveredDate=today(); po.deliveredAt=tnow(); po.receivedBy=session?.name||'';
-  po.deliveryFee=t?.fee||0; po.payableId=payId; po.payTerm=term; po.payStatus='unpaid'; po.payableAmount=landedTotal;
+  po.deliveryFee=t?.fee||0; po.payableId=payId; po.payTerm=''; po.payStatus='unpaid'; po.payableAmount=landedTotal;
   await fsSet('purchaseOrders', po.id, po);
   closeIntake(); renderPOList(); renderLowStock();
-  toast(`Received — ${updated} items restocked · ${fmt(landedTotal)} payable (${term})`,'ok');
+  toast(`Received — ${updated} items restocked · ${fmt(landedTotal)} logged to Payables`,'ok');
 };
 </script>
 </body>
