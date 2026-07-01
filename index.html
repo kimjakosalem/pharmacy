@@ -310,6 +310,8 @@ select option{background:var(--bg3)}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);padding:22px;width:380px;max-width:95vw;margin:auto;max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow-y:auto;-webkit-overflow-scrolling:touch}
 .modal h3{font-size:15px;font-weight:600;margin-bottom:4px}
 .modal-sub{font-size:11px;color:var(--text2);margin-bottom:16px}
+.modal-x{position:absolute;top:12px;right:12px;width:30px;height:30px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .15s;z-index:2}
+.modal-x:hover{border-color:var(--red);color:var(--red)}
 .variant-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:14px}
 .variant-btn{padding:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:var(--r);cursor:pointer;transition:all .15s;text-align:center;font-size:12px}
 .variant-btn:hover{border-color:var(--teal);color:var(--text)}
@@ -541,6 +543,10 @@ select option{background:var(--bg3)}
     <div class="modal-sub" style="margin-bottom:10px">Confirm the quantity received and the actual cost per item. Inventory and product cost update on confirm.</div>
     <div id="intakeBody" class="scroll-pan-y" style="max-height:42vh;overflow-y:auto"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <div><div style="font-size:11px;color:var(--text);font-weight:500">Delivery Receipt / Sales Invoice No. <span style="color:var(--red)">*</span></div><div style="font-size:9px;color:var(--text3)">Required — the supplier's DR or SI reference</div></div>
+      <input type="text" id="intakeDR" class="po-qty" placeholder="e.g. DR-00123" style="width:150px" autocomplete="off">
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
       <div><div style="font-size:11px;color:var(--text);font-weight:500">Extra Delivery Fee (PHP)</div><div style="font-size:9px;color:var(--text3)">Spread across all received units as added cost</div></div>
       <input type="number" id="intakeFee" class="po-qty" value="0" min="0" step="0.01" style="width:110px" oninput="updateIntakeSummary()">
     </div>
@@ -663,10 +669,14 @@ select option{background:var(--bg3)}
 
 <!-- View saved PO itemization -->
 <div class="modal-overlay" id="poViewModal">
-  <div class="modal" style="width:480px;max-width:96vw">
+  <div class="modal" style="width:480px;max-width:96vw;position:relative">
+    <button class="modal-x" onclick="closePoView()" aria-label="Close"><i class="ti ti-x"></i></button>
     <h3 id="poViewTitle" style="color:var(--teal)">Purchase Order</h3>
     <div id="poViewBody" style="margin:14px 0"></div>
-    <div class="btn-row"><button class="btn btn-ghost" style="flex:1" onclick="closePoView()">Close</button></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost btn-sm" onclick="exportViewedPO()"><i class="ti ti-download"></i> Export CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="printViewedPO()"><i class="ti ti-printer"></i> Print / PDF</button>
+    </div>
   </div>
 </div>
 
@@ -2662,7 +2672,7 @@ window.onPayTermsChange=function(){
     hint.textContent='Recorded as a check payment (no drawer cash-out).';
   } else {
     lbl.textContent='Cash source';
-    sub.innerHTML=[['Take Home','Take Home'],['Drawer Cash','Drawer Cash']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+    sub.innerHTML=[['Drawer Cash','Drawer Cash'],['Take Home','Take Home']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
     hint.textContent='Logs a “Delivery Payment” cash-out in the current shift.';
   }
 };
@@ -2787,8 +2797,12 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.42';
+const APP_VERSION='v4.43';
 const CHANGELOG=[
+  {v:'v4.43', date:'2026-07-01', notes:[
+    'Payment: cash source now lists Drawer Cash first, then Take Home',
+    'Viewing a saved PO now uses an ✕ (top-right) to close and has Export CSV + Print/PDF buttons, matching the PO preview',
+    'Receiving a delivery now requires a Delivery Receipt / Sales Invoice number — it\'s saved on the PO and the payable, and shows when you view the PO']},
   {v:'v4.42', date:'2026-07-01', notes:[
     'Take Home payments no longer affect the drawer reconciliation — they still show in the shift\'s Cash Outs list, but no longer make the expected drawer look short (Drawer Cash still reduces the drawer as before)']},
   {v:'v4.41', date:'2026-07-01', notes:[
@@ -3426,8 +3440,10 @@ function renderPOList(){
 }
 
 // View a saved PO's full itemization again (read-only).
+let viewedPoId=null;
 window.viewPO=function(id){
   const po=savedPOs.find(p=>p.id===id); if(!po) return;
+  viewedPoId=id;
   const delivered=po.status==='delivered';
   const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
   const totItems=po.items.reduce((a,it)=>a+it.orderedQty,0);
@@ -3441,7 +3457,7 @@ window.viewPO=function(id){
   </tr>`).join('');
   document.getElementById('poViewTitle').innerHTML=`<i class="ti ti-file-invoice" style="margin-right:6px"></i>${po.poNumber}`;
   document.getElementById('poViewBody').innerHTML=`
-    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${po.supplier||'No supplier'} · ${po.date||''}${po.payTerm?' · '+po.payTerm:''}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · received by '+po.receivedBy:''}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${po.supplier||'No supplier'} · ${po.date||''}${po.payTerm?' · '+po.payTerm:''}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · received by '+po.receivedBy:''}${po.drNo?' · DR/SI '+po.drNo:''}</div>
     <table class="po-tbl">
       <tr><th>SKU</th><th>Product</th><th style="text-align:right">Cost</th><th style="text-align:right">Qty</th><th style="text-align:right">Total</th>${delivered?'<th style="text-align:right">Recv</th>':''}</tr>
       ${rows}
@@ -3450,6 +3466,40 @@ window.viewPO=function(id){
   document.getElementById('poViewModal').classList.add('show');
 };
 window.closePoView=function(){ document.getElementById('poViewModal').classList.remove('show'); };
+// Export / print the currently-viewed saved PO (uses the PO's own items, not the draft order).
+window.exportViewedPO=function(){
+  const po=savedPOs.find(p=>p.id===viewedPoId); if(!po){ return; }
+  const header='PO Number,DR/SI,Date,Supplier,SKU,Product,Cost,Qty,Total';
+  const esc=s=>`"${(s||'').toString().replace(/"/g,'""')}"`;
+  const rows=(po.items||[]).map(it=>[esc(po.poNumber),esc(po.drNo),esc(po.date),esc(po.supplier),esc(it.sku),esc(it.name),it.orderedCost,it.orderedQty,(it.orderedCost*it.orderedQty).toFixed(2)].join(','));
+  const csv=[header,...rows].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`PO_${po.poNumber}_${po.date||''}.csv`; a.click();
+  toast('PO exported as CSV','ok');
+};
+window.printViewedPO=function(){
+  const po=savedPOs.find(p=>p.id===viewedPoId); if(!po){ return; }
+  const grandTotal=(po.items||[]).reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
+  const rows=(po.items||[]).map(it=>`<tr><td style="padding:6px;border:1px solid #ccc">${it.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${it.name}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(it.orderedCost||0).toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${it.orderedQty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${((it.orderedCost||0)*it.orderedQty).toFixed(2)}</td></tr>`).join('');
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>PO ${po.poNumber}</title><style>body{font-family:Arial,sans-serif;font-size:13px;padding:30px;color:#000}@media print{body{padding:10px}}</style></head><body>
+    <div style="text-align:center;margin-bottom:20px;border-bottom:3px double #000;padding-bottom:16px">
+      <h1 style="font-size:20px;margin:0">PURCHASE ORDER</h1>
+      <h2 style="font-size:15px;margin:6px 0;font-weight:normal">Dr. Kim Pharmacy</h2>
+      <div style="font-size:12px;margin-top:6px"><strong>PO#:</strong> ${po.poNumber} &nbsp;&nbsp; <strong>Date:</strong> ${po.date||''}${po.drNo?' &nbsp;&nbsp; <strong>DR/SI:</strong> '+po.drNo:''}</div>
+      <div style="font-size:12px;margin-top:4px"><strong>Supplier:</strong> ${po.supplier||'—'}</div>
+      ${po.notes?`<div style="font-size:11px;margin-top:4px;color:#666">Note: ${po.notes}</div>`:''}
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="background:#f0f0f0"><th style="padding:6px;border:1px solid #ccc;text-align:left">SKU</th><th style="padding:6px;border:1px solid #ccc;text-align:left">Product</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Unit Cost</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Qty</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Total</th></tr>
+      ${rows}
+    </table>
+    <div style="border-top:2px solid #000;padding-top:10px;text-align:right;margin-top:20px"><strong style="font-size:15px">GRAND TOTAL: PHP ${grandTotal.toLocaleString('en-PH',{minimumFractionDigits:2})}</strong></div>
+    <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:12px"><div>Prepared by: _______________________</div><div>Approved by: _______________________</div></div>
+    <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`);
+  win.document.close();
+};
 
 // ── Edit the supplier on an already-saved PO (fixes POs staff saved without one) ──
 let editSupPoId=null;
@@ -3493,6 +3543,7 @@ window.openIntake=function(id){
   intakePOId=id;
   document.getElementById('intakeTitle').innerHTML=`<i class="ti ti-truck-delivery" style="margin-right:6px"></i>Receive — ${po.poNumber}`;
   document.getElementById('intakeFee').value=0;
+  document.getElementById('intakeDR').value=po.drNo||'';
   document.getElementById('intakeBody').innerHTML=po.items.map((it,i)=>`
     <div class="intake-item">
       <div class="po-info" style="min-width:0">
@@ -3530,6 +3581,8 @@ window.updateIntakeSummary=function(){
 
 window.confirmDelivery=async function(){
   const po=savedPOs.find(p=>p.id===intakePOId); if(!po) return;
+  const drNo=document.getElementById('intakeDR').value.trim();
+  if(!drNo){ toast('Enter the Delivery Receipt / Sales Invoice no.','err'); document.getElementById('intakeDR').focus(); return; }
   const t=intakeTotals();
   let updated=0, priceChanges=0;
   for(let i=0;i<po.items.length;i++){
@@ -3555,12 +3608,12 @@ window.confirmDelivery=async function(){
   const payId='pay_'+Date.now();
   await fsSet('payables', payId, {
     date:today(), category:'Stocks', amount:landedTotal,
-    desc:`Delivery: ${po.poNumber}${po.supplier?(' — '+po.supplier):''}`,
+    desc:`Delivery: ${po.poNumber}${po.supplier?(' — '+po.supplier):''} · DR/SI ${drNo}`,
     createdAt:tnow(), by:session?.name||'', byRole:session?.role||'staff',
-    source:'delivery', poId:po.id, poNumber:po.poNumber, supplier:po.supplier||'',
+    source:'delivery', poId:po.id, poNumber:po.poNumber, supplier:po.supplier||'', drNo,
     payTerm:'', status:'unpaid'
   });
-  po.status='delivered'; po.deliveredDate=today(); po.deliveredAt=tnow(); po.receivedBy=session?.name||'';
+  po.status='delivered'; po.deliveredDate=today(); po.deliveredAt=tnow(); po.receivedBy=session?.name||''; po.drNo=drNo;
   po.deliveryFee=t?.fee||0; po.payableId=payId; po.payTerm=''; po.payStatus='unpaid'; po.payableAmount=landedTotal;
   await fsSet('purchaseOrders', po.id, po);
   closeIntake(); renderPOList(); renderLowStock();
