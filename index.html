@@ -342,6 +342,7 @@ select option{background:var(--bg3)}
 .sup-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
 .sup-chips:empty{display:none}
 .sup-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;background:var(--teal-dim);border:1px solid var(--teal-mid);color:var(--teal);border-radius:20px;font-size:11px;font-weight:500}
+.sup-chip-cheapest{background:var(--green-dim);border-color:var(--green);color:var(--green)}
 .sup-chip button{background:none;border:none;color:var(--teal);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7}
 .sup-chip button:hover{opacity:1;color:var(--red)}
 .sup-results{margin-top:5px;display:flex;flex-direction:column;gap:4px;max-height:170px;overflow-y:auto}
@@ -443,6 +444,7 @@ select option{background:var(--bg3)}
 .chip-low{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber2)}
 .chip-out{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}
 .chip-ok{background:var(--green-dim);color:var(--green);border:1px solid var(--green)}
+.chip-generic{background:var(--green-dim);color:var(--green);border:1px solid var(--green);font-weight:700}
 </style>
 </head>
 <body>
@@ -696,6 +698,41 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- Add / Edit Product -->
+<div class="modal-overlay" id="productModal">
+  <div class="modal" style="width:520px;max-width:96vw;position:relative;text-align:left">
+    <button class="modal-x" onclick="cancelEditProduct()" aria-label="Close"><i class="ti ti-x"></i></button>
+    <h3 style="color:var(--teal)"><i class="ti ti-plus" style="margin-right:6px"></i><span id="prodFormTitle">Add New Product</span></h3>
+    <div class="fg fg3" style="margin-top:14px">
+      <div class="field"><label>SKU / ID</label><input type="text" id="pSku" placeholder="e.g. MED-001"></div>
+      <div class="field fc" style="grid-column:2/-1"><label>Product Name</label><input type="text" id="pName" placeholder="e.g. Amoxicillin 500mg"></div>
+      <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off" onchange="applyCategoryMarkup()"><datalist id="catList"></datalist><div id="catMarkupHint" style="font-size:10px;color:var(--teal);margin-top:3px"></div></div>
+      <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
+      <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
+      <div class="field"><label>Margin / Markup</label><input type="text" id="pMargin" placeholder="auto-calculated" readonly style="color:var(--teal)"></div>
+      <div class="field"><label>Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
+      <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
+      <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(search registered suppliers — multiple allowed)</span></label>
+        <div id="supChips" class="sup-chips"></div>
+        <input type="text" id="supSearch" placeholder="Search suppliers..." autocomplete="off" oninput="renderSupSearch()" onkeydown="supSearchKey(event)">
+        <div id="supSearchResults" class="sup-results"></div>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.07em;margin-bottom:8px">VARIANTS <span style="font-weight:400;color:var(--text3)">(optional — leave blank if no variants)</span></div>
+    <div class="variant-list" id="variantList"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost btn-sm" onclick="addVariantRow()"><i class="ti ti-plus"></i> Add Variant</button>
+    </div>
+    <div class="sep"></div>
+    <div class="btn-row">
+      <button class="btn btn-teal" onclick="saveProduct()"><i class="ti ti-device-floppy"></i> Save Product</button>
+      <button class="btn btn-ghost" onclick="cancelEditProduct()"><i class="ti ti-x"></i> Cancel</button>
+      <span id="prodFormMsg" style="font-size:11px;margin-left:4px"></span>
+    </div>
+  </div>
+</div>
+
 <div class="app"><div class="app-inner">
   <div class="header">
     <div class="logo">
@@ -727,6 +764,20 @@ select option{background:var(--bg3)}
 
   <!-- ═══ SHIFT ═══ -->
   <div class="panel active" id="panel-shift">
+    <div class="card" id="reviewDayCard" style="display:none">
+      <div class="card-title"><i class="ti ti-history"></i> Review Past Day <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">owner only</span></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:9px">Pick a past date to see that day's Morning &amp; Evening transactions. You can void a sale, cash-in, or cash-out from here — it stays on record marked VOIDED. To add a sale for that date, use "Add Backdated Sale" (opens the POS tab).</div>
+      <div class="fg fg2">
+        <div class="field"><label>Date</label><input type="date" id="reviewDate" onchange="loadReviewDay()"></div>
+        <div class="field" style="justify-content:flex-end"><label>&nbsp;</label>
+          <div class="btn-row" style="margin:0">
+            <button class="btn btn-amber btn-sm" id="reviewBackdateBtn" style="display:none" onclick="startBackdateSale()"><i class="ti ti-shopping-cart-plus"></i> Add Backdated Sale</button>
+            <button class="btn btn-ghost btn-sm" id="reviewCloseBtn" style="display:none" onclick="closeReviewDay()"><i class="ti ti-x"></i> Close Review</button>
+          </div>
+        </div>
+      </div>
+      <div id="reviewDayBody"></div>
+    </div>
     <div class="shift-row">
       <button class="shift-btn active" id="s1btn" onclick="selShift(1)"><i class="ti ti-sun"></i> Morning <span style="font-size:10px;opacity:.6">7AM-3PM</span></button>
       <button class="shift-btn" id="s2btn" onclick="selShift(2)"><i class="ti ti-moon"></i> Evening <span style="font-size:10px;opacity:.6">3PM-11PM</span></button>
@@ -837,6 +888,10 @@ select option{background:var(--bg3)}
 
   <!-- ═══ POS SALES ═══ -->
   <div class="panel" id="panel-pos">
+    <div class="infonote" id="posBackdateBanner" style="display:none;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+      <span id="posBackdateText"></span>
+      <button class="btn btn-ghost btn-xs" onclick="cancelBackdateSale()"><i class="ti ti-x"></i> Back to Live</button>
+    </div>
     <div class="pos-layout">
       <div>
         <div class="pos-search-wrap">
@@ -930,39 +985,12 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
-    <div class="card" id="prodFormCard">
-      <div class="card-title"><i class="ti ti-plus"></i> <span id="prodFormTitle">Add New Product</span></div>
-      <div class="fg fg3">
-        <div class="field"><label>SKU / ID</label><input type="text" id="pSku" placeholder="e.g. MED-001"></div>
-        <div class="field fc" style="grid-column:2/-1"><label>Product Name</label><input type="text" id="pName" placeholder="e.g. Amoxicillin 500mg"></div>
-        <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off" onchange="applyCategoryMarkup()"><datalist id="catList"></datalist><div id="catMarkupHint" style="font-size:10px;color:var(--teal);margin-top:3px"></div></div>
-        <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
-        <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
-        <div class="field"><label>Margin / Markup</label><input type="text" id="pMargin" placeholder="auto-calculated" readonly style="color:var(--teal)"></div>
-        <div class="field"><label>Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
-        <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
-        <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(search registered suppliers — multiple allowed)</span></label>
-          <div id="supChips" class="sup-chips"></div>
-          <input type="text" id="supSearch" placeholder="Search suppliers..." autocomplete="off" oninput="renderSupSearch()" onkeydown="supSearchKey(event)">
-          <div id="supSearchResults" class="sup-results"></div>
-        </div>
-      </div>
-      <div class="sep"></div>
-      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.07em;margin-bottom:8px">VARIANTS <span style="font-weight:400;color:var(--text3)">(optional — leave blank if no variants)</span></div>
-      <div class="variant-list" id="variantList"></div>
-      <div class="btn-row">
-        <button class="btn btn-ghost btn-sm" onclick="addVariantRow()"><i class="ti ti-plus"></i> Add Variant</button>
-      </div>
-      <div class="sep"></div>
-      <div class="btn-row">
-        <button class="btn btn-teal" onclick="saveProduct()"><i class="ti ti-device-floppy"></i> Save Product</button>
-        <button class="btn btn-ghost" onclick="cancelEditProduct()"><i class="ti ti-x"></i> Cancel</button>
-        <span id="prodFormMsg" style="font-size:11px;margin-left:4px"></span>
-      </div>
-    </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-package"></i> Product Inventory
         <span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400" id="prodCount"></span>
+      </div>
+      <div class="btn-row" style="margin-bottom:10px">
+        <button class="btn btn-teal" onclick="openAddProduct()"><i class="ti ti-plus"></i> Add New Product</button>
       </div>
       <div style="margin-bottom:8px">
         <input type="text" id="prodFilterBox" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;width:100%;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
@@ -1235,6 +1263,18 @@ function setLastSaved(){ document.getElementById('lastSaved').textContent='Last 
 let toastTimer;
 function toast(msg,type='info'){ const el=document.getElementById('toast'); el.textContent=msg; el.className=`toast ${type} show`; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),3000); }
 
+// ── Idle auto-logout (10 min) — locks back to the PIN screen, shift stays open ──
+const IDLE_LIMIT_MS=10*60*1000;
+let idleTimer=null;
+function resetIdleTimer(){
+  clearTimeout(idleTimer);
+  if(!session) return;   // nothing to protect if nobody's logged in
+  idleTimer=setTimeout(()=>{
+    if(session){ logout(); toast('Logged out after 10 minutes of inactivity','info'); }
+  },IDLE_LIMIT_MS);
+}
+['mousemove','mousedown','keydown','touchstart','scroll'].forEach(ev=>document.addEventListener(ev,resetIdleTimer,{passive:true}));
+
 // ── AUTH / SESSION (role-based, whole-app gate) ──
 // Staff roster lives in config/staff as {value:[{id,name,role,pin}]}.
 // Roles: 'owner' (full access incl. Reports + Settings), 'manager', 'staff'.
@@ -1366,6 +1406,7 @@ window.startSession=async function(){
   backToPin();                                 // reset login UI for next time
   selShift(curShift); switchTab('shift');
   toast(`Welcome, ${session.name}`,'ok');
+  resetIdleTimer();
 };
 
 // Role-based visibility: only the owner sees Reports + Settings.
@@ -1373,6 +1414,7 @@ function applyRole(){
   const owner = session?.role==='owner';
   document.getElementById('tab-reports').style.display = owner?'':'none';
   document.getElementById('tab-settings').style.display = owner?'':'none';
+  document.getElementById('reviewDayCard').style.display = owner?'block':'none';
   // Products tab is open to all roles, but bulk import/export and the category/supplier
   // databases are owner-only management tools.
   ['importExportCard','catSupCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=owner?'':'none'; });
@@ -1490,7 +1532,7 @@ window.switchTab=function(tab){
   // Guard owner-only tabs against direct/programmatic access by non-owners.
   if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='shift'){renderSales();renderReturns();} if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff();
+  if(tab==='shift'){renderSales();renderReturns();} if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff(); if(tab==='pos')renderPosBackdateBanner();
 };
 
 // ── SHIFT ──
@@ -1602,14 +1644,21 @@ window.addCI=async function(){
   const s=await getShift(curShift); s.cashIns.push({amount:amt,note:document.getElementById('ciNote').value,time:tnow()});
   document.getElementById('ciAmt').value=''; document.getElementById('ciNote').value=''; await persistShift(curShift); renderCI();
 };
-window.removeCI=async function(i){
+window.removeCI=async function(i,sh,dt){
+  sh=sh||curShift; dt=dt||today();
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
-  const s=await getShift(curShift); s.cashIns.splice(i,1); await persistShift(curShift); renderCI();
+  const s=await getShift(sh,dt); const c=s.cashIns[i]; if(!c||c.voided) return;
+  if(!confirm(`Void this ${fmt(c.amount)} cash-in?`)) return;
+  c.voided=true; c.voidedBy=session?.name||''; c.voidedAt=tnow();
+  await persistShift(sh,dt);
+  if(sh===curShift&&dt===today()) renderCI();
+  if(typeof refreshHistView==='function') refreshHistView(dt);
 };
+function voidTag(x){ return x.voided?`<div class="ed" style="color:var(--red)"><i class="ti ti-ban"></i> VOIDED by ${x.voidedBy||'?'} · ${x.voidedAt||''}</div>`:''; }
 async function renderCI(){
   const s=await getShift(curShift); const el=document.getElementById('ciList');
   if(!s.cashIns.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
-  el.innerHTML=s.cashIns.map((c,i)=>`<div class="eitem"><div><div class="el">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span><button class="del-btn" onclick="removeCI(${i})"><i class="ti ti-x"></i></button></div></div>`).join('');
+  el.innerHTML=s.cashIns.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span>${c.voided?'':`<button class="del-btn" onclick="removeCI(${i})"><i class="ti ti-x"></i></button>`}</div></div>`).join('');
 }
 window.addCO=async function(){
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
@@ -1632,21 +1681,26 @@ window.addCO=async function(){
   s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow()});
   document.getElementById('coAmt').value=''; document.getElementById('coNote').value=''; await persistShift(curShift); renderCO();
 };
-window.removeCO=async function(i){
-  if(session?.role!=='owner'){ toast('Only the owner can delete a cash-out','err'); return; }
-  const s=await getShift(curShift); const c=s.cashOuts[i];
+window.removeCO=async function(i,sh,dt){
+  sh=sh||curShift; dt=dt||today();
+  if(session?.role!=='owner'){ toast('Only the owner can void a cash-out','err'); return; }
+  const s=await getShift(sh,dt); const c=s.cashOuts[i]; if(!c||c.voided) return;
+  if(!confirm(`Void this ${fmt(c.amount)} cash-out?`)) return;
   // Reverse a stock-use deduction: return the qty back into inventory.
-  if(c && c.type==='Personal Stock Use' && c.prodId && c.qty){
+  if(c.type==='Personal Stock Use' && c.prodId && c.qty){
     const fp=allProductsFull[c.prodId];
     if(fp){ fp.inventory=(fp.inventory||0)+c.qty; fp.updatedAt=tnow(); await fsSet('products',c.prodId,fp); const lp=allProducts.find(p=>p.id===c.prodId); if(lp) lp.inventory=fp.inventory; }
   }
-  s.cashOuts.splice(i,1); await persistShift(curShift); renderCO();
+  c.voided=true; c.voidedBy=session?.name||''; c.voidedAt=tnow();
+  await persistShift(sh,dt);
+  if(sh===curShift&&dt===today()) renderCO();
+  if(typeof refreshHistView==='function') refreshHistView(dt);
 };
 async function renderCO(){
   const s=await getShift(curShift); const el=document.getElementById('coList');
   if(!s.cashOuts.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
   const canDel=session?.role==='owner';
-  el.innerHTML=s.cashOuts.map((c,i)=>`<div class="eitem"><div><div class="el"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}${(c.type==='Personal Stock Use'&&c.qty)?` · ×${c.qty} deducted from stock`:''}</div></div><div style="display:flex;align-items:center"><span class="eval ${c.type==='Personal Stock Use'?'c-amb':'c-neg'}">${c.type==='Personal Stock Use'?'INV':'-'}${fmt(c.amount)}</span>${canDel?`<button class="del-btn" onclick="removeCO(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
+  el.innerHTML=s.cashOuts.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}${(c.type==='Personal Stock Use'&&c.qty)?` · ×${c.qty} deducted from stock`:''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval ${c.type==='Personal Stock Use'?'c-amb':'c-neg'}">${c.type==='Personal Stock Use'?'INV':'-'}${fmt(c.amount)}</span>${(canDel&&!c.voided)?`<button class="del-btn" onclick="removeCO(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
 }
 const MODE_LABEL={cash:'CASH',gcash:'GCASH',maya:'MAYA',mcredit:'M-CREDIT'};
 window.addMS=async function(){
@@ -1654,40 +1708,98 @@ window.addMS=async function(){
   const s=await getShift(curShift); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,mode:document.getElementById('msMode').value||'cash',qty:parseInt(document.getElementById('msQty').value)||1,time:tnow()});
   document.getElementById('msAmt').value=''; document.getElementById('msDesc').value=''; document.getElementById('msQty').value='1'; await persistShift(curShift); renderMS();
 };
-window.removeMS=async function(i){ if(!hasPerm('voidms')){ toast('No permission to void manual sales','err'); return; } const s=await getShift(curShift); s.manualSales.splice(i,1); await persistShift(curShift); renderMS(); };
+window.removeMS=async function(i,sh,dt){
+  sh=sh||curShift; dt=dt||today();
+  if(!hasPerm('voidms')){ toast('No permission to void manual sales','err'); return; }
+  const s=await getShift(sh,dt); const m=s.manualSales[i]; if(!m||m.voided) return;
+  if(!confirm(`Void this ${fmt(m.amount)} manual sale?`)) return;
+  m.voided=true; m.voidedBy=session?.name||''; m.voidedAt=tnow();
+  await persistShift(sh,dt);
+  if(sh===curShift&&dt===today()) renderMS();
+  if(typeof refreshHistView==='function') refreshHistView(dt);
+};
 async function renderMS(){
   const s=await getShift(curShift); const el=document.getElementById('msList');
   if(!s.manualSales.length){el.innerHTML='<div class="empty"><i class="ti ti-notebook"></i>None</div>';return;}
   const canVoidMS=hasPerm('voidms');
-  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem"><div><div class="el">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div></div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${canVoidMS?`<button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
+  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoidMS&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
 }
 
 // ── POS transactions ledger (this shift) ──
+// Builds one sale row's HTML. `voidArgs` (e.g. "'sale_1','2','2026-06-30'") lets the same
+// markup be reused by both the live shift ledger and the historical review view.
+function saleRowHtml(t,canVoid,voidArgs){
+  const itemRows=(t.items||[]).length
+    ? (t.items||[]).map(it=>`<div class="sale-item-row"><span class="si-name">${it.name}${it.size?' <span class="si-size">('+it.size+')</span>':''}</span><span class="si-qty">×${it.qty}</span></div>`).join('')
+    : `<div class="sale-item-row" style="color:var(--text3)">Sale</div>`;
+  return `<div class="eitem sale-row" style="${t.voided?'opacity:.55':''}">
+    <div style="flex:1;min-width:0">
+      <div class="el" style="margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;${t.voided?'text-decoration:line-through':''}"><span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span><span class="ed" style="margin:0">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</span></div>
+      <div class="sale-items">${itemRows}</div>
+      ${voidTag(t)}
+    </div>
+    <div class="sale-amt-col">
+      <span class="eval c-tel">${fmt(t.total)}</span>
+      ${(canVoid&&!t.voided)?`<button class="del-btn" title="Void this sale" onclick="voidSale(${voidArgs})"><i class="ti ti-x"></i></button>`:''}
+    </div>
+  </div>`;
+}
 async function renderSales(){
   const el=document.getElementById('salesList'); if(!el) return;
   const s=await getShift(curShift);
   const sales=(s.sales||[]);
-  document.getElementById('salesCount').textContent = sales.length+(sales.length===1?' sale':' sales');
+  const activeCount=sales.filter(t=>!t.voided).length, voidedCount=sales.length-activeCount;
+  document.getElementById('salesCount').textContent = activeCount+(activeCount===1?' sale':' sales')+(voidedCount?` · ${voidedCount} voided`:'');
   if(!sales.length){ el.innerHTML='<div class="empty"><i class="ti ti-receipt"></i>No sales yet this shift</div>'; return; }
   const canVoid=hasPerm('void');
   // One row per item (instead of a single run-on comma string) so transactions with many
   // different products stay readable instead of wrapping into a dense unbroken paragraph.
-  el.innerHTML=[...sales].reverse().map(t=>{
-    const itemRows=(t.items||[]).length
-      ? (t.items||[]).map(it=>`<div class="sale-item-row"><span class="si-name">${it.name}${it.size?' <span class="si-size">('+it.size+')</span>':''}</span><span class="si-qty">×${it.qty}</span></div>`).join('')
-      : `<div class="sale-item-row" style="color:var(--text3)">Sale</div>`;
-    return `<div class="eitem sale-row">
-      <div style="flex:1;min-width:0">
-        <div class="el" style="margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span><span class="ed" style="margin:0">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</span></div>
-        <div class="sale-items">${itemRows}</div>
-      </div>
-      <div class="sale-amt-col">
-        <span class="eval c-tel">${fmt(t.total)}</span>
-        ${canVoid?`<button class="del-btn" title="Void this sale" onclick="voidSale('${t.id}')"><i class="ti ti-x"></i></button>`:''}
-      </div>
-    </div>`;
+  el.innerHTML=[...sales].reverse().map(t=>saleRowHtml(t,canVoid,`'${t.id}'`)).join('');
+}
+
+// ── Owner: Review Past Day — view any past date's Morning/Evening transactions and void them ──
+let reviewDate=null;
+window.loadReviewDay=async function(){
+  const dt=document.getElementById('reviewDate').value;
+  if(!dt){ closeReviewDay(); return; }
+  if(dt>=today()){ toast("Pick a date before today — today's shift is already live above",'err'); document.getElementById('reviewDate').value=reviewDate||''; return; }
+  reviewDate=dt;
+  document.getElementById('reviewBackdateBtn').style.display='inline-flex';
+  document.getElementById('reviewCloseBtn').style.display='inline-flex';
+  await refreshHistView(dt);
+};
+window.closeReviewDay=function(){
+  reviewDate=null;
+  document.getElementById('reviewDate').value='';
+  document.getElementById('reviewDayBody').innerHTML='';
+  document.getElementById('reviewBackdateBtn').style.display='none';
+  document.getElementById('reviewCloseBtn').style.display='none';
+};
+window.startBackdateSale=function(){
+  if(!reviewDate){ toast('Pick a date first','err'); return; }
+  posBackdate={date:reviewDate, shift:curShift};
+  switchTab('pos');
+  toast(`Adding a sale for ${reviewDate} (${curShift===1?'Morning':'Evening'})`,'info');
+};
+async function refreshHistView(dt){
+  if(!reviewDate || dt!==reviewDate) return;
+  const body=document.getElementById('reviewDayBody'); if(!body) return;
+  const shifts=await Promise.all([getShift(1,reviewDate),getShift(2,reviewDate)]);
+  const canVoid=hasPerm('void'), canDelCO=session?.role==='owner';
+  body.innerHTML=shifts.map((s,idx)=>{
+    const n=idx+1, label=n===1?'Morning':'Evening';
+    const sales=s.sales||[], cashIns=s.cashIns||[], cashOuts=s.cashOuts||[], mSales=s.manualSales||[];
+    if(!sales.length && !cashIns.length && !cashOuts.length && !mSales.length){
+      return `<div class="sep"></div><div style="font-size:11px;color:var(--text3);font-weight:600;margin:8px 0 4px">${label.toUpperCase()}</div><div class="empty" style="padding:10px"><i class="ti ti-mood-empty"></i>No transactions</div>`;
+    }
+    const salesHtml=sales.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">SALES</div><div class="elist">${sales.map(t=>saleRowHtml(t,canVoid,`'${t.id}',${n},'${reviewDate}'`)).join('')}</div>`:'';
+    const ciHtml=cashIns.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">CASH INS</div><div class="elist">${cashIns.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span>${(canVoid&&!c.voided)?`<button class="del-btn" onclick="removeCI(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
+    const coHtml=cashOuts.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">CASH OUTS</div><div class="elist">${cashOuts.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-neg">-${fmt(c.amount)}</span>${(canDelCO&&!c.voided)?`<button class="del-btn" onclick="removeCO(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
+    const msHtml=mSales.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">MANUAL SALES</div><div class="elist">${mSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoid&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
+    return `<div class="sep"></div><div style="font-size:11px;color:var(--teal);font-weight:600;margin:8px 0 4px">${label.toUpperCase()} · ${s.cashier||'unassigned'}</div>${salesHtml}${ciHtml}${coHtml}${msHtml}`;
   }).join('');
 }
+
 // Resetting the sales log is destructive and irreversible (no undo, inventory deductions
 // are NOT reversed) — a plain confirm() was too easy to tap by accident mid-shift and wipe
 // real transactions. Now requires typing CLEAR, same pattern as Master Reset, and shows
@@ -1715,12 +1827,12 @@ window.doResetPosSales=async function(){
   closePosResetModal();
   toast('POS sales log cleared for this shift','ok');
 };
-window.voidSale=async function(id){
+window.voidSale=async function(id,sh,dt){
+  sh=sh||curShift; dt=dt||today();
   if(!hasPerm('void')){ toast('No permission to void sales','err'); return; }
-  const s=await getShift(curShift);
-  const idx=(s.sales||[]).findIndex(t=>t.id===id); if(idx<0) return;
-  const t=s.sales[idx];
-  if(!confirm(`Void this ${fmt(t.total)} sale? It will be removed and the stock returned.`)) return;
+  const s=await getShift(sh,dt);
+  const t=(s.sales||[]).find(t=>t.id===id); if(!t||t.voided) return;
+  if(!confirm(`Void this ${fmt(t.total)} sale? It stays on record (marked voided) and the stock is returned.`)) return;
   // Reverse the shift aggregates
   s.posTot=Math.max(0,(s.posTot||0)-t.total);
   s.posTxn=Math.max(0,(s.posTxn||0)-1);
@@ -1730,13 +1842,16 @@ window.voidSale=async function(id){
   for(const it of (t.items||[])){
     const fp=allProductsFull[it.prodId]; if(fp){ fp.inventory=(fp.inventory||0)+it.qty; fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
   }
-  s.sales.splice(idx,1);
-  await persistShift(curShift);
-  // refresh the shift fields + lists
-  document.getElementById('posTot').value=s.posTot||''; document.getElementById('posTxn').value=s.posTxn||'';
-  document.getElementById('pbCash').value=s.pbCash||''; document.getElementById('pbGcash').value=s.pbGcash||'';
-  document.getElementById('pbMaya').value=s.pbMaya||''; document.getElementById('pbMcredit').value=s.pbMcredit||'';
-  updatePaySum(); renderSales();
+  t.voided=true; t.voidedBy=session?.name||''; t.voidedAt=tnow();
+  await persistShift(sh,dt);
+  if(sh===curShift&&dt===today()){
+    // refresh the shift fields + lists
+    document.getElementById('posTot').value=s.posTot||''; document.getElementById('posTxn').value=s.posTxn||'';
+    document.getElementById('pbCash').value=s.pbCash||''; document.getElementById('pbGcash').value=s.pbGcash||'';
+    document.getElementById('pbMaya').value=s.pbMaya||''; document.getElementById('pbMcredit').value=s.pbMcredit||'';
+    updatePaySum(); renderSales();
+  }
+  if(typeof refreshHistView==='function') refreshHistView(dt);
   toast('Sale voided — stock returned','ok');
 };
 
@@ -1904,15 +2019,15 @@ window.confirmReturn=async function(){
 
 // ── Shift Calc ──
 function calcShift(s){
-  const ciTot=s.cashIns.reduce((a,c)=>a+c.amount,0);
-  const coAll=s.cashOuts.filter(c=>c.type!=='Personal Stock Use');
+  const ciTot=s.cashIns.filter(c=>!c.voided).reduce((a,c)=>a+c.amount,0);
+  const coAll=s.cashOuts.filter(c=>c.type!=='Personal Stock Use'&&!c.voided);
   // Drawer reconciliation: exclude `nonDrawer` cash-outs (e.g. Take-Home payments paid from
   // take-home cash, not the register) so they don't make the drawer look short.
   const coCash=coAll.filter(c=>!c.nonDrawer).reduce((a,c)=>a+c.amount,0);       // cash that actually left the drawer
   const coCashExp=coAll.filter(c=>!c.settlement).reduce((a,c)=>a+c.amount,0);  // excludes payable settlements — report expenses
-  const coStock=s.cashOuts.filter(c=>c.type==='Personal Stock Use').reduce((a,c)=>a+c.amount,0);
-  const msTotal=s.manualSales.reduce((a,m)=>a+m.amount,0);
-  const msCash=s.manualSales.filter(m=>(m.mode||'cash')==='cash').reduce((a,m)=>a+m.amount,0);  // only cash manual sales hit the drawer
+  const coStock=s.cashOuts.filter(c=>c.type==='Personal Stock Use'&&!c.voided).reduce((a,c)=>a+c.amount,0);
+  const msTotal=s.manualSales.filter(m=>!m.voided).reduce((a,m)=>a+m.amount,0);
+  const msCash=s.manualSales.filter(m=>(m.mode||'cash')==='cash'&&!m.voided).reduce((a,m)=>a+m.amount,0);  // only cash manual sales hit the drawer
   const grossSales=(s.posTot||0)+msTotal;
   const cashPOS=s.pbCash||0;
   const expected=(s.startCash||0)+ciTot+cashPOS+msCash-coCash-(s.takehome||0);
@@ -1931,6 +2046,7 @@ function blankMetrics(){ return {gross:0,discounts:0,refunds:0,netSales:0,cogs:0
 function shiftSalesMetrics(s){
   const m=blankMetrics();
   for(const sale of (s?.sales||[])){
+    if(sale.voided) continue;
     m.gross += (sale.subtotal!=null ? sale.subtotal : (sale.total||0));
     m.discounts += sale.discount?.amount || 0;
     for(const it of (sale.items||[])) m.cogs += itemUnitCost(it)*(it.qty||0);
@@ -2017,8 +2133,9 @@ function renderCategoriesDb(){
 function renderSuppliersDb(){
   const el=document.getElementById('supDbList'); if(!el)return;
   if(!suppliers.length){ el.innerHTML='<div class="empty" style="padding:10px">No suppliers yet</div>'; return; }
-  el.innerHTML=suppliers.map((s,i)=>`<div class="eitem"><div class="el" style="flex:1"><i class="ti ti-building-store" style="font-size:12px;color:var(--text3)"></i> ${s.name}</div><button class="del-btn" onclick="delSupplier(${i})"><i class="ti ti-x"></i></button></div>`).join('');
+  el.innerHTML=suppliers.map((s,i)=>`<div class="eitem" style="align-items:center;flex-wrap:wrap"><div class="el" style="flex:1 1 100%"><i class="ti ti-building-store" style="font-size:12px;color:var(--text3)"></i> ${s.name}</div><input type="text" value="${s.messenger||''}" placeholder="Messenger username (m.me/...)" onchange="updateSupplierMessenger(${i},this.value)" style="flex:1;min-width:140px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:10px;padding:5px 7px;border-radius:5px;outline:none"><button class="del-btn" onclick="delSupplier(${i})"><i class="ti ti-x"></i></button></div>`).join('');
 }
+window.updateSupplierMessenger=async function(i,v){ suppliers[i].messenger=v.trim(); await saveSuppliersDb(); };
 window.addCategory=async function(){
   const name=document.getElementById('catName').value.trim();
   const mode=document.getElementById('catMode').value==='margin'?'margin':'markup';
@@ -2151,12 +2268,18 @@ window.calcMargin=function(){
 };
 
 // ── Supplier multi-select (search the registered suppliers DB; chips for the chosen ones) ──
-// Stored back into product.suppliers as a comma string for backward compatibility.
-let selectedSuppliers=[], supSearchList=[];
+// Names stored back into product.suppliers as a comma string (backward compatible); each
+// supplier's cost for THIS product is stored separately in product.supplierCosts {name:cost},
+// so we can flag which supplier is cheapest when a product has more than one.
+let selectedSuppliers=[], selectedSupplierCosts={}, supSearchList=[];
 function renderSupChips(){
   const el=document.getElementById('supChips'); if(!el) return;
-  el.innerHTML=selectedSuppliers.map((s,i)=>`<span class="sup-chip">${s}<button type="button" onclick="removeSupplierChip(${i})">&times;</button></span>`).join('');
+  // Cheapest-cost highlight only makes sense when 2+ suppliers actually have a cost entered.
+  const costed=selectedSuppliers.filter(s=>(selectedSupplierCosts[s]||0)>0);
+  const cheapest=costed.length>1 ? costed.reduce((a,b)=>(selectedSupplierCosts[b]<selectedSupplierCosts[a]?b:a)) : null;
+  el.innerHTML=selectedSuppliers.map((s,i)=>`<span class="sup-chip${s===cheapest?' sup-chip-cheapest':''}">${s===cheapest?'<i class="ti ti-star-filled" style="font-size:10px" title="Cheapest supplier"></i> ':''}${s}<input type="number" value="${selectedSupplierCosts[s]||''}" placeholder="cost" step="0.01" onchange="updateSupplierChipCost(${i},this.value)" style="width:56px;background:transparent;border:1px solid var(--teal-mid);color:inherit;font-family:var(--mono);font-size:10px;padding:2px 4px;border-radius:4px;margin:0 2px"><button type="button" onclick="removeSupplierChip(${i})">&times;</button></span>`).join('');
 }
+window.updateSupplierChipCost=function(i,v){ const name=selectedSuppliers[i]; if(!name) return; selectedSupplierCosts[name]=parseFloat(v)||0; renderSupChips(); };
 window.renderSupSearch=function(){
   const raw=document.getElementById('supSearch').value.trim(), q=raw.toLowerCase();
   const box=document.getElementById('supSearchResults');
@@ -2171,13 +2294,13 @@ window.pickSupplier=function(i){ const n=supSearchList[i]; if(n) addSupplierChip
 window.addTypedSupplier=function(){ addSupplierChip(document.getElementById('supSearch').value); };
 window.addSupplierChip=function(name){
   name=(name||'').trim(); if(!name) return;
-  if(!selectedSuppliers.some(s=>s.toLowerCase()===name.toLowerCase())) selectedSuppliers.push(name);
+  if(!selectedSuppliers.some(s=>s.toLowerCase()===name.toLowerCase())){ selectedSuppliers.push(name); if(selectedSupplierCosts[name]==null) selectedSupplierCosts[name]=0; }
   document.getElementById('supSearch').value=''; document.getElementById('supSearchResults').innerHTML=''; supSearchList=[];
   renderSupChips();
 };
-window.removeSupplierChip=function(i){ selectedSuppliers.splice(i,1); renderSupChips(); };
+window.removeSupplierChip=function(i){ const name=selectedSuppliers[i]; selectedSuppliers.splice(i,1); if(name) delete selectedSupplierCosts[name]; renderSupChips(); };
 window.supSearchKey=function(e){ if(e.key==='Enter'){ e.preventDefault(); addTypedSupplier(); } };
-function setSuppliersFromString(str){ selectedSuppliers=(str||'').split(',').map(s=>s.trim()).filter(Boolean); renderSupChips(); }
+function setSuppliersFromString(str,costs){ selectedSuppliers=(str||'').split(',').map(s=>s.trim()).filter(Boolean); selectedSupplierCosts={...(costs||{})}; renderSupChips(); }
 
 let variantRows=[];
 window.addVariantRow=function(v=null){
@@ -2212,6 +2335,7 @@ window.saveProduct=async function(){
   const data={
     sku:document.getElementById('pSku').value.trim(),
     suppliers:selectedSuppliers.join(', '),
+    supplierCosts:Object.fromEntries(selectedSuppliers.map(s=>[s,selectedSupplierCosts[s]||0])),
     name,
     category:document.getElementById('pCategory').value.trim(),
     cost:parseFloat(document.getElementById('pCost').value)||0,
@@ -2235,12 +2359,18 @@ window.saveProduct=async function(){
   cancelEditProduct(); loadProducts(); toast('Product saved','ok');
 };
 
+window.openAddProduct=function(){
+  cancelEditProduct();
+  document.getElementById('productModal').classList.add('show');
+  setTimeout(()=>document.getElementById('pName').focus({preventScroll:true}),50);
+};
+
 window.editProduct=async function(id){
   const p=allProductsFull[id]; if(!p)return;
   editingProdId=id;
   document.getElementById('prodFormTitle').textContent='Edit Product';
   document.getElementById('pSku').value=p.sku||'';
-  setSuppliersFromString(p.suppliers);
+  setSuppliersFromString(p.suppliers,p.supplierCosts);
   document.getElementById('supSearch').value=''; document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('pName').value=p.name||'';
   document.getElementById('pCategory').value=p.category||'';
@@ -2251,18 +2381,17 @@ window.editProduct=async function(id){
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   (p.variants||[]).forEach(v=>addVariantRow(v));
   calcMargin();
-  // Pull the edit form into view on every device (phone, tablet, desktop) and focus it.
-  const card=document.getElementById('prodFormCard');
-  if(card){ card.scrollIntoView({behavior:'smooth',block:'start'}); card.classList.add('flash'); setTimeout(()=>card.classList.remove('flash'),1200); }
-  document.getElementById('pName').focus({preventScroll:true});
+  document.getElementById('productModal').classList.add('show');
+  setTimeout(()=>document.getElementById('pName').focus({preventScroll:true}),50);
 };
 
 window.cancelEditProduct=function(){
   editingProdId=null;
   document.getElementById('prodFormTitle').textContent='Add New Product';
   ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pMargin','supSearch'].forEach(id=>document.getElementById(id).value='');
-  selectedSuppliers=[]; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
+  selectedSuppliers=[]; selectedSupplierCosts={}; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('variantList').innerHTML=''; variantRows=[];
+  document.getElementById('productModal').classList.remove('show');
 };
 
 window.deleteProduct=async function(id){
@@ -2279,6 +2408,14 @@ window.deleteProduct=async function(id){
 // ── POS SALES ──
 // ═══════════════════════════════════════
 let cart=[], payMode='cash', modalProd=null, modalVariant=null;
+// Owner backdating a sale for a past date reviewed in the Shift tab: {date, shift} or null (live).
+let posBackdate=null;
+window.cancelBackdateSale=function(){ posBackdate=null; renderPosBackdateBanner(); toast('Back to live POS','info'); };
+function renderPosBackdateBanner(){
+  const el=document.getElementById('posBackdateBanner'); if(!el) return;
+  if(posBackdate){ el.style.display='flex'; document.getElementById('posBackdateText').textContent=`Adding a BACKDATED sale for ${posBackdate.date} (${posBackdate.shift===1?'Morning':'Evening'})`; }
+  else el.style.display='none';
+}
 // Discount on the current cart: null, or {mode:'pct',value} / {mode:'php',value}.
 let cartDiscount=null;
 function cartSubtotal(){ return cart.reduce((a,c)=>a+(c.price*c.qty),0); }
@@ -2308,10 +2445,12 @@ window.searchProducts=function(){
     const inv=p.inventory||0, low=p.lowStock||10;
     const invClass=inv<=0?'prod-out':inv<=low?'prod-low':'';
     const invLabel=inv<=0?'Out of stock':inv<=low?`Low: ${inv}`:inv;
+    const isGeneric=(p.category||'').trim().toLowerCase()==='generics';
+    const catTag=p.category?`<span class="chip ${isGeneric?'chip-generic':''}" style="margin-left:6px">${p.category}</span>`:'';
     return `<div class="prod-card" onclick="openProductModal('${p.id}')">
       <div>
         <div class="prod-name">${p.name}</div>
-        <div class="prod-sku">${p.sku||''}</div>
+        <div class="prod-sku">${p.sku||''}${catTag}</div>
         <div class="prod-inv ${invClass}">${invLabel!==inv?'· '+invLabel:''}</div>
       </div>
       <div class="prod-price">${fmt(p.price)}</div>
@@ -2485,17 +2624,17 @@ window.checkout=function(){
 };
 
 async function finalizeSale(total, cashInfo){
-  const now=tnow(), dt=today();
+  const now=tnow(), dt=posBackdate?posBackdate.date:today(), shNum=posBackdate?posBackdate.shift:curShift;
   const sold=cart.slice();   // snapshot for the receipt before we clear
   const subtotal=cartSubtotal();
   const discSnap=(cartDiscount && discountAmount(subtotal)>0)?{mode:cartDiscount.mode,value:cartDiscount.value,amount:discountAmount(subtotal)}:null;
-  const s=await getShift(curShift,dt);
+  const s=await getShift(shNum,dt);
   // Record the sale as an individual transaction (the POS ledger) so it can be reviewed/voided.
   s.sales=s.sales||[];
   s.sales.push({ id:'sale_'+Date.now(), time:now, ts:Date.now(), mode:payMode, total,
     subtotal, discount:discSnap,
     cashReceived:cashInfo?cashInfo.received:null, change:cashInfo?cashInfo.change:null,
-    cashier:session?.name||'',
+    cashier:session?.name||'', backdated:!!posBackdate,
     items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(it.cost!=null?it.cost:(allProductsFull[it.prodId]?.cost ?? 0))})) });
   s.posTot=(s.posTot||0)+total;
   s.posTxn=(s.posTxn||0)+1;
@@ -2503,7 +2642,7 @@ async function finalizeSale(total, cashInfo){
   else if(payMode==='gcash') s.pbGcash=(s.pbGcash||0)+total;
   else if(payMode==='maya') s.pbMaya=(s.pbMaya||0)+total;
   else if(payMode==='mcredit') s.pbMcredit=(s.pbMcredit||0)+total;
-  await persistShift(curShift,dt);
+  await persistShift(shNum,dt);
   for(const item of sold){
     const fullProd=allProductsFull[item.prodId];
     const lightProd=allProducts.find(p=>p.id===item.prodId);
@@ -2513,17 +2652,19 @@ async function finalizeSale(total, cashInfo){
       await fsSet('products',item.prodId,fullProd);
     }
   }
-  document.getElementById('posTot').value=s.posTot||'';
-  document.getElementById('posTxn').value=s.posTxn||'';
-  document.getElementById('pbCash').value=s.pbCash||'';
-  document.getElementById('pbGcash').value=s.pbGcash||'';
-  document.getElementById('pbMaya').value=s.pbMaya||'';
-  document.getElementById('pbMcredit').value=s.pbMcredit||'';
-  updatePaySum(); renderSales();
+  if(!posBackdate){
+    document.getElementById('posTot').value=s.posTot||'';
+    document.getElementById('posTxn').value=s.posTxn||'';
+    document.getElementById('pbCash').value=s.pbCash||'';
+    document.getElementById('pbGcash').value=s.pbGcash||'';
+    document.getElementById('pbMaya').value=s.pbMaya||'';
+    document.getElementById('pbMcredit').value=s.pbMcredit||'';
+    updatePaySum(); renderSales();
+  } else if(typeof refreshHistView==='function'){ refreshHistView(dt); }
   const receiptHtml=`<div class="receipt">
     <div class="receipt-header">
       <div style="font-weight:600;font-size:13px">DR. KIM PHARMACY</div>
-      <div style="font-size:10px;color:var(--text3);margin-top:2px">${dt} ${now}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${dt} ${now}${posBackdate?' · BACKDATED ENTRY':''}</div>
     </div>
     ${sold.map(item=>`<div class="receipt-row"><span>${item.name}${item.size?' ('+item.size+')':''} x${item.qty}</span><span>${fmtShort(item.price*item.qty)}</span></div>`).join('')}
     ${discSnap?`<div class="receipt-row" style="margin-top:4px"><span>Subtotal</span><span>${fmtShort(subtotal)}</span></div>
@@ -2797,8 +2938,19 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.43';
+const APP_VERSION='v4.46';
 const CHANGELOG=[
+  {v:'v4.46', date:'2026-07-01', notes:[
+    'Saved POs now have a Sent/Not Sent tag beside Delivered — tap "Send" to copy a formatted PO message to your clipboard and open Messenger (add each supplier\'s Messenger username in Products → Suppliers first)',
+    'Product suppliers can now each have their own cost — the cheapest one (when 2+ suppliers have a cost on file) is highlighted with a star, both in Edit Product and when searching products in Create Order']},
+  {v:'v4.45', date:'2026-07-01', notes:[
+    'Voiding a sale, cash-in, cash-out, or manual sale no longer deletes it — it stays on record marked VOIDED, with who voided it and when',
+    'Owner: new "Review Past Day" panel in the Shift tab — pick any past date to see that day\'s Morning &amp; Evening transactions and void a sale/cash-in/cash-out if needed; changes reflect in that day\'s Reports too',
+    '"Add Backdated Sale" from Review Past Day opens the POS tab to ring up a sale dated for that past day']},
+  {v:'v4.44', date:'2026-07-01', notes:[
+    'POS search results now show each product\'s category next to its SKU — Generics get a green highlight to flag them for dispensing (better margins)',
+    'Add/Edit Product is now a pop-up (matching the saved-PO view style) instead of a plain inline card in the Products tab',
+    'Auto logout after 10 minutes of inactivity — locks back to the PIN screen; the shift stays open']},
   {v:'v4.43', date:'2026-07-01', notes:[
     'Payment: cash source now lists Drawer Cash first, then Take Home',
     'Viewing a saved PO now uses an ✕ (top-right) to close and has Export CSV + Print/PDF buttons, matching the PO preview',
@@ -3123,11 +3275,21 @@ window.renderOrderSearch = function() {
     <div class="po-item" style="cursor:pointer" onclick="addToOrder('${p.id}')">
       <div class="po-info">
         <div class="po-name">${p.name}</div>
-        <div class="po-meta">${p.sku||'No SKU'} · Stock: ${p.inventory||0} · ${p.suppliers||'No supplier'}</div>
+        <div class="po-meta">${p.sku||'No SKU'} · Stock: ${p.inventory||0} · ${supplierListHtml(p.id)}</div>
       </div>
       <button class="btn btn-ghost btn-xs"><i class="ti ti-plus"></i> Add</button>
     </div>`).join('');
 };
+// Renders a product's supplier names, flagging the cheapest one (only when 2+ suppliers
+// actually have a cost on file) so ordering staff know which supplier to buy from.
+function supplierListHtml(prodId){
+  const fp=allProductsFull[prodId]; if(!fp||!fp.suppliers) return 'No supplier';
+  const names=fp.suppliers.split(',').map(s=>s.trim()).filter(Boolean);
+  const costs=fp.supplierCosts||{};
+  const costed=names.filter(n=>(costs[n]||0)>0);
+  const cheapest=costed.length>1 ? costed.reduce((a,b)=>(costs[b]<costs[a]?b:a)) : null;
+  return names.map(n=>n===cheapest?`<span style="color:var(--green);font-weight:600"><i class="ti ti-star-filled" style="font-size:10px"></i> ${n} (${fmtShort(costs[n])})</span>`:n).join(', ');
+}
 
 function orderSupplierOf(){ return orderSupplier.trim() || 'No Supplier'; }
 // Editable ordered cost per line — defaults to the product's current cost but can be overridden
@@ -3404,15 +3566,17 @@ function poRowHtml(po){
   const paid=po.payStatus==='paid';
   const statusChip=delivered?`<span class="chip chip-ok">Delivered</span>`:`<span class="chip chip-low">Pending</span>`;
   const payChip=delivered?(paid?`<span class="chip chip-ok">Paid</span>`:`<span class="chip chip-low">Unpaid</span>`):'';
+  const sentChip=`<span class="chip ${po.sent?'chip-ok':'chip-low'}" style="cursor:pointer" onclick="event.stopPropagation();togglePoSent('${po.id}')" title="Click to toggle sent status">${po.sent?'Sent':'Not Sent'}</span>`;
   const supLabel=(po.supplier && po.supplier!=='No Supplier')
     ? `<span style="font-size:10px;color:var(--text3);font-weight:400">${po.supplier}</span>`
     : `<span style="font-size:10px;color:var(--amber);font-weight:600">⚠ No supplier</span>`;
   return `<div class="po-item">
       <div class="po-info">
-        <div class="po-name">${po.poNumber} ${supLabel} ${statusChip} ${payChip}</div>
-        <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}${paid&&po.paidVia?' · paid '+po.paidVia:''}</div>
+        <div class="po-name">${po.poNumber} ${supLabel} ${statusChip} ${payChip} ${sentChip}</div>
+        <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}${paid&&po.paidVia?' · paid '+po.paidVia:''}${po.sent&&po.sentAt?' · sent '+po.sentAt+(po.sentBy?' by '+po.sentBy:''):''}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost btn-xs" onclick="sendPoViaMessenger('${po.id}')" title="Copy PO text and open Messenger"><i class="ti ti-brand-messenger"></i> Send</button>
         <button class="btn btn-ghost btn-xs" onclick="openEditSup('${po.id}')" title="Edit supplier"><i class="ti ti-building-store"></i></button>
         <button class="btn btn-ghost btn-xs" onclick="viewPO('${po.id}')"><i class="ti ti-eye"></i> View</button>
         ${delivered?'':`<button class="btn btn-teal btn-xs" onclick="openIntake('${po.id}')"><i class="ti ti-truck-delivery"></i> Receive</button>`}
@@ -3420,6 +3584,36 @@ function poRowHtml(po){
       </div>
     </div>`;
 }
+function poMessageText(po){
+  const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
+  const lines=[`Purchase Order ${po.poNumber}`,`Date: ${po.date}`,`Supplier: ${po.supplier||''}`,'','ITEMS:',
+    ...po.items.map(it=>`- ${it.name}${it.sku?' ('+it.sku+')':''}: ${it.orderedQty} x ${fmt(it.orderedCost)} = ${fmt(it.orderedQty*it.orderedCost)}`),
+    '',`TOTAL: ${fmt(tot)}`,'','— Dr. Kim Pharmacy'];
+  return lines.join('\n');
+}
+window.togglePoSent=async function(id){
+  const po=savedPOs.find(p=>p.id===id); if(!po) return;
+  po.sent=!po.sent;
+  if(po.sent){ po.sentAt=tnow(); po.sentBy=session?.name||''; } else { po.sentAt=null; po.sentBy=null; }
+  await fsSet('purchaseOrders', po.id, po);
+  renderPOList();
+};
+window.sendPoViaMessenger=async function(id){
+  const po=savedPOs.find(p=>p.id===id); if(!po) return;
+  const sup=suppliers.find(s=>s.name.toLowerCase()===(po.supplier||'').toLowerCase());
+  const text=poMessageText(po);
+  try{ await navigator.clipboard.writeText(text); toast('PO text copied — paste it into Messenger','ok'); }
+  catch(e){ toast('Could not copy automatically — see PO text in the popup','info'); }
+  if(sup?.messenger){
+    const handle=sup.messenger.replace(/^https?:\/\/(www\.)?m\.me\//i,'').replace(/^@/,'');
+    window.open(`https://m.me/${handle}`,'_blank');
+  } else {
+    toast(`No Messenger username set for ${po.supplier||'this supplier'} — add one in Products → Suppliers`,'info');
+  }
+  po.sent=true; po.sentAt=tnow(); po.sentBy=session?.name||'';
+  await fsSet('purchaseOrders', po.id, po);
+  renderPOList();
+};
 function renderPOList(){
   const el=document.getElementById('poListContainer'); if(!el) return;
   const arEl=document.getElementById('poArchiveContainer');
