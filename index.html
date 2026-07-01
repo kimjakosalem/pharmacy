@@ -709,7 +709,8 @@ select option{background:var(--bg3)}
       <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off" onchange="applyCategoryMarkup()"><datalist id="catList"></datalist><div id="catMarkupHint" style="font-size:10px;color:var(--teal);margin-top:3px"></div></div>
       <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
       <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
-      <div class="field"><label>Margin / Markup</label><input type="text" id="pMargin" placeholder="auto-calculated" readonly style="color:var(--teal)"></div>
+      <div class="field"><label>Margin %</label><input type="text" id="pMarginPct" placeholder="auto" readonly style="color:var(--teal)"></div>
+      <div class="field"><label>Markup %</label><input type="text" id="pMarkupPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field"><label>Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
       <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
       <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(search registered suppliers — multiple allowed)</span></label>
@@ -2133,7 +2134,7 @@ function renderCategoriesDb(){
 function renderSuppliersDb(){
   const el=document.getElementById('supDbList'); if(!el)return;
   if(!suppliers.length){ el.innerHTML='<div class="empty" style="padding:10px">No suppliers yet</div>'; return; }
-  el.innerHTML=suppliers.map((s,i)=>`<div class="eitem" style="align-items:center;flex-wrap:wrap"><div class="el" style="flex:1 1 100%"><i class="ti ti-building-store" style="font-size:12px;color:var(--text3)"></i> ${s.name}</div><input type="text" value="${s.messenger||''}" placeholder="Messenger username (m.me/...)" onchange="updateSupplierMessenger(${i},this.value)" style="flex:1;min-width:140px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:10px;padding:5px 7px;border-radius:5px;outline:none"><button class="del-btn" onclick="delSupplier(${i})"><i class="ti ti-x"></i></button></div>`).join('');
+  el.innerHTML=suppliers.map((s,i)=>`<div class="eitem" style="align-items:center;flex-wrap:wrap"><div class="el" style="flex:1 1 100%"><i class="ti ti-building-store" style="font-size:12px;color:var(--text3)"></i> ${s.name}</div><input type="text" value="${s.messenger||''}" placeholder="Username, or paste any Messenger/group link" onchange="updateSupplierMessenger(${i},this.value)" style="flex:1;min-width:140px;background:var(--bg4);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:10px;padding:5px 7px;border-radius:5px;outline:none"><button class="del-btn" onclick="delSupplier(${i})"><i class="ti ti-x"></i></button></div>`).join('');
 }
 window.updateSupplierMessenger=async function(i,v){ suppliers[i].messenger=v.trim(); await saveSuppliersDb(); };
 window.addCategory=async function(){
@@ -2261,10 +2262,9 @@ window.calcMargin=function(){
   const cost=parseFloat(document.getElementById('pCost').value)||0;
   const price=parseFloat(document.getElementById('pPrice').value)||0;
   if(cost&&price){
-    const margin=((price-cost)/price*100).toFixed(1);
-    const markup=((price-cost)/cost*100).toFixed(1);
-    document.getElementById('pMargin').value=`${margin}% margin / ${markup}% markup`;
-  } else { document.getElementById('pMargin').value=''; }
+    document.getElementById('pMarginPct').value=((price-cost)/price*100).toFixed(1)+'%';
+    document.getElementById('pMarkupPct').value=((price-cost)/cost*100).toFixed(1)+'%';
+  } else { document.getElementById('pMarginPct').value=''; document.getElementById('pMarkupPct').value=''; }
 };
 
 // ── Supplier multi-select (search the registered suppliers DB; chips for the chosen ones) ──
@@ -2388,7 +2388,7 @@ window.editProduct=async function(id){
 window.cancelEditProduct=function(){
   editingProdId=null;
   document.getElementById('prodFormTitle').textContent='Add New Product';
-  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pMargin','supSearch'].forEach(id=>document.getElementById(id).value='');
+  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
   selectedSuppliers=[]; selectedSupplierCosts={}; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   document.getElementById('productModal').classList.remove('show');
@@ -2938,8 +2938,11 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.46';
+const APP_VERSION='v4.47';
 const CHANGELOG=[
+  {v:'v4.47', date:'2026-07-01', notes:[
+    'Add/Edit Product: Margin and Markup are now two separate boxes instead of one cramped combined field, so the text no longer overflows',
+    'Supplier "Send" link now also accepts a full Messenger link (a group chat with you, the supplier, and your manager, or a group invite link) — not just a plain username']},
   {v:'v4.46', date:'2026-07-01', notes:[
     'Saved POs now have a Sent/Not Sent tag beside Delivered — tap "Send" to copy a formatted PO message to your clipboard and open Messenger (add each supplier\'s Messenger username in Products → Suppliers first)',
     'Product suppliers can now each have their own cost — the cheapest one (when 2+ suppliers have a cost on file) is highlighted with a star, both in Edit Product and when searching products in Create Order']},
@@ -3598,18 +3601,23 @@ window.togglePoSent=async function(id){
   await fsSet('purchaseOrders', po.id, po);
   renderPOList();
 };
+// Accepts a bare username/handle (builds an m.me link) OR a full URL already pasted in —
+// m.me/<name>, a group m.me/j/<code> invite link, or a messenger.com/t/<thread_id> link
+// (e.g. a group chat with the supplier + owner + manager) — used as-is since it's already valid.
+function resolveMessengerLink(raw){
+  raw=(raw||'').trim(); if(!raw) return null;
+  if(/^https?:\/\//i.test(raw)) return raw;
+  return `https://m.me/${raw.replace(/^@/,'')}`;
+}
 window.sendPoViaMessenger=async function(id){
   const po=savedPOs.find(p=>p.id===id); if(!po) return;
   const sup=suppliers.find(s=>s.name.toLowerCase()===(po.supplier||'').toLowerCase());
   const text=poMessageText(po);
   try{ await navigator.clipboard.writeText(text); toast('PO text copied — paste it into Messenger','ok'); }
   catch(e){ toast('Could not copy automatically — see PO text in the popup','info'); }
-  if(sup?.messenger){
-    const handle=sup.messenger.replace(/^https?:\/\/(www\.)?m\.me\//i,'').replace(/^@/,'');
-    window.open(`https://m.me/${handle}`,'_blank');
-  } else {
-    toast(`No Messenger username set for ${po.supplier||'this supplier'} — add one in Products → Suppliers`,'info');
-  }
+  const link=resolveMessengerLink(sup?.messenger);
+  if(link){ window.open(link,'_blank'); }
+  else { toast(`No Messenger link set for ${po.supplier||'this supplier'} — add one in Products → Suppliers`,'info'); }
   po.sent=true; po.sentAt=tnow(); po.sentBy=session?.name||'';
   await fsSet('purchaseOrders', po.id, po);
   renderPOList();
