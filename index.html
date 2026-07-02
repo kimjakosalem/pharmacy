@@ -1178,6 +1178,7 @@ select option{background:var(--bg3)}
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, deleteDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
 Chart.register(...registerables);
 
@@ -1190,6 +1191,15 @@ const firebaseConfig = {
   appId: "1:348227497829:web:04bd0d5c2becebfef67b8c"
 };
 const fbApp = initializeApp(firebaseConfig);
+// App Check: proves requests come from this actual deployed site (not just any script that
+// read the public config above). Silent/invisible (reCAPTCHA v3, no user challenge). Tokens are
+// cached by the SDK and auto-refresh; isTokenAutoRefreshEnabled keeps that going in the
+// background so a long-open tablet session doesn't need a reload. Registered in Monitor mode in
+// the Firebase console first — nothing is blocked until enforcement is explicitly turned on there.
+initializeAppCheck(fbApp, {
+  provider: new ReCaptchaV3Provider('6LeybkEtAAAAAKak2-pWz-rfA5lf7lBx92IyLnFR'),
+  isTokenAutoRefreshEnabled: true
+});
 // Offline-first: persist the entire cache to IndexedDB so the app survives 12-hour
 // brownouts. Mutations queue locally and auto-sync when the connection returns.
 // persistentMultipleTabManager lets several tablet tabs share one cache without conflict.
@@ -3008,8 +3018,10 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.49';
+const APP_VERSION='v4.50';
 const CHANGELOG=[
+  {v:'v4.50', date:'2026-07-02', notes:[
+    'Security: added Firebase App Check (reCAPTCHA v3) so the database can eventually restrict access to requests from this actual site, not just anyone with a valid login token. No visible change — runs silently in the background.']},
   {v:'v4.49', date:'2026-07-02', notes:[
     'Security: the app now signs in to Firebase anonymously in the background so the database can require authentication — this closes the previous hole where the database was readable/writable by anyone on the internet. No change to how you log in or use the app; it works offline exactly as before.']},
   {v:'v4.48', date:'2026-07-02', notes:[
