@@ -1177,6 +1177,7 @@ select option{background:var(--bg3)}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, deleteDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
 Chart.register(...registerables);
 
@@ -1204,6 +1205,17 @@ try {
   // Fallback for browsers without IndexedDB (e.g. private mode): in-memory cache.
   db = initializeFirestore(fbApp, {});
 }
+
+// ── Security: anonymous auth ──
+// Firestore rules require request.auth != null, so every device signs in anonymously
+// (a silent, password-less Firebase identity). This blocks the open internet from reading
+// or writing the database directly with the public config. The anonymous identity is cached
+// in IndexedDB and restored on reload — including offline during a brownout — so once a device
+// has signed in once, it keeps working without a network round-trip. First-ever sign-in needs
+// a connection (the app is loaded from the network anyway). We never use the anon UID for
+// anything; its only job is to satisfy the "must be authenticated" rule.
+const auth = getAuth(fbApp);
+signInAnonymously(auth).catch(()=>{ /* offline first-run or provider off — boot fallback handles it */ });
 
 // ── Helpers ──
 const fmt = n => 'PHP ' + (parseFloat(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2996,8 +3008,10 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.48';
+const APP_VERSION='v4.49';
 const CHANGELOG=[
+  {v:'v4.49', date:'2026-07-02', notes:[
+    'Security: the app now signs in to Firebase anonymously in the background so the database can require authentication — this closes the previous hole where the database was readable/writable by anyone on the internet. No change to how you log in or use the app; it works offline exactly as before.']},
   {v:'v4.48', date:'2026-07-02', notes:[
     'Personal Stock Use: picking a product with variants now opens the variant picker (like POS checkout) so the right size/flavor cost is used, instead of always using the base product cost',
     'Clear Shift button is now owner-only, and requires typing CLEAR to confirm (matches the POS Sales Reset pattern) — previously any staff account could wipe the entire shift with one tap',
@@ -3112,7 +3126,15 @@ async function init(){
   document.getElementById('loginOverlay').classList.add('show');   // gate the whole app
   setTimeout(()=>{ document.getElementById('loadingScreen').style.opacity='0'; setTimeout(()=>document.getElementById('loadingScreen').style.display='none',400); },1500);
 }
-init();
+// Boot once auth is ready so the first Firestore reads carry an auth token (rules require it).
+// A returning device restores its cached anon identity almost instantly; a brand-new device
+// signs in within ~1s. The 3.5s timeout is a safety net: if auth is ever slow or unavailable
+// (offline first-run, or the Anonymous provider not yet enabled), the app still boots — reads
+// then fall back to the offline cache rather than hanging on a blank loading screen.
+let __booted=false;
+function bootOnce(){ if(__booted) return; __booted=true; init(); }
+onAuthStateChanged(auth, user=>{ if(user) bootOnce(); });
+setTimeout(bootOnce, 3500);
 
 // ═══════════════════════════════════════════════════
 // ── CSV IMPORT / EXPORT ──
