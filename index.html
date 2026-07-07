@@ -728,6 +728,9 @@ select option{background:var(--bg3)}
       <div class="field"><label id="pInventoryLabel">Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
       <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
       <div class="field"><label>Shelf Address <span style="color:var(--text3);font-weight:400">(e.g. D9)</span></label><input type="text" id="pAddress" placeholder="e.g. D9" style="text-transform:uppercase"></div>
+      <div class="field"><label>DOH MRP Cap (PHP) <span style="color:var(--text3);font-weight:400">(optional)</span></label><input type="number" id="pMrpCap" placeholder="e.g. 44.20" step="0.01" oninput="checkMrpCap()"></div>
+      <div class="field fc"><label>MRP Reference <span style="color:var(--text3);font-weight:400">(source/date, optional)</span></label><input type="text" id="pMrpRef" placeholder="e.g. DOH MRP-MWP List 22-Jun-2026" oninput="checkMrpCap()"></div>
+      <div class="infonote" id="mrpCapBanner" style="display:none;grid-column:1/-1"></div>
       <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(search registered suppliers — multiple allowed)</span></label>
         <div id="supChips" class="sup-chips"></div>
         <input type="text" id="supSearch" placeholder="Search suppliers..." autocomplete="off" oninput="renderSupSearch()" onkeydown="supSearchKey(event)">
@@ -982,9 +985,10 @@ select option{background:var(--bg3)}
         <span id="importMsg" style="font-size:11px;margin-left:4px"></span>
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.7">
-        <strong style="color:var(--text2)">CSV columns:</strong> sku, name, category, address, suppliers, cost, price, inventory, lowStock, variants<br>
+        <strong style="color:var(--text2)">CSV columns:</strong> sku, name, category, address, suppliers, cost, price, inventory, lowStock, variants, mrpCap, mrpRef<br>
         <strong style="color:var(--text2)">Variants format:</strong> size:packaging:cost:price:inventory|size:packaging:cost:price:inventory &nbsp;·&nbsp;
         <strong style="color:var(--text2)">Suppliers format:</strong> Supplier A,Supplier B<br>
+        <strong style="color:var(--text2)">mrpCap / mrpRef:</strong> optional DOH price-cap tag (e.g. mrpCap=44.20, mrpRef="DOH MRP-MWP List 22-Jun-2026") — shown as a badge in the table and in Edit Product, and warns before saving a price above it. Leave both columns out entirely to avoid touching existing tags on re-import.<br>
         <strong style="color:var(--text2)">Re-importing:</strong> matches rows to existing products by SKU (or by exact name if SKU is blank) and updates them in place — export, edit in a spreadsheet (e.g. variant costs/stock), then re-import to bulk-update instead of creating duplicates. Unmatched rows create new products. Leave a variant's inventory blank to keep it unmigrated (shared stock).
       </div>
     </div>
@@ -1021,8 +1025,9 @@ select option{background:var(--bg3)}
       <div class="btn-row" style="margin-bottom:10px">
         <button class="btn btn-teal" onclick="openAddProduct()"><i class="ti ti-plus"></i> Add New Product</button>
       </div>
-      <div style="margin-bottom:8px">
-        <input type="text" id="prodFilterBox" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;width:100%;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
+      <div style="margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="prodFilterBox" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;flex:1;min-width:160px;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
+        <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" id="mrpWatchToggle" onchange="toggleMrpWatch()"> <i class="ti ti-shield-check" style="font-size:13px"></i> MRP-regulated only</label>
       </div>
       <div class="scroll-pan-x" style="overflow-x:auto">
         <table class="prod-table" id="prodTable">
@@ -2282,7 +2287,8 @@ async function loadProducts(){
     category:p.category||'',
     address:p.address||'',
     lowStock:p.lowStock||10,
-    variantCount:(p.variants||[]).length
+    variantCount:(p.variants||[]).length,
+    mrpCap:p.mrpCap||null
   }));
   // Store full versions in object for on-demand fetching
   rawProducts.forEach(p=>allProductsFull[p.id]=p);
@@ -2417,9 +2423,11 @@ function renderProductTable(prods){
     const markup=p.cost&&p.price?((p.price-p.cost)/p.cost*100).toFixed(1)+'%':'-';
     const full=allProductsFull[p.id];
     const invTitle=(full&&hasVariantInventory(full))?full.variants.map(v=>`${[v.size,v.packaging].filter(Boolean).join(' ')}: ${v.inventory||0}`).join(', '):'';
+    const mrpOver=p.mrpCap&&p.price>p.mrpCap;
+    const mrpBadge=p.mrpCap?` <span class="chip" style="background:${mrpOver?'var(--red-dim)':'var(--teal-dim)'};color:${mrpOver?'var(--red)':'var(--teal)'};border:1px solid ${mrpOver?'var(--red)':'var(--teal)'}" title="${full&&full.mrpRef?full.mrpRef:'DOH MRP cap'}">MRP ${fmtShort(p.mrpCap)}${mrpOver?' ⚠':''}</span>`:'';
     return `<tr>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${p.sku||'-'}</td>
-      <td><div style="font-weight:500">${p.name}</div>${p.category?`<div style="font-size:10px;color:var(--text3)">${p.category}</div>`:''}</td>
+      <td><div style="font-weight:500">${p.name}${mrpBadge}</div>${p.category?`<div style="font-size:10px;color:var(--text3)">${p.category}</div>`:''}</td>
       <td style="font-size:11px;color:var(--text3)">${p.category||'-'}</td>
       <td class="c-amb" style="font-family:var(--mono);font-size:12px">${fmtShort(p.cost)}</td>
       <td class="c-tel" style="font-family:var(--mono);font-size:12px">${fmtShort(p.price)}</td>
@@ -2460,8 +2468,17 @@ window.nextProductPage=function(){ productPageIndex++; renderProducts(); documen
 window.prevProductPage=function(){ productPageIndex--; renderProducts(); document.querySelector('.prod-table')?.scrollIntoView({behavior:'smooth'}); };
 window.filterProducts=function(q){
   const s=(q||'').trim().toLowerCase();
-  productView=!s?allProducts:allProducts.filter(p=>(p.name||'').toLowerCase().includes(s)||(p.sku||'').toLowerCase().includes(s)||(p.category||'').toLowerCase().includes(s));
+  const base=document.getElementById('mrpWatchToggle')?.checked ? allProducts.filter(p=>p.mrpCap) : allProducts;
+  productView=!s?base:base.filter(p=>(p.name||'').toLowerCase().includes(s)||(p.sku||'').toLowerCase().includes(s)||(p.category||'').toLowerCase().includes(s));
   productPageIndex=0; renderProducts();
+};
+
+// Quick audit view: show only products with a known DOH MRP cap set, so the owner can review
+// them anytime (e.g. after DOH publishes an updated list) without hunting through the full catalog.
+window.toggleMrpWatch=function(){
+  filterProducts(document.getElementById('prodFilterBox').value);
+  const on=document.getElementById('mrpWatchToggle').checked;
+  document.getElementById('prodCount').textContent = on ? productView.length+' MRP-regulated products' : allProducts.length+' products';
 };
 
 window.calcMargin=function(){
@@ -2568,6 +2585,20 @@ window.updateVariantInvBanner=function(){
   banner.innerHTML=`<i class="ti ti-info-circle"></i> Existing stock of <strong>${target}</strong> unit${target===1?'':'s'} needs to be split across the variants below — Remaining: <strong style="color:${remaining===0?'var(--teal)':'var(--amber)'}">${remaining}</strong>`;
 };
 
+// Live banner while editing a regulated product: shows the DOH cap and, once price is entered,
+// whether the current price is within it — so a repriced-by-cost change is a deliberate decision
+// rather than something that silently drifts over the legal ceiling.
+window.checkMrpCap=function(){
+  const banner=document.getElementById('mrpCapBanner');
+  const cap=parseFloat(document.getElementById('pMrpCap').value)||0;
+  if(!cap){ banner.style.display='none'; return; }
+  const price=parseFloat(document.getElementById('pPrice').value)||0;
+  const ref=document.getElementById('pMrpRef').value.trim();
+  const over=price>cap;
+  banner.style.display='block';
+  banner.style.color=over?'var(--red)':'var(--teal)';
+  banner.innerHTML=`<i class="ti ti-shield-${over?'exclamation':'check'}"></i> DOH MRP cap: <strong>${fmt(cap)}</strong>${ref?` (${ref})`:''}${over?` — current price is <strong>${fmt(price-cap)} OVER the cap</strong>`:' — price is within the cap'}`;
+};
 window.saveProduct=async function(){
   let name=document.getElementById('pName').value.trim();
   const msg=document.getElementById('prodFormMsg');
@@ -2588,6 +2619,14 @@ window.saveProduct=async function(){
     msg.textContent=`Split all ${target} units across the variants below — currently accounts for ${sum}`;
     return;
   }
+  const mrpCap=parseFloat(document.getElementById('pMrpCap').value)||null;
+  const mrpRef=document.getElementById('pMrpRef').value.trim();
+  const priceVal=parseFloat(document.getElementById('pPrice').value)||0;
+  // A price above a known DOH cap should never be a reflexive save (e.g. blindly passing through
+  // a cost increase) — force an explicit confirmation so it's a deliberate call, not a drift.
+  if(mrpCap && priceVal>mrpCap && !confirm(`This price (${fmt(priceVal)}) is ${fmt(priceVal-mrpCap)} OVER the DOH MRP cap of ${fmt(mrpCap)} for this product.\n\nSave anyway?`)){
+    return;
+  }
   const id=editingProdId||'prod_'+Date.now();
   const data={
     sku:document.getElementById('pSku').value.trim(),
@@ -2597,10 +2636,11 @@ window.saveProduct=async function(){
     category:document.getElementById('pCategory').value.trim(),
     address,
     cost:parseFloat(document.getElementById('pCost').value)||0,
-    price:parseFloat(document.getElementById('pPrice').value)||0,
+    price:priceVal,
     inventory: variants.length ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(document.getElementById('pInventory').value)||0),
     lowStock:parseInt(document.getElementById('pLowStock').value)||10,
     variants,
+    mrpCap, mrpRef,
     updatedAt:tnow()
   };
   await fsSet('products',id,data);
@@ -2608,9 +2648,9 @@ window.saveProduct=async function(){
   allProductsFull[id]=data;
   const existing=allProducts.findIndex(p=>p.id===id);
   if(existing>=0){
-    allProducts[existing]={id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,address:data.address,lowStock:data.lowStock};
+    allProducts[existing]={id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,address:data.address,lowStock:data.lowStock,mrpCap:data.mrpCap};
   } else {
-    allProducts.push({id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,address:data.address,lowStock:data.lowStock});
+    allProducts.push({id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,address:data.address,lowStock:data.lowStock,mrpCap:data.mrpCap});
   }
   msg.style.color='var(--teal)'; msg.textContent='Saved!';
   setTimeout(()=>msg.textContent='',2000);
@@ -2637,6 +2677,9 @@ window.editProduct=async function(id){
   document.getElementById('pInventory').value=p.inventory||'';
   document.getElementById('pLowStock').value=p.lowStock||'';
   document.getElementById('pAddress').value=p.address||'';
+  document.getElementById('pMrpCap').value=p.mrpCap||'';
+  document.getElementById('pMrpRef').value=p.mrpRef||'';
+  checkMrpCap();
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   variantMigrationTarget=p.inventory||0;
   (p.variants||[]).forEach(v=>addVariantRow(v));
@@ -2649,7 +2692,8 @@ window.editProduct=async function(id){
 window.cancelEditProduct=function(){
   editingProdId=null;
   document.getElementById('prodFormTitle').textContent='Add New Product';
-  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pAddress','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
+  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pAddress','pMrpCap','pMrpRef','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mrpCapBanner').style.display='none';
   selectedSuppliers=[]; selectedSupplierCosts={}; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('variantList').innerHTML=''; variantRows=[]; variantMigrationTarget=0;
   updateVariantInvBanner();
@@ -3233,8 +3277,13 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.56';
+const APP_VERSION='v4.57';
 const CHANGELOG=[
+  {v:'v4.57', date:'2026-07-07', notes:[
+    'Products can now be tagged with a DOH MRP price cap: new "DOH MRP Cap" + "MRP Reference" fields in Edit Product show a live banner while editing, and Save now asks for confirmation if the price is above the cap — so a reflexive cost-driven price bump on a regulated drug never slips through unnoticed',
+    'Regulated products show a "MRP ₱x.xx" badge next to their name in the Products table (red if currently over the cap, teal if within it) — hover it to see the reference note',
+    'New "MRP-regulated only" checkbox above the product filter box to instantly list every tagged product for a quick audit — handy whenever DOH publishes an updated price list',
+    'CSV import/export/template gained mrpCap and mrpRef columns for bulk-tagging regulated products; re-importing a CSV that omits these columns leaves existing tags untouched']},
   {v:'v4.56', date:'2026-07-07', notes:[
     'Consignment products had the supplier\'s name bundled right into the category (e.g. "Consignment/Altomed", "Consignment/MediRich") — Products now auto-splits these on load into a clean "Consignment" category, with the supplier name moved into that product\'s Suppliers field (and registered in the Suppliers DB) instead',
     'Same cleanup now runs on the Categories &amp; Suppliers list in Settings — any "Consignment/&lt;Supplier&gt;" category entries collapse into one plain "Consignment" category, with each supplier folded into the Suppliers DB',
@@ -3391,8 +3440,8 @@ setTimeout(bootOnce, 3500);
 // ═══════════════════════════════════════════════════
 
 window.downloadTemplate = function() {
-  const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants';
-  const example = 'MED-001,Amoxicillin 500mg,Antibiotics,D9,"Zuellig,Mediline",8.50,12.00,100,20,500mg:Capsule:8.50:12.00:40|500mg:Tablet:9.00:11.00:60';
+  const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants,mrpCap,mrpRef';
+  const example = 'MED-001,Amoxicillin 500mg,Antibiotics,D9,"Zuellig,Mediline",8.50,12.00,100,20,500mg:Capsule:8.50:12.00:40|500mg:Tablet:9.00:11.00:60,,';
   const csv = header + '\n' + example;
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
@@ -3404,12 +3453,12 @@ window.downloadTemplate = function() {
 
 window.exportCSV = function() {
   if(!allProducts.length){toast('No products to export','err');return;}
-  const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants';
+  const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants,mrpCap,mrpRef';
   const rows = allProducts.map(p => {
     const full=allProductsFull[p.id];
     const variants = ((full&&full.variants)||[]).map(v=>`${v.size||''}:${v.packaging||''}:${v.cost||''}:${v.price||''}:${v.inventory!=null?v.inventory:''}`).join('|');
     const esc = s => `"${(s||'').toString().replace(/"/g,'""')}"`;
-    return [esc(p.sku),esc(p.name),esc(p.category),esc(p.address),esc(p.suppliers),p.cost||0,p.price||0,p.inventory||0,p.lowStock||10,esc(variants)].join(',');
+    return [esc(p.sku),esc(p.name),esc(p.category),esc(p.address),esc(p.suppliers),p.cost||0,p.price||0,p.inventory||0,p.lowStock||10,esc(variants),(full&&full.mrpCap)||'',esc(full&&full.mrpRef)].join(',');
   });
   const csv = [header,...rows].join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
@@ -3460,12 +3509,17 @@ window.importCSV = async function(input) {
       cost:parseFloat(row.cost)||0, price:parseFloat(row.price)||0,
       inventory: (variants.length && hasVariantInventory({variants})) ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(row.inventory)||0),
       lowStock:parseInt(row.lowstock)||10,
-      variants, updatedAt:tnow()
+      variants,
+      // Only touch mrpCap/mrpRef if the CSV actually has those columns — older exports (or a
+      // spreadsheet that dropped them) shouldn't silently erase a product's regulated-price tag.
+      mrpCap: headers.includes('mrpcap') ? (parseFloat(row.mrpcap)||null) : ((existing&&existing.mrpCap)||null),
+      mrpRef: headers.includes('mrpref') ? (row.mrpref||'') : ((existing&&existing.mrpRef)||''),
+      updatedAt:tnow()
     };
     await fsSet('products', id, fullData);
     // Update caches
     allProductsFull[id]=fullData;
-    const cacheEntry={id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,address:fullData.address,lowStock:fullData.lowStock};
+    const cacheEntry={id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,address:fullData.address,lowStock:fullData.lowStock,mrpCap:fullData.mrpCap};
     const idx=allProducts.findIndex(p=>p.id===id);
     if(idx>=0){ allProducts[idx]=cacheEntry; updated++; }
     else {
