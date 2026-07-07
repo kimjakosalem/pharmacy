@@ -2206,6 +2206,16 @@ function extractShelfAddress(name){
   return {cleanName:m[1].trim(), address:m[2].toUpperCase()};
 }
 
+// Categories like "Consignment/Altomed" or "Consignment / MediRich" bundle the supplier's name
+// into the category itself. Detect that pattern so it can be split into a clean "Consignment"
+// category + the supplier name moved into the suppliers field/DB instead, same as every other
+// product/category.
+function extractConsignmentSupplier(category){
+  const m=(category||'').match(/^\s*consignment\s*\/\s*(.+?)\s*$/i);
+  if(!m || !m[1].trim()) return null;
+  return {cleanCategory:'Consignment', supplier:m[1].trim()};
+}
+
 // ── Per-variant inventory/cost ──
 // A variant product is "migrated" once EVERY variant has an explicit numeric inventory (not
 // null/undefined). Until then, all stock math below falls back to the old parent-level total —
@@ -2244,6 +2254,23 @@ async function loadProducts(){
       if(parsed){ p.name=parsed.cleanName; p.address=parsed.address; fsSet('products',p.id,p); }
     }
   });
+  // One-time migration: split a compound "Consignment/<Supplier>" category into a clean
+  // "Consignment" category + that supplier added to the product's suppliers field, so Consignment
+  // behaves like any other category and the supplier lives only in the supplier field/DB.
+  const newConsignmentSuppliers=new Set();
+  rawProducts.forEach(p=>{
+    const parsed=extractConsignmentSupplier(p.category);
+    if(!parsed) return;
+    p.category=parsed.cleanCategory;
+    const existingNames=(p.suppliers||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(!existingNames.some(s=>s.toLowerCase()===parsed.supplier.toLowerCase())){
+      existingNames.push(parsed.supplier);
+      p.suppliers=existingNames.join(', ');
+    }
+    newConsignmentSuppliers.add(parsed.supplier);
+    fsSet('products',p.id,p);
+  });
+  if(newConsignmentSuppliers.size) await ensureSuppliersRegistered([...newConsignmentSuppliers]);
   // Store lightweight version for search
   allProducts=rawProducts.map(p=>({
     id:p.id,
@@ -2274,6 +2301,24 @@ async function loadCatSup(){
   categories=Array.isArray(c?.value)?c.value.map(normCat):[];
   const s=await fsGet('config','suppliers',fresh=>{ if(Array.isArray(fresh?.value)){ suppliers=fresh.value; try{ renderCatSup(); populateSupplierList(); }catch(_){} } });
   suppliers=Array.isArray(s?.value)?s.value:[];
+  await migrateConsignmentCategoriesDb();
+}
+// One-time migration (Settings → Categories & Suppliers DB): collapse any compound
+// "Consignment/<Supplier>" category entries into a single clean "Consignment" category, moving
+// each supplier name into the suppliers DB instead — mirrors the per-product migration above.
+async function migrateConsignmentCategoriesDb(){
+  let changed=false, hasConsignment=categories.some(cat=>cat.name.trim().toLowerCase()==='consignment');
+  const consignSuppliers=new Set();
+  categories=categories.filter(cat=>{
+    const parsed=extractConsignmentSupplier(cat.name);
+    if(!parsed) return true;
+    consignSuppliers.add(parsed.supplier);
+    changed=true;
+    if(!hasConsignment){ cat.name=parsed.cleanCategory; hasConsignment=true; return true; }
+    return false;   // a clean "Consignment" entry already exists — drop this duplicate
+  });
+  if(consignSuppliers.size) await ensureSuppliersRegistered([...consignSuppliers]);
+  if(changed){ await saveCategoriesDb(); try{ renderCategoriesDb(); populateCategoryList(); }catch(_){} }
 }
 // Normalize a category to {name, mode:'markup'|'margin', value}. Legacy rows stored only
 // {name, markup} → treated as markup. Keeps old data working after the margin/markup change.
@@ -3188,8 +3233,12 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.55';
+const APP_VERSION='v4.56';
 const CHANGELOG=[
+  {v:'v4.56', date:'2026-07-07', notes:[
+    'Consignment products had the supplier\'s name bundled right into the category (e.g. "Consignment/Altomed", "Consignment/MediRich") — Products now auto-splits these on load into a clean "Consignment" category, with the supplier name moved into that product\'s Suppliers field (and registered in the Suppliers DB) instead',
+    'Same cleanup now runs on the Categories &amp; Suppliers list in Settings — any "Consignment/&lt;Supplier&gt;" category entries collapse into one plain "Consignment" category, with each supplier folded into the Suppliers DB',
+    'One-time, automatic, and safe to re-run — nothing changes for a product/category that\'s already clean']},
   {v:'v4.55', date:'2026-07-07', notes:[
     'Products CSV import now matches each row to an existing product by SKU (or by exact name if SKU is blank) and UPDATES it, instead of always creating a new product — so exporting, bulk-editing variant costs/stock in a spreadsheet, and re-importing now updates in place instead of leaving you with duplicates',
     'Per-supplier costs (set in Edit Product\'s supplier picker) are no longer wiped out by a CSV re-import — there\'s no CSV column for them, so they\'re preserved on any product the import matches and updates',
