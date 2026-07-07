@@ -826,12 +826,12 @@ select option{background:var(--bg3)}
         <div class="field"><label>Amount (PHP)</label><input type="number" id="coAmt" placeholder="0.00" step="0.01"></div>
         <div class="field"><label>Type</label>
           <div class="seg-grid" id="coTypeGroup">
-            <button type="button" class="disc-btn active" data-val="Delivery Payment" onclick="setCoType(this)">Delivery Payment</button>
-            <button type="button" class="disc-btn" data-val="Cash Out" onclick="setCoType(this)">Cash Out</button>
+            <button type="button" class="disc-btn" onclick="goToDeliveryPayment()" title="Log items received from a supplier — opens Orders to receive &amp; pay"><i class="ti ti-truck-delivery"></i> Delivery Payment</button>
+            <button type="button" class="disc-btn active" data-val="Cash Out" onclick="setCoType(this)">Cash Out</button>
             <button type="button" class="disc-btn" data-val="Personal Stock Use" onclick="setCoType(this)">Personal Stock Use</button>
-            <button type="button" class="disc-btn" data-val="Other" onclick="setCoType(this)">Other</button>
+            <button type="button" class="disc-btn" id="coTypeOtherBtn" data-val="Other" onclick="setCoType(this)">Other</button>
           </div>
-          <input type="hidden" id="coType" value="Delivery Payment">
+          <input type="hidden" id="coType" value="Cash Out">
         </div>
         <div class="field"><label>Description</label><input type="text" id="coNote" placeholder="Details..." onkeydown="if(event.key==='Enter')addCO()"></div>
       </div>
@@ -1046,37 +1046,10 @@ select option{background:var(--bg3)}
   <!-- ═══ ORDERS ═══ -->
   <div class="panel" id="panel-orders">
     <div class="card">
-      <div class="card-title"><i class="ti ti-settings"></i> Create Order <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">one supplier per order</span></div>
-      <div class="fg fg2" style="margin-bottom:9px">
-        <div class="field"><label><i class="ti ti-building-store" style="font-size:12px"></i> Supplier (this order) <span style="color:var(--red)">*</span></label>
-          <select id="orderSupplierSelect" onchange="onOrderSupplierSelect()"></select>
-          <input type="text" id="orderSupplierOther" placeholder="Enter supplier name..." autocomplete="off" oninput="setOrderSupplier(this.value)" style="display:none;margin-top:6px">
-        </div>
-        <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001" oninput="markPoNumberManual()"></div>
-      </div>
-      <div class="fg fg2">
-        <div class="field"><label>Order Date</label><input type="date" id="poDate"></div>
-        <div class="field"><label>Notes / Terms</label><input type="text" id="poNotes" placeholder="e.g. Please deliver within 3 days"></div>
-      </div>
-      <div class="sep"></div>
-      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px"><i class="ti ti-plus" style="font-size:11px"></i> ADD PRODUCT TO ORDER</div>
-      <div class="fg fg2">
-        <div class="field"><label>Search Product</label><div class="search-wrap"><input type="text" id="orderSearch" placeholder="Type name or SKU..." oninput="renderOrderSearch()"><button class="search-clear" id="orderSearchClear" onclick="clearOrderSearch()" title="Clear">&#x2715;</button></div></div><datalist id="supplierList"></datalist>
-        <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="renderOrderSearch()"><i class="ti ti-search"></i> Search</button></div>
-      </div>
-      <div id="orderSearchResults" style="margin-top:8px"></div>
-      <div class="sep"></div>
-      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center"><i class="ti ti-shopping-bag" style="font-size:11px;margin-right:4px"></i> ORDER LIST <span id="orderItemCount" style="margin-left:auto;font-weight:400;color:var(--text3)"></span></div>
-      <div id="orderList"></div>
-      <div id="orderEmpty" class="empty" style="display:none"><i class="ti ti-clipboard-list"></i>No items in order yet</div>
-    </div>
-    <div class="card card-accent" id="poPreviewCard" style="display:none">
-      <div class="card-title ct-teal"><i class="ti ti-file-text"></i> Purchase Order Preview</div>
-      <div id="poPreview"></div>
-      <div class="btn-row" style="margin-top:12px">
-        <button class="btn btn-teal btn-sm" onclick="savePO()"><i class="ti ti-device-floppy"></i> Save PO</button>
-        <button class="btn btn-ghost btn-sm" onclick="exportPO()"><i class="ti ti-download"></i> Export CSV</button>
-        <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / PDF</button>
+      <div class="card-title"><i class="ti ti-shopping-bag"></i> Orders</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">Ordering ahead? Use <strong style="color:var(--text2)">Create PO</strong>. A supplier dropping off stock in person? Use <strong style="color:var(--teal)">Receive Delivery</strong> — it logs the items, updates inventory/cost, and settles payment in one go.</div>
+      <div class="btn-row">
+        <button class="btn btn-teal btn-sm" onclick="openNewOrderModal('create')"><i class="ti ti-plus"></i> New Order</button>
       </div>
     </div>
     <div class="card">
@@ -1097,6 +1070,69 @@ select option{background:var(--bg3)}
         <button class="btn btn-ghost btn-xs" onclick="uncheckAll()">Uncheck All</button>
       </div>
       <div id="lowStockList"></div>
+    </div>
+  </div>
+
+  <!-- ═══ NEW ORDER (Create PO / Receive Delivery) ═══ -->
+  <div class="modal-overlay" id="newOrderModal">
+    <div class="modal" style="width:640px;max-width:96vw;text-align:left;position:relative">
+      <button class="modal-x" onclick="closeNewOrderModal()" aria-label="Close"><i class="ti ti-x"></i></button>
+      <div class="card-title" style="margin-bottom:12px"><i class="ti ti-shopping-bag"></i> New Order</div>
+      <div class="seg-grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+        <button type="button" class="disc-btn active" id="nomCreateBtn" onclick="setOrderModalMode('create')"><i class="ti ti-file-invoice"></i> Create PO</button>
+        <button type="button" class="disc-btn" id="nomReceiveBtn" onclick="setOrderModalMode('receive')"><i class="ti ti-truck-delivery"></i> Receive Delivery</button>
+      </div>
+      <input type="hidden" id="orderModalMode" value="create">
+      <div class="fg fg2" style="margin-bottom:9px">
+        <div class="field"><label><i class="ti ti-building-store" style="font-size:12px"></i> Supplier (this order) <span style="color:var(--red)">*</span></label>
+          <select id="orderSupplierSelect" onchange="onOrderSupplierSelect()"></select>
+          <input type="text" id="orderSupplierOther" placeholder="Enter supplier name..." autocomplete="off" oninput="setOrderSupplier(this.value)" style="display:none;margin-top:6px">
+        </div>
+        <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001" oninput="markPoNumberManual()"></div>
+      </div>
+      <div class="fg fg2">
+        <div class="field"><label>Order Date</label><input type="date" id="poDate"></div>
+        <div class="field" id="poNotesField"><label>Notes / Terms</label><input type="text" id="poNotes" placeholder="e.g. Please deliver within 3 days"></div>
+        <div class="field" id="qrDRField" style="display:none"><label>Delivery Receipt / SI No. <span style="color:var(--red)">*</span></label><input type="text" id="qrDR" placeholder="e.g. DR-00123"></div>
+      </div>
+      <div class="sep"></div>
+      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px"><i class="ti ti-plus" style="font-size:11px"></i> ADD PRODUCT TO ORDER</div>
+      <div class="fg fg2">
+        <div class="field"><label>Search Product</label><div class="search-wrap"><input type="text" id="orderSearch" placeholder="Type name or SKU..." oninput="renderOrderSearch()"><button class="search-clear" id="orderSearchClear" onclick="clearOrderSearch()" title="Clear">&#x2715;</button></div></div><datalist id="supplierList"></datalist>
+        <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="renderOrderSearch()"><i class="ti ti-search"></i> Search</button></div>
+      </div>
+      <div id="orderSearchResults" style="margin-top:8px"></div>
+      <div class="sep"></div>
+      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center"><i class="ti ti-shopping-bag" style="font-size:11px;margin-right:4px"></i> ORDER LIST <span id="orderItemCount" style="margin-left:auto;font-weight:400;color:var(--text3)"></span></div>
+      <div id="orderList"></div>
+      <div id="orderEmpty" class="empty" style="display:none"><i class="ti ti-clipboard-list"></i>No items in order yet</div>
+      <div class="card card-accent" id="poPreviewCard" style="display:none;margin-top:12px">
+        <div class="card-title ct-teal"><i class="ti ti-file-text"></i> Purchase Order Preview</div>
+        <div id="poPreview"></div>
+        <div class="btn-row" id="createPoFooter" style="margin-top:12px">
+          <button class="btn btn-teal btn-sm" onclick="savePO()"><i class="ti ti-device-floppy"></i> Save PO</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportPO()"><i class="ti ti-download"></i> Export CSV</button>
+          <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / PDF</button>
+        </div>
+        <div id="receiveDeliveryFooter" style="display:none;margin-top:12px">
+          <div class="fg fg2" style="margin-bottom:9px">
+            <div class="field"><label>Delivery fee (optional, split across units)</label><input type="number" id="qrFee" placeholder="0.00" step="0.01" min="0" value="0" oninput="updateQrSummary()"></div>
+            <div class="field"><label>Payment</label>
+              <select id="qrPayMode" onchange="onQrPayModeChange()">
+                <option value="cash">Pay now — Cash</option>
+                <option value="check">Check (pay later, as usual)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" id="qrCashSourceField" style="margin-bottom:9px">
+            <label>Cash source</label>
+            <select id="qrCashSource"><option value="Drawer Cash">Drawer Cash</option><option value="Take Home">Take Home</option></select>
+          </div>
+          <div class="infonote" id="qrCheckNote" style="display:none"><i class="ti ti-info-circle"></i> Saved as an unpaid delivery — pay it later from the Payables log, same as any other PO.</div>
+          <div id="qrSummary" style="font-size:11px;color:var(--text3);margin:8px 0"></div>
+          <div class="btn-row"><button class="btn btn-teal btn-sm" onclick="confirmReceiveDelivery()"><i class="ti ti-truck-delivery"></i> Receive &amp; Pay</button></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1472,6 +1508,7 @@ function applyRole(){
   document.getElementById('tab-settings').style.display = owner?'':'none';
   document.getElementById('reviewDayCard').style.display = owner?'block':'none';
   document.getElementById('clearShiftBtn').style.display = owner?'inline-flex':'none';
+  const coOtherBtn=document.getElementById('coTypeOtherBtn'); if(coOtherBtn) coOtherBtn.style.display = owner?'':'none';
   // Products tab is open to all roles, but bulk import/export and the category/supplier
   // databases are owner-only management tools.
   ['importExportCard','catSupCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=owner?'':'none'; });
@@ -1759,7 +1796,7 @@ window.addCO=async function(){
     if(!stockUseProd){ toast('Search and pick the item taken','err'); return; }
     const qty=Math.max(1,parseInt(document.getElementById('suQty').value)||1);
     const unitCost=stockUseProd.cost||0, amt=Math.round(unitCost*qty*100)/100;
-    s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost,size:stockUseProd.size||'',packaging:stockUseProd.packaging||''});
+    s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),cashier:session?.name||'',prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost,size:stockUseProd.size||'',packaging:stockUseProd.packaging||''});
     const fp=allProductsFull[stockUseProd.id];
     if(fp){ adjustVariantInventory(fp, stockUseProd.size, stockUseProd.packaging, -qty); fp.updatedAt=tnow(); await fsSet('products',stockUseProd.id,fp); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
     document.getElementById('coNote').value=''; resetStockUse();
@@ -1768,7 +1805,7 @@ window.addCO=async function(){
     return;
   }
   const amt=parseFloat(document.getElementById('coAmt').value); if(!amt){toast('Enter amount','err');return;}
-  s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow()});
+  s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow(),cashier:session?.name||''});
   document.getElementById('coAmt').value=''; document.getElementById('coNote').value=''; await persistShift(curShift); renderCO();
 };
 window.removeCO=async function(i,sh,dt){
@@ -1797,13 +1834,13 @@ async function renderCO(){
     // a short note (or nothing distinctive) meant the actual product name never showed at all.
     const label=isStock ? (c.prodName||c.note||'Item') : (c.note||'');
     const subNote=isStock && c.note && c.note!==c.prodName ? ` · ${c.note}` : '';
-    return `<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}"><span class="tag-red">${c.type}</span> ${label}${subNote}</div><div class="ed">${c.time||''}${(isStock&&c.qty)?` · ×${c.qty} deducted from stock`:''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval ${isStock?'c-amb':'c-neg'}" title="${isStock?'Inventory cost — not a cash outflow':''}">${isStock?'<span style="font-size:9px;opacity:.75;margin-right:4px">INV</span>':'-'}${fmt(c.amount)}</span>${(canDel&&!c.voided)?`<button class="del-btn" onclick="removeCO(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`;
+    return `<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}"><span class="tag-red">${c.type}</span> ${label}${subNote}</div><div class="ed">${c.time||''}${c.cashier?' · '+c.cashier:''}${(isStock&&c.qty)?` · ×${c.qty} deducted from stock`:''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval ${isStock?'c-amb':'c-neg'}" title="${isStock?'Inventory cost — not a cash outflow':''}">${isStock?'<span style="font-size:9px;opacity:.75;margin-right:4px">INV</span>':'-'}${fmt(c.amount)}</span>${(canDel&&!c.voided)?`<button class="del-btn" onclick="removeCO(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`;
   }).join('');
 }
 const MODE_LABEL={cash:'CASH',gcash:'GCASH',maya:'MAYA',mcredit:'M-CREDIT'};
 window.addMS=async function(){
   const amt=parseFloat(document.getElementById('msAmt').value); if(!amt){toast('Enter amount','err');return;}
-  const s=await getShift(curShift); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,mode:document.getElementById('msMode').value||'cash',qty:parseInt(document.getElementById('msQty').value)||1,time:tnow()});
+  const s=await getShift(curShift); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,mode:document.getElementById('msMode').value||'cash',qty:parseInt(document.getElementById('msQty').value)||1,time:tnow(),cashier:session?.name||''});
   document.getElementById('msAmt').value=''; document.getElementById('msDesc').value=''; document.getElementById('msQty').value='1'; await persistShift(curShift); renderMS();
 };
 window.removeMS=async function(i,sh,dt){
@@ -1816,12 +1853,29 @@ window.removeMS=async function(i,sh,dt){
   if(sh===curShift&&dt===today()) renderMS();
   if(typeof refreshHistView==='function') refreshHistView(dt);
 };
+function modeTag(mode,editFn,editArgs,voided){
+  const m=mode||'cash';
+  if(!voided && session?.role==='owner'){
+    return `<select class="ptag pt-${m}" style="border:none;cursor:pointer;font:inherit" onclick="event.stopPropagation()" onchange="${editFn}(this.value,${editArgs})">${['cash','gcash','maya','mcredit'].map(mm=>`<option value="${mm}" ${m===mm?'selected':''}>${MODE_LABEL[mm]}</option>`).join('')}</select>`;
+  }
+  return `<span class="ptag pt-${m}">${MODE_LABEL[m]}</span>`;
+}
 async function renderMS(){
   const s=await getShift(curShift); const el=document.getElementById('msList');
   if(!s.manualSales.length){el.innerHTML='<div class="empty"><i class="ti ti-notebook"></i>None</div>';return;}
   const canVoidMS=hasPerm('voidms');
-  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoidMS&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
+  el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} ${modeTag(m.mode,'editMsMode',`${i}`,m.voided)}</div><div class="ed">Qty:${m.qty||1} · ${m.time||''}${m.cashier?' · '+m.cashier:''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoidMS&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
 }
+window.editMsMode=async function(newMode,i,sh,dt){
+  sh=sh||curShift; dt=dt||today();
+  if(session?.role!=='owner'){ toast('Only the owner can change payment mode','err'); return; }
+  const s=await getShift(sh,dt); const m=s.manualSales[i]; if(!m||m.voided) return;
+  m.mode=newMode; m.modeEditedBy=session?.name||''; m.modeEditedAt=tnow();
+  await persistShift(sh,dt);
+  if(sh===curShift&&dt===today()) renderMS();
+  if(typeof refreshHistView==='function') refreshHistView(dt);
+  toast('Payment mode updated','ok');
+};
 
 // ── POS transactions ledger (this shift) ──
 // Builds one sale row's HTML. `voidArgs` (e.g. "'sale_1','2','2026-06-30'") lets the same
@@ -1832,7 +1886,7 @@ function saleRowHtml(t,canVoid,voidArgs){
     : `<div class="sale-item-row" style="color:var(--text3)">Sale</div>`;
   return `<div class="eitem sale-row" style="${t.voided?'opacity:.55':''}">
     <div style="flex:1;min-width:0">
-      <div class="el" style="margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;${t.voided?'text-decoration:line-through':''}"><span class="ptag pt-${t.mode||'cash'}">${MODE_LABEL[t.mode||'cash']}</span><span class="ed" style="margin:0">${t.time||''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</span></div>
+      <div class="el" style="margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;${t.voided?'text-decoration:line-through':''}">${modeTag(t.mode,'editSaleMode',voidArgs,t.voided)}<span class="ed" style="margin:0">${t.time||''}${t.cashier?' · '+t.cashier:''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</span></div>
       <div class="sale-items">${itemRows}</div>
       ${voidTag(t)}
     </div>
@@ -1892,8 +1946,8 @@ async function refreshHistView(dt){
     }
     const salesHtml=sales.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">SALES</div><div class="elist">${sales.map(t=>saleRowHtml(t,canVoid,`'${t.id}',${n},'${reviewDate}'`)).join('')}</div>`:'';
     const ciHtml=cashIns.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">CASH INS</div><div class="elist">${cashIns.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span>${(canVoid&&!c.voided)?`<button class="del-btn" onclick="removeCI(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
-    const coHtml=cashOuts.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">CASH OUTS</div><div class="elist">${cashOuts.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-neg">-${fmt(c.amount)}</span>${(canDelCO&&!c.voided)?`<button class="del-btn" onclick="removeCO(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
-    const msHtml=mSales.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">MANUAL SALES</div><div class="elist">${mSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} <span class="ptag pt-${m.mode||'cash'}">${MODE_LABEL[m.mode||'cash']}</span></div><div class="ed">Qty:${m.qty||1} · ${m.time||''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoid&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
+    const coHtml=cashOuts.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">CASH OUTS</div><div class="elist">${cashOuts.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}${c.cashier?' · '+c.cashier:''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-neg">-${fmt(c.amount)}</span>${(canDelCO&&!c.voided)?`<button class="del-btn" onclick="removeCO(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
+    const msHtml=mSales.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">MANUAL SALES</div><div class="elist">${mSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} ${modeTag(m.mode,'editMsMode',`${i},${n},'${reviewDate}'`,m.voided)}</div><div class="ed">Qty:${m.qty||1} · ${m.time||''}${m.cashier?' · '+m.cashier:''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoid&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
     return `<div class="sep"></div><div style="font-size:11px;color:var(--teal);font-weight:600;margin:8px 0 4px">${label.toUpperCase()} · ${s.cashier||'unassigned'}</div>${salesHtml}${ciHtml}${coHtml}${msHtml}`;
   }).join('');
 }
@@ -1953,6 +2007,29 @@ window.voidSale=async function(id,sh,dt){
   toast('Sale voided — stock returned','ok');
 };
 
+// Owner-only: correct a mis-keyed payment mode after the fact (e.g. rung up as Cash but the
+// customer actually paid GCash). Moves the sale's total between the shift's payment-mode
+// buckets (pbCash/pbGcash/pbMaya/pbMcredit) so the breakdown + drawer reconciliation stay correct.
+window.editSaleMode=async function(newMode,id,sh,dt){
+  sh=sh||curShift; dt=dt||today();
+  if(session?.role!=='owner'){ toast('Only the owner can change payment mode','err'); return; }
+  const s=await getShift(sh,dt);
+  const t=(s.sales||[]).find(t=>t.id===id); if(!t||t.voided||t.mode===newMode) return;
+  const mk={cash:'pbCash',gcash:'pbGcash',maya:'pbMaya',mcredit:'pbMcredit'};
+  const oldKey=mk[t.mode||'cash'], newKey=mk[newMode];
+  if(oldKey) s[oldKey]=Math.max(0,(s[oldKey]||0)-t.total);
+  if(newKey) s[newKey]=(s[newKey]||0)+t.total;
+  t.mode=newMode; t.modeEditedBy=session?.name||''; t.modeEditedAt=tnow();
+  await persistShift(sh,dt);
+  if(sh===curShift&&dt===today()){
+    document.getElementById('pbCash').value=s.pbCash||''; document.getElementById('pbGcash').value=s.pbGcash||'';
+    document.getElementById('pbMaya').value=s.pbMaya||''; document.getElementById('pbMcredit').value=s.pbMcredit||'';
+    updatePaySum(); renderSales();
+  }
+  if(typeof refreshHistView==='function') refreshHistView(dt);
+  toast('Payment mode updated','ok');
+};
+
 // ── Returns / Refunds / Exchanges (this shift) ──
 // retState.returnItems: [{prodId,name,size,packaging,price,qty,max}]  (items the customer gives back)
 // retState.newItems:    [{prodId,name,size,packaging,price,qty}]      (replacement items, exchange only)
@@ -1971,7 +2048,7 @@ async function renderReturns(){
     const net=r.net||0;
     const netTxt=net>0?`<span class="c-tel">collected ${fmtShort(net)}</span>`:net<0?`<span class="c-neg">refunded ${fmtShort(-net)}</span>`:'<span class="c-amb">even</span>';
     const typeTag=r.type==='exchange'?'<span class="ptag" style="background:var(--amber-dim);color:var(--amber)">EXCHANGE</span>':'<span class="ptag" style="background:var(--red-dim);color:var(--red)">REFUND</span>';
-    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${typeTag} <span class="ptag pt-${r.mode||'cash'}">${MODE_LABEL[r.mode||'cash']}</span></div><div class="ed">↩ ${ri||'—'}${ni?` · ↪ ${ni}`:''} · ${r.time||''}</div></div><div style="text-align:right;font-size:11px">${netTxt}</div></div>`;
+    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${typeTag} <span class="ptag pt-${r.mode||'cash'}">${MODE_LABEL[r.mode||'cash']}</span></div><div class="ed">↩ ${ri||'—'}${ni?` · ↪ ${ni}`:''} · ${r.time||''}${r.cashier?' · '+r.cashier:''}</div></div><div style="text-align:right;font-size:11px">${netTxt}</div></div>`;
   }).join('');
 }
 
@@ -3300,8 +3377,14 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.58';
+const APP_VERSION='v4.59';
 const CHANGELOG=[
+  {v:'v4.59', date:'2026-07-07', notes:[
+    'Owner can now correct a mis-keyed payment mode after the fact — tap the CASH/GCASH/MAYA/M-CREDIT tag on any POS sale or Manual/Logbook sale (in Shift and in Review Past Day) to change it; POS sales correctly move the amount between the payment-mode breakdown buckets',
+    'Cash Outs/Expenses, Manual Sales, and Returns now show the cashier\'s name next to the time, matching POS sales',
+    'Delivery Payment reworked: it\'s no longer a generic cash-out type — tapping it now jumps to Orders and opens "Receive Delivery", which lets you search items, enter qty/cost, and settle payment in one step. Choosing Cash immediately restocks inventory, updates cost, and archives the PO + payable as paid; choosing Check saves it unpaid, same as a normal delivery, to be paid later from the Payables log',
+    'Orders tab reorganized: "Create Order" is now a "New Order" popup with two modes — Create PO (unchanged, for ordering ahead) and Receive Delivery (new, for suppliers who drop off stock in person)',
+    '"Other" cash-out type is now owner-only, hidden from staff/manager']},
   {v:'v4.58', date:'2026-07-07', notes:[
     'Adding or editing a product now checks the name against a built-in watchlist of ~120 molecule names from the current DOH price-cap list — if it matches something regulated and no MRP Cap is tagged yet, an amber note prompts you to look up the exact cap instead of it going unnoticed',
     'This answers "how would I know a brand-new item is regulated?" — previously only the 17 products already checked showed anything; this catches new/untagged products by name as you type']},
@@ -3590,6 +3673,128 @@ function initOrderTab() {
   loadPOs();
 }
 
+// ── New Order modal: Create PO (unchanged flow) vs Receive Delivery (combined create+receive+pay) ──
+window.openNewOrderModal=function(mode){
+  document.getElementById('orderSearch').value=''; document.getElementById('orderSearchResults').innerHTML='';
+  document.getElementById('qrDR').value=''; document.getElementById('qrFee').value=0;
+  document.getElementById('qrPayMode').value='cash';
+  setOrderModalMode(mode||'create');
+  populateSupplierList();
+  renderOrderList();
+  document.getElementById('newOrderModal').classList.add('show');
+};
+window.closeNewOrderModal=function(){ document.getElementById('newOrderModal').classList.remove('show'); };
+window.setOrderModalMode=function(mode){
+  document.getElementById('orderModalMode').value=mode;
+  document.getElementById('nomCreateBtn').classList.toggle('active',mode==='create');
+  document.getElementById('nomReceiveBtn').classList.toggle('active',mode==='receive');
+  document.getElementById('poNotesField').style.display=mode==='create'?'':'none';
+  document.getElementById('qrDRField').style.display=mode==='receive'?'':'none';
+  document.getElementById('createPoFooter').style.display=mode==='create'?'':'none';
+  document.getElementById('receiveDeliveryFooter').style.display=mode==='receive'?'':'none';
+  if(mode==='receive'){ onQrPayModeChange(); }
+};
+window.onQrPayModeChange=function(){
+  const isCash=document.getElementById('qrPayMode').value==='cash';
+  document.getElementById('qrCashSourceField').style.display=isCash?'':'none';
+  document.getElementById('qrCheckNote').style.display=isCash?'none':'';
+  updateQrSummary();
+};
+window.updateQrSummary=function(){
+  const el=document.getElementById('qrSummary'); if(!el) return;
+  const items=Object.values(orderItems);
+  const units=items.reduce((a,oi)=>a+oi.qty,0);
+  const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
+  const fee=parseFloat(document.getElementById('qrFee').value)||0;
+  const grand=goods+fee;
+  el.innerHTML = units
+    ? `Units: <strong style="color:var(--text)">${units}</strong> · Goods: <strong style="color:var(--text)">${fmt(goods)}</strong>${fee>0?` · Fee: <strong style="color:var(--amber)">+${fmt(fee)}</strong>`:''}<br>Total to settle: <strong style="color:var(--teal)">${fmt(grand)}</strong>`
+    : '';
+};
+window.goToDeliveryPayment=function(){
+  switchTab('orders');
+  openNewOrderModal('receive');
+};
+window.confirmReceiveDelivery=async function(){
+  const items=Object.values(orderItems);
+  if(!items.length){ toast('No items to receive','err'); return; }
+  if(!orderSupplier.trim()){ toast('Please select a supplier','err'); document.getElementById('orderSupplierSelect')?.focus(); return; }
+  const drNo=document.getElementById('qrDR').value.trim();
+  if(!drNo){ toast('Enter the Delivery Receipt / Sales Invoice no.','err'); document.getElementById('qrDR').focus(); return; }
+  const payMode=document.getElementById('qrPayMode').value;               // 'cash' | 'check'
+  const cashSource=document.getElementById('qrCashSource').value;         // 'Drawer Cash' | 'Take Home'
+  const fee=parseFloat(document.getElementById('qrFee').value)||0;
+  const units=items.reduce((a,oi)=>a+oi.qty,0);
+  const feePerUnit=units>0?fee/units:0;
+  const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
+  const grand=Math.round((goods+fee)*100)/100;
+  const poNum=document.getElementById('poNumber').value||('PO-'+Date.now());
+  const id='po_'+Date.now();
+  const supplier=orderSupplierOf();
+  const now=tnow();
+  const po={
+    id, poNumber:poNum, date:document.getElementById('poDate').value||today(),
+    notes:'', status:'delivered', supplier,
+    items: items.map(oi=>{
+      const prod=oi.prod, qty=oi.qty, c=oiCost(oi), landed=Math.round((c+feePerUnit)*100)/100;
+      return { prodId:prod.id, sku:prod.sku||'', name:prod.name, supplier,
+               size:oi.size||'', packaging:oi.packaging||'',
+               orderedQty:qty, orderedCost:c, recvQty:qty, recvCost:c, landedCost:landed };
+    }),
+    createdAt:now, createdBy:session?.name||'',
+    deliveredDate:today(), deliveredAt:now, receivedBy:session?.name||'', drNo, deliveryFee:fee,
+    payableAmount:grand, payTerm:'', payStatus:'unpaid'
+  };
+  // Restock + re-cost each item, same as the normal Receive/confirmDelivery flow.
+  for(const oi of items){
+    const prod=oi.prod, fp=allProductsFull[prod.id]; if(!fp) continue;
+    const c=oiCost(oi), landed=Math.round((c+feePerUnit)*100)/100;
+    adjustVariantInventory(fp, oi.size||'', oi.packaging||'', oi.qty);
+    adjustVariantCost(fp, oi.size||'', oi.packaging||'', landed);
+    fp.updatedAt=now;
+    await fsSet('products', prod.id, fp);
+    const lp=allProducts.find(p=>p.id===prod.id); if(lp){ lp.inventory=fp.inventory; lp.cost=fp.cost; }
+  }
+  const payId='pay_'+Date.now();
+  const payable={
+    date:today(), category:'Stocks', amount:grand,
+    desc:`Delivery: ${poNum}${supplier?(' — '+supplier):''} · DR/SI ${drNo}`,
+    createdAt:now, by:session?.name||'', byRole:session?.role||'staff',
+    source:'delivery', poId:id, poNumber:poNum, supplier:supplier||'', drNo,
+    payTerm:'', status:'unpaid'
+  };
+  let toastMsg=`Received — ${fmt(grand)} logged to Payables (unpaid)`;
+  if(payMode==='cash'){
+    const label='Cash on Delivery — '+cashSource;
+    payable.status='paid'; payable.paidVia=label; payable.payTerm=label; payable.paidBy=session?.name||''; payable.paidByRole=session?.role||'staff'; payable.paidAt=now; payable.paidDate=today();
+    po.payStatus='paid'; po.paidVia=label; po.payTerm=label;
+    toastMsg=`Received & paid — archived (${fmt(grand)})`;
+  }
+  await fsSet('payables', payId, payable);
+  po.payableId=payId;
+  await fsSet('purchaseOrders', id, po);
+  savedPOs.push(po);
+  // Register the supplier + tag it onto products, same as savePO.
+  if(supplier && supplier!=='No Supplier'){
+    await ensureSuppliersRegistered([supplier]);
+    for(const oi of items){
+      const fp=allProductsFull[oi.prod.id]; if(!fp) continue;
+      const cur=(fp.suppliers||'').split(',').map(x=>x.trim()).filter(Boolean);
+      if(!cur.some(x=>x.toLowerCase()===supplier.toLowerCase())){ cur.push(supplier); fp.suppliers=cur.join(', '); fp.updatedAt=now; await fsSet('products', oi.prod.id, fp); }
+    }
+  }
+  if(payMode==='cash'){
+    const s=await getShift(curShift);
+    s.cashOuts.push({type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId});
+    await persistShift(curShift);
+    if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
+  }
+  orderItems={}; orderSupplier=''; document.getElementById('poNumber').value=''; poNumberManual=false;
+  closeNewOrderModal();
+  initOrderTab(); renderPayables(); renderLowStock();
+  toast(toastMsg,'ok');
+};
+
 // Expands allProducts into one row per LOW item — a migrated variant product contributes one
 // row per variant that's at/under the shared lowStock threshold, so staff can see exactly which
 // size/flavor is running out instead of a combined total that can hide a real shortage. Plain
@@ -3809,7 +4014,9 @@ function renderOrderList() {
   const previewCard=document.getElementById('poPreviewCard');
   document.getElementById('orderItemCount').textContent=items.length+' items';
   if(!items.length){
-    el.innerHTML=''; emptyEl.style.display='block'; previewCard.style.display='none'; return;
+    el.innerHTML=''; emptyEl.style.display='block'; previewCard.style.display='none';
+    if(typeof updateQrSummary==='function') updateQrSummary();
+    return;
   }
   emptyEl.style.display='none'; previewCard.style.display='block';
 
@@ -3842,6 +4049,7 @@ function renderOrderList() {
     </div>`;
 
   renderPOPreview(bySupplier);
+  if(typeof updateQrSummary==='function') updateQrSummary();
 }
 
 // Live qty edit: update the line price, the order subtotal, and the PO preview in place —
@@ -3862,6 +4070,7 @@ function refreshOrderLine(id){
   const sub=Object.values(orderItems).reduce((a,o)=>a+oiCost(o)*o.qty,0);
   const se=document.getElementById('orderSubtotal'); if(se) se.textContent=fmt(sub);
   renderPOPreview({[orderSupplierOf()]:Object.values(orderItems)});
+  if(typeof updateQrSummary==='function') updateQrSummary();
 }
 
 function renderPOPreview(bySupplier) {
@@ -4026,6 +4235,7 @@ window.savePO=async function(){
     }
   }
   orderItems={}; orderSupplier=''; document.getElementById('poNumber').value=''; poNumberManual=false;
+  closeNewOrderModal();
   initOrderTab();
   toast(`PO saved for ${supplier}`,'ok');
 };
