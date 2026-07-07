@@ -719,7 +719,7 @@ select option{background:var(--bg3)}
     <h3 style="color:var(--teal)"><i class="ti ti-plus" style="margin-right:6px"></i><span id="prodFormTitle">Add New Product</span></h3>
     <div class="fg fg3" style="margin-top:14px">
       <div class="field"><label>SKU / ID</label><input type="text" id="pSku" placeholder="e.g. MED-001"></div>
-      <div class="field fc" style="grid-column:2/-1"><label>Product Name</label><input type="text" id="pName" placeholder="e.g. Amoxicillin 500mg"></div>
+      <div class="field fc" style="grid-column:2/-1"><label>Product Name</label><input type="text" id="pName" placeholder="e.g. Amoxicillin 500mg" oninput="checkMrpCap()"></div>
       <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off" onchange="applyCategoryMarkup()"><datalist id="catList"></datalist><div id="catMarkupHint" style="font-size:10px;color:var(--teal);margin-top:3px"></div></div>
       <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
       <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
@@ -2585,13 +2585,36 @@ window.updateVariantInvBanner=function(){
   banner.innerHTML=`<i class="ti ti-info-circle"></i> Existing stock of <strong>${target}</strong> unit${target===1?'':'s'} needs to be split across the variants below — Remaining: <strong style="color:${remaining===0?'var(--teal)':'var(--amber)'}">${remaining}</strong>`;
 };
 
-// Live banner while editing a regulated product: shows the DOH cap and, once price is entered,
-// whether the current price is within it — so a repriced-by-cost change is a deliberate decision
-// rather than something that silently drifts over the legal ceiling.
+// Molecule names appearing anywhere on DOH's current MRP-MWP price-cap list. Used only to NUDGE
+// ("this name resembles something regulated, go check it") when a product has no mrpCap tagged
+// yet — matching the exact strength/form/combo to a specific cap still needs a manual look at the
+// DOH list or DPRI, the same lesson learned doing the original 17-SKU check (loose name matches on
+// their own produced false positives there). Refresh this list whenever DOH republishes an update.
+const MRP_WATCHLIST_ASOF='22-Jun-2026';
+const MRP_WATCHLIST=["Acarbose","Acetazolamide","Afatinib","Alanyl-Glutamine","Alteplase","Amlodipine","Apixaban","Atenolol","Azathioprine","Basiliximab","Beractant","Betamethasone","Bevacizumab","Bisoprolol","Bosentan","Bromocriptine","Bumetanide","Calcipotriol","Calcitonin","Cetuximab","Chlortalidone","Ciclosporin","Clavulanic Acid","Dapagliflozin","Deferasirox","Deferoxamine","Denosumab","Desmopressin","Dexmedetomidine","Empagliflozin","Eprosartan","Erdosteine","Erlotinib","Etanercept","Everolimus","Exemestane","Fenoterol","Flecainide","Fluticasone","Formoterol","Fosinopril","Fulvestrant","Ganciclovir","Gefitinib","Golimumab","Goserelin","Hydrochlorothiazide","Ibandronic Acid","Iloprost","Imidapril","Immunoglobulin Anti-Thymocyte","Indacaterol","Indapamide","Infliximab","Insulin Aspart","Insulin Degludec","Insulin Detemir","Insulin Glulisine","Insulin Lispro","Ipratropium Bromide","Isosorbide Dinitrate","Ivabradine","Lapatinib","Lenograstim","Lercanidipine","Levamlodipine","Levetiracetam","Linagliptin","Liraglutide","Metformin","Metolazone","Morphine","Mycophenolic Acid","Naloxone","Nimodipine","Nitroglycerin","Octreotide","Olmesartan Medoxomil","Oxybutynin","Oxycodone","Palonosetron","Panitumumab","Parecoxib","Perindopril","Pertuzumab","Pravastatin","Procaterol","Quinapril","Ramosetron","Regorafenib","Rituximab","Roflumilast","Salicylic Acid","Saxagliptin","Secukinumab","Sevelamer","Sirolimus","Sitagliptin","Sumatriptan","Tacrolimus","Telmisartan","Theophylline","Ticagrelor","Ticarcillin","Tinzaparin","Tiotropium Bromide","Tirofiban","Tocilizumab","Tofacitinib","Trandolapril","Trastuzumab","Triflusal","Ustekinumab","Valsartan","Verapamil","Vortioxetine"];
+function matchMrpWatchlist(name){
+  const s=(name||'').toLowerCase();
+  return MRP_WATCHLIST.find(m=>s.includes(m.toLowerCase()));
+}
+
+// Live banner while adding/editing a product: if it's already tagged with a DOH cap, shows the
+// cap and whether the current price is within it (so a repriced-by-cost change is a deliberate
+// decision, not something that silently drifts over the legal ceiling). If it ISN'T tagged yet,
+// nudges when the product name resembles something on the current watchlist, since there's no
+// automatic way to know a brand-new product is regulated otherwise.
 window.checkMrpCap=function(){
   const banner=document.getElementById('mrpCapBanner');
   const cap=parseFloat(document.getElementById('pMrpCap').value)||0;
-  if(!cap){ banner.style.display='none'; return; }
+  if(!cap){
+    const hit=matchMrpWatchlist(document.getElementById('pName').value);
+    if(hit){
+      banner.style.display='block'; banner.style.color='var(--amber)';
+      banner.innerHTML=`<i class="ti ti-alert-triangle"></i> "${hit}" appears on the DOH price-cap list (as of ${MRP_WATCHLIST_ASOF}) — if this exact strength/form is regulated, look up the amount (DPRI or the DOH MRP-MWP list) and fill in the MRP Cap fields above.`;
+    } else {
+      banner.style.display='none';
+    }
+    return;
+  }
   const price=parseFloat(document.getElementById('pPrice').value)||0;
   const ref=document.getElementById('pMrpRef').value.trim();
   const over=price>cap;
@@ -3277,8 +3300,11 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.57';
+const APP_VERSION='v4.58';
 const CHANGELOG=[
+  {v:'v4.58', date:'2026-07-07', notes:[
+    'Adding or editing a product now checks the name against a built-in watchlist of ~120 molecule names from the current DOH price-cap list — if it matches something regulated and no MRP Cap is tagged yet, an amber note prompts you to look up the exact cap instead of it going unnoticed',
+    'This answers "how would I know a brand-new item is regulated?" — previously only the 17 products already checked showed anything; this catches new/untagged products by name as you type']},
   {v:'v4.57', date:'2026-07-07', notes:[
     'Products can now be tagged with a DOH MRP price cap: new "DOH MRP Cap" + "MRP Reference" fields in Edit Product show a live banner while editing, and Save now asks for confirmation if the price is above the cap — so a reflexive cost-driven price bump on a regulated drug never slips through unnoticed',
     'Regulated products show a "MRP ₱x.xx" badge next to their name in the Products table (red if currently over the cap, teal if within it) — hover it to see the reference note',
