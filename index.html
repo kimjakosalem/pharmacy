@@ -105,9 +105,11 @@ button,.tab,.btn,.pin-key,.pay-mode-btn,.qty-btn,.shift-btn,.del-btn{touch-actio
 .card.flash{animation:cardflash 1.2s ease-out}
 @keyframes cardflash{0%{border-color:var(--teal);box-shadow:0 0 0 2px var(--teal-dim)}100%{border-color:var(--border);box-shadow:none}}
 .card-accent{border-color:var(--teal);background:linear-gradient(135deg,rgba(0,41,32,.5),var(--bg2))}
+.card-accent-blue{border-color:var(--blue);background:linear-gradient(135deg,rgba(0,20,51,.5),var(--bg2))}
 .card-title{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;display:flex;align-items:center;gap:6px}
 .card-title i{font-size:14px}
 .ct-teal{color:var(--teal)}
+.ct-blue{color:var(--blue)}
 /* FORMS */
 .fg{display:grid;gap:9px}
 .fg2{grid-template-columns:1fr 1fr}
@@ -1106,8 +1108,8 @@ select option{background:var(--bg3)}
       <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center"><i class="ti ti-shopping-bag" style="font-size:11px;margin-right:4px"></i> ORDER LIST <span id="orderItemCount" style="margin-left:auto;font-weight:400;color:var(--text3)"></span></div>
       <div id="orderList"></div>
       <div id="orderEmpty" class="empty" style="display:none"><i class="ti ti-clipboard-list"></i>No items in order yet</div>
-      <div class="card card-accent" id="poPreviewCard" style="display:none;margin-top:12px">
-        <div class="card-title ct-teal"><i class="ti ti-file-text"></i> Purchase Order Preview</div>
+      <div class="card card-accent-blue" id="poPreviewCard" style="display:none;margin-top:12px">
+        <div class="card-title ct-blue"><i class="ti ti-file-text"></i> Purchase Order Preview</div>
         <div id="poPreview"></div>
         <div class="btn-row" id="createPoFooter" style="margin-top:12px">
           <button class="btn btn-teal btn-sm" onclick="savePO()"><i class="ti ti-device-floppy"></i> Save PO</button>
@@ -1115,18 +1117,36 @@ select option{background:var(--bg3)}
           <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / PDF</button>
         </div>
         <div id="receiveDeliveryFooter" style="display:none;margin-top:12px">
-          <div class="fg fg2" style="margin-bottom:9px">
-            <div class="field"><label>Delivery fee (optional, split across units)</label><input type="number" id="qrFee" placeholder="0.00" step="0.01" min="0" value="0" oninput="updateQrSummary()"></div>
-            <div class="field"><label>Payment</label>
-              <select id="qrPayMode" onchange="onQrPayModeChange()">
-                <option value="cash">Pay now — Cash</option>
-                <option value="check">Check (pay later, as usual)</option>
-              </select>
+          <div class="field" style="margin-bottom:9px"><label>Delivery fee (optional, split across units)</label><input type="number" id="qrFee" placeholder="0.00" step="0.01" min="0" value="0" oninput="updateQrSummary()"></div>
+          <div class="field" style="margin-bottom:9px">
+            <label>Payment</label>
+            <div class="seg-grid" id="qrPayModeGroup" style="grid-template-columns:1fr 1fr">
+              <button type="button" class="disc-btn active" data-val="cash" onclick="setQrPayMode(this)">Pay now — Cash</button>
+              <button type="button" class="disc-btn" data-val="check" onclick="setQrPayMode(this)">Check (pay later)</button>
             </div>
+            <input type="hidden" id="qrPayMode" value="cash">
           </div>
           <div class="field" id="qrCashSourceField" style="margin-bottom:9px">
             <label>Cash source</label>
-            <select id="qrCashSource"><option value="Drawer Cash">Drawer Cash</option><option value="Take Home">Take Home</option></select>
+            <div class="seg-grid" id="qrCashSourceGroup" style="grid-template-columns:1fr 1fr">
+              <button type="button" class="disc-btn active" data-val="Drawer Cash" onclick="setQrCashSource(this)">Drawer Cash</button>
+              <button type="button" class="disc-btn" data-val="Take Home" onclick="setQrCashSource(this)">Take Home</button>
+            </div>
+            <input type="hidden" id="qrCashSource" value="Drawer Cash">
+          </div>
+          <div id="qrEnvelopeBox" style="display:none;margin-bottom:9px">
+            <div class="infonote" style="margin-bottom:9px"><i class="ti ti-info-circle"></i> Take Home cash comes from a past shift's envelope, not today's drawer — say which envelope it's coming from.</div>
+            <div class="fg fg2" style="margin-bottom:9px">
+              <div class="field"><label>Envelope Date <span style="color:var(--red)">*</span></label><input type="date" id="qrEnvDate"></div>
+              <div class="field"><label>Envelope Shift <span style="color:var(--red)">*</span></label>
+                <div class="seg-grid" id="qrEnvShiftGroup" style="grid-template-columns:1fr 1fr">
+                  <button type="button" class="disc-btn active" data-val="AM" onclick="setQrEnvShift(this)">Morning (AM)</button>
+                  <button type="button" class="disc-btn" data-val="PM" onclick="setQrEnvShift(this)">Evening (PM)</button>
+                </div>
+                <input type="hidden" id="qrEnvShift" value="AM">
+              </div>
+            </div>
+            <div class="field"><label>Envelope Remaining Balance (after this) <span style="color:var(--red)">*</span></label><input type="number" id="qrEnvBalance" placeholder="0.00" step="0.01" min="0"></div>
           </div>
           <div class="infonote" id="qrCheckNote" style="display:none"><i class="ti ti-info-circle"></i> Saved as an unpaid delivery — pay it later from the Payables log, same as any other PO.</div>
           <div id="qrSummary" style="font-size:11px;color:var(--text3);margin:8px 0"></div>
@@ -3377,8 +3397,12 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.59';
+const APP_VERSION='v4.60';
 const CHANGELOG=[
+  {v:'v4.60', date:'2026-07-07', notes:[
+    'Receive Delivery: Payment (Cash/Check) and Cash source (Drawer/Take Home) are now tap-button pills instead of dropdowns, same defaults as before (Cash, Drawer Cash)',
+    'Take Home now requires saying which envelope the cash is coming from — envelope date, AM/PM shift, and that envelope\'s remaining balance after taking the money out — so it\'s traceable back to a specific physical envelope of not-yet-deposited cash from a past shift',
+    'Purchase Order Preview card recolored from teal/green to blue — same layout, easier on the eyes']},
   {v:'v4.59', date:'2026-07-07', notes:[
     'Owner can now correct a mis-keyed payment mode after the fact — tap the CASH/GCASH/MAYA/M-CREDIT tag on any POS sale or Manual/Logbook sale (in Shift and in Review Past Day) to change it; POS sales correctly move the amount between the payment-mode breakdown buckets',
     'Cash Outs/Expenses, Manual Sales, and Returns now show the cashier\'s name next to the time, matching POS sales',
@@ -3677,7 +3701,11 @@ function initOrderTab() {
 window.openNewOrderModal=function(mode){
   document.getElementById('orderSearch').value=''; document.getElementById('orderSearchResults').innerHTML='';
   document.getElementById('qrDR').value=''; document.getElementById('qrFee').value=0;
-  document.getElementById('qrPayMode').value='cash';
+  document.getElementById('qrEnvDate').value=''; document.getElementById('qrEnvBalance').value='';
+  // Reset the pill groups back to their defaults (Cash / Drawer Cash / AM).
+  setQrPayMode(document.querySelector('#qrPayModeGroup [data-val="cash"]'));
+  setQrCashSource(document.querySelector('#qrCashSourceGroup [data-val="Drawer Cash"]'));
+  setQrEnvShift(document.querySelector('#qrEnvShiftGroup [data-val="AM"]'));
   setOrderModalMode(mode||'create');
   populateSupplierList();
   renderOrderList();
@@ -3694,11 +3722,36 @@ window.setOrderModalMode=function(mode){
   document.getElementById('receiveDeliveryFooter').style.display=mode==='receive'?'':'none';
   if(mode==='receive'){ onQrPayModeChange(); }
 };
+window.setQrPayMode=function(btn){
+  if(!btn) return;
+  document.getElementById('qrPayModeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('qrPayMode').value=btn.dataset.val;
+  onQrPayModeChange();
+};
+window.setQrCashSource=function(btn){
+  if(!btn) return;
+  document.getElementById('qrCashSourceGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('qrCashSource').value=btn.dataset.val;
+  onQrCashSourceChange();
+};
+window.setQrEnvShift=function(btn){
+  if(!btn) return;
+  document.getElementById('qrEnvShiftGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('qrEnvShift').value=btn.dataset.val;
+};
 window.onQrPayModeChange=function(){
   const isCash=document.getElementById('qrPayMode').value==='cash';
   document.getElementById('qrCashSourceField').style.display=isCash?'':'none';
   document.getElementById('qrCheckNote').style.display=isCash?'none':'';
+  onQrCashSourceChange();
   updateQrSummary();
+};
+// Take Home cash comes out of a past shift's not-yet-deposited envelope, not today's drawer —
+// require which envelope (date + AM/PM) and what's left in it, so it's traceable to a physical envelope.
+window.onQrCashSourceChange=function(){
+  const isCash=document.getElementById('qrPayMode').value==='cash';
+  const isTakeHome=document.getElementById('qrCashSource').value==='Take Home';
+  document.getElementById('qrEnvelopeBox').style.display=(isCash&&isTakeHome)?'':'none';
 };
 window.updateQrSummary=function(){
   const el=document.getElementById('qrSummary'); if(!el) return;
@@ -3723,6 +3776,15 @@ window.confirmReceiveDelivery=async function(){
   if(!drNo){ toast('Enter the Delivery Receipt / Sales Invoice no.','err'); document.getElementById('qrDR').focus(); return; }
   const payMode=document.getElementById('qrPayMode').value;               // 'cash' | 'check'
   const cashSource=document.getElementById('qrCashSource').value;         // 'Drawer Cash' | 'Take Home'
+  let envelope=null;
+  if(payMode==='cash' && cashSource==='Take Home'){
+    const envDate=document.getElementById('qrEnvDate').value;
+    const envShift=document.getElementById('qrEnvShift').value;
+    const envBalance=parseFloat(document.getElementById('qrEnvBalance').value);
+    if(!envDate){ toast('Pick which envelope this Take Home cash is coming from (date)','err'); document.getElementById('qrEnvDate').focus(); return; }
+    if(isNaN(envBalance)||envBalance<0){ toast("Enter that envelope's remaining balance after this","err"); document.getElementById('qrEnvBalance').focus(); return; }
+    envelope={date:envDate, shift:envShift, remainingBalance:envBalance};
+  }
   const fee=parseFloat(document.getElementById('qrFee').value)||0;
   const units=items.reduce((a,oi)=>a+oi.qty,0);
   const feePerUnit=units>0?fee/units:0;
@@ -3765,8 +3827,9 @@ window.confirmReceiveDelivery=async function(){
   };
   let toastMsg=`Received — ${fmt(grand)} logged to Payables (unpaid)`;
   if(payMode==='cash'){
-    const label='Cash on Delivery — '+cashSource;
+    const label='Cash on Delivery — '+cashSource+(envelope?` (envelope ${envelope.date} ${envelope.shift})`:'');
     payable.status='paid'; payable.paidVia=label; payable.payTerm=label; payable.paidBy=session?.name||''; payable.paidByRole=session?.role||'staff'; payable.paidAt=now; payable.paidDate=today();
+    if(envelope) payable.envelope=envelope;
     po.payStatus='paid'; po.paidVia=label; po.payTerm=label;
     toastMsg=`Received & paid — archived (${fmt(grand)})`;
   }
@@ -3785,7 +3848,8 @@ window.confirmReceiveDelivery=async function(){
   }
   if(payMode==='cash'){
     const s=await getShift(curShift);
-    s.cashOuts.push({type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId});
+    const envNote=envelope?` · envelope ${envelope.date} ${envelope.shift}, remaining ${fmt(envelope.remainingBalance)}`:'';
+    s.cashOuts.push({type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})${envNote}`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId, envelope});
     await persistShift(curShift);
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
   }
