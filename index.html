@@ -296,6 +296,7 @@ select option{background:var(--bg3)}
 .cart-total-label{font-size:12px;color:var(--text2)}
 .cart-total-val{font-family:var(--mono);font-size:20px;font-weight:500;color:var(--teal)}
 .pay-mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px}
+.seg-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:2px}
 .pay-mode-btn{padding:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-family:var(--sans);font-size:11px;font-weight:600;border-radius:7px;cursor:pointer;transition:all .15s;text-align:center}
 .pay-mode-btn.active.cash{border-color:var(--teal);background:var(--teal-dim);color:var(--teal)}
 .pay-mode-btn.active.gcash{border-color:var(--gcash);background:var(--gcash-dim);color:var(--gcash)}
@@ -726,6 +727,7 @@ select option{background:var(--bg3)}
       <div class="field"><label>Markup %</label><input type="text" id="pMarkupPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field"><label>Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
       <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
+      <div class="field"><label>Shelf Address <span style="color:var(--text3);font-weight:400">(e.g. D9)</span></label><input type="text" id="pAddress" placeholder="e.g. D9" style="text-transform:uppercase"></div>
       <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(search registered suppliers — multiple allowed)</span></label>
         <div id="supChips" class="sup-chips"></div>
         <input type="text" id="supSearch" placeholder="Search suppliers..." autocomplete="off" oninput="renderSupSearch()" onkeydown="supSearchKey(event)">
@@ -819,10 +821,13 @@ select option{background:var(--bg3)}
       <div class="fg fg3">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="coAmt" placeholder="0.00" step="0.01"></div>
         <div class="field"><label>Type</label>
-          <select id="coType" onchange="toggleStockNote()">
-            <option>Delivery Payment</option><option>Cash Out</option>
-            <option value="Personal Stock Use">Personal Stock Use</option><option>Other</option>
-          </select>
+          <div class="seg-grid" id="coTypeGroup">
+            <button type="button" class="disc-btn active" data-val="Delivery Payment" onclick="setCoType(this)">Delivery Payment</button>
+            <button type="button" class="disc-btn" data-val="Cash Out" onclick="setCoType(this)">Cash Out</button>
+            <button type="button" class="disc-btn" data-val="Personal Stock Use" onclick="setCoType(this)">Personal Stock Use</button>
+            <button type="button" class="disc-btn" data-val="Other" onclick="setCoType(this)">Other</button>
+          </div>
+          <input type="hidden" id="coType" value="Delivery Payment">
         </div>
         <div class="field"><label>Description</label><input type="text" id="coNote" placeholder="Details..." onkeydown="if(event.key==='Enter')addCO()"></div>
       </div>
@@ -879,7 +884,15 @@ select option{background:var(--bg3)}
       <div class="fg fg4">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="msAmt" placeholder="0.00" step="0.01"></div>
         <div class="field"><label>Item / Description</label><input type="text" id="msDesc" placeholder="Item name..." onkeydown="if(event.key==='Enter')addMS()"></div>
-        <div class="field"><label>Mode</label><select id="msMode"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="maya">Maya</option><option value="mcredit">M Credit</option></select></div>
+        <div class="field"><label>Mode</label>
+          <div class="pay-mode-grid" style="margin-bottom:0" id="msModeGroup">
+            <button type="button" class="pay-mode-btn cash active" data-val="cash" onclick="setMsMode(this)">Cash</button>
+            <button type="button" class="pay-mode-btn gcash" data-val="gcash" onclick="setMsMode(this)">GCash</button>
+            <button type="button" class="pay-mode-btn maya" data-val="maya" onclick="setMsMode(this)">Maya</button>
+            <button type="button" class="pay-mode-btn mcredit" data-val="mcredit" onclick="setMsMode(this)">M Credit</button>
+          </div>
+          <input type="hidden" id="msMode" value="cash">
+        </div>
         <div class="field"><label>Qty</label><input type="number" id="msQty" placeholder="1" step="1" value="1"></div>
       </div>
       <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="addMS()"><i class="ti ti-plus"></i> Add</button></div>
@@ -968,7 +981,7 @@ select option{background:var(--bg3)}
         <span id="importMsg" style="font-size:11px;margin-left:4px"></span>
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.7">
-        <strong style="color:var(--text2)">CSV columns:</strong> sku, name, category, suppliers, cost, price, inventory, lowStock, variants<br>
+        <strong style="color:var(--text2)">CSV columns:</strong> sku, name, category, address, suppliers, cost, price, inventory, lowStock, variants<br>
         <strong style="color:var(--text2)">Variants format:</strong> size:packaging:price|size:packaging:price &nbsp;·&nbsp;
         <strong style="color:var(--text2)">Suppliers format:</strong> Supplier A,Supplier B
       </div>
@@ -1465,7 +1478,8 @@ function applyRole(){
 // in depth — addCI/addCO/removeCI/removeCO also re-check hasPerm() before writing.
 function applyPermUI(){
   const can=hasPerm('cashio');
-  ['ciAmt','ciNote','coAmt','coType','coNote','ciAddBtn','coAddBtn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=!can; });
+  ['ciAmt','ciNote','coAmt','coNote','ciAddBtn','coAddBtn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=!can; });
+  document.querySelectorAll('#coTypeGroup .disc-btn').forEach(b=>b.disabled=!can);
   ['cashInCard','cashOutCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.opacity=can?'1':'.55'; });
   ['ciPermNote','coPermNote'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=can?'none':'block'; });
   const newRetBtn=document.getElementById('newReturnBtn'); if(newRetBtn) newRetBtn.style.display=hasPerm('returns')?'inline-flex':'none';
@@ -1639,6 +1653,16 @@ window.doClearShift=async function(){
 };
 // ── Personal Stock Use: pick a product → deducts inventory (like a sale), cost auto-computed ──
 let stockUseProd=null, stockSearchList=[];
+window.setCoType=function(btn){
+  if(btn.disabled) return;
+  document.getElementById('coTypeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('coType').value=btn.dataset.val;
+  toggleStockNote();
+};
+window.setMsMode=function(btn){
+  document.getElementById('msModeGroup').querySelectorAll('.pay-mode-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('msMode').value=btn.dataset.val;
+};
 window.toggleStockNote=function(){
   const isStock=document.getElementById('coType').value==='Personal Stock Use';
   document.getElementById('stockNote').style.display=isStock?'block':'none';
@@ -2150,9 +2174,27 @@ function salesProfitCard(m){
 // ═══════════════════════════════════════
 let allProducts=[], allProductsFull={}, editingProdId=null, productPageIndex=0, pageSize=50, productView=[];
 
+// Shelf addresses were originally baked into the product name as a trailing "-D9" style
+// suffix (column letter + row number, from the old paper shelf map). Detect that suffix so it
+// can be split into its own `address` field instead of living inside the name.
+function extractShelfAddress(name){
+  const m=(name||'').match(/^(.*?)\s*-\s*([A-Za-z]{1,2}\d{1,3})\s*$/);
+  if(!m || !m[1].trim()) return null;
+  return {cleanName:m[1].trim(), address:m[2].toUpperCase()};
+}
+
 // OPTIMIZED: Load lightweight index only (name, SKU, price, ID)
 async function loadProducts(){
   const rawProducts=await fsGetAll('products');
+  // One-time migration: strip any leftover "-D9" shelf-address suffix out of the name and
+  // into its own `address` field. Only runs for products that don't have `address` yet, so it
+  // won't re-fire once a product has been migrated.
+  rawProducts.forEach(p=>{
+    if(!p.address){
+      const parsed=extractShelfAddress(p.name);
+      if(parsed){ p.name=parsed.cleanName; p.address=parsed.address; fsSet('products',p.id,p); }
+    }
+  });
   // Store lightweight version for search
   allProducts=rawProducts.map(p=>({
     id:p.id,
@@ -2162,6 +2204,7 @@ async function loadProducts(){
     inventory:p.inventory||0,
     cost:p.cost||0,
     category:p.category||'',
+    address:p.address||'',
     lowStock:p.lowStock||10
   }));
   // Store full versions in object for on-demand fetching
@@ -2394,9 +2437,14 @@ function getVariantsFromForm(){
 }
 
 window.saveProduct=async function(){
-  const name=document.getElementById('pName').value.trim();
+  let name=document.getElementById('pName').value.trim();
   const msg=document.getElementById('prodFormMsg');
   if(!name){msg.style.color='var(--red)';msg.textContent='Product name required';return;}
+  let address=document.getElementById('pAddress').value.trim().toUpperCase();
+  // If the name still has a trailing "-D9" style shelf-address suffix (typed or pasted in),
+  // strip it out and use it as the address instead of duplicating it in the name.
+  const parsed=extractShelfAddress(name);
+  if(parsed){ name=parsed.cleanName; if(!address) address=parsed.address; }
   const id=editingProdId||'prod_'+Date.now();
   const data={
     sku:document.getElementById('pSku').value.trim(),
@@ -2404,6 +2452,7 @@ window.saveProduct=async function(){
     supplierCosts:Object.fromEntries(selectedSuppliers.map(s=>[s,selectedSupplierCosts[s]||0])),
     name,
     category:document.getElementById('pCategory').value.trim(),
+    address,
     cost:parseFloat(document.getElementById('pCost').value)||0,
     price:parseFloat(document.getElementById('pPrice').value)||0,
     inventory:parseInt(document.getElementById('pInventory').value)||0,
@@ -2416,9 +2465,9 @@ window.saveProduct=async function(){
   allProductsFull[id]=data;
   const existing=allProducts.findIndex(p=>p.id===id);
   if(existing>=0){
-    allProducts[existing]={id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,lowStock:data.lowStock};
+    allProducts[existing]={id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,address:data.address,lowStock:data.lowStock};
   } else {
-    allProducts.push({id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,lowStock:data.lowStock});
+    allProducts.push({id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,address:data.address,lowStock:data.lowStock});
   }
   msg.style.color='var(--teal)'; msg.textContent='Saved!';
   setTimeout(()=>msg.textContent='',2000);
@@ -2444,6 +2493,7 @@ window.editProduct=async function(id){
   document.getElementById('pPrice').value=p.price||'';
   document.getElementById('pInventory').value=p.inventory||'';
   document.getElementById('pLowStock').value=p.lowStock||'';
+  document.getElementById('pAddress').value=p.address||'';
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   (p.variants||[]).forEach(v=>addVariantRow(v));
   calcMargin();
@@ -2454,7 +2504,7 @@ window.editProduct=async function(id){
 window.cancelEditProduct=function(){
   editingProdId=null;
   document.getElementById('prodFormTitle').textContent='Add New Product';
-  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
+  ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pAddress','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
   selectedSuppliers=[]; selectedSupplierCosts={}; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   document.getElementById('productModal').classList.remove('show');
@@ -2513,10 +2563,11 @@ window.searchProducts=function(){
     const invLabel=inv<=0?'Out of stock':inv<=low?`Low: ${inv}`:inv;
     const isGeneric=(p.category||'').trim().toLowerCase()==='generics';
     const catTag=p.category?`<span class="chip ${isGeneric?'chip-generic':''}" style="margin-left:6px">${p.category}</span>`:'';
+    const addrTag=p.address?`<span class="pill" style="margin-left:6px;padding:2px 7px;font-size:9px"><i class="ti ti-map-pin" style="font-size:9px"></i> ${p.address}</span>`:'';
     return `<div class="prod-card" onclick="openProductModal('${p.id}')">
       <div>
         <div class="prod-name">${p.name}</div>
-        <div class="prod-sku">${p.sku||''}${catTag}</div>
+        <div class="prod-sku">${p.sku||''}${catTag}${addrTag}</div>
         <div class="prod-inv ${invClass}">${invLabel!==inv?'· '+invLabel:''}</div>
       </div>
       <div class="prod-price">${fmt(p.price)}</div>
@@ -2536,7 +2587,10 @@ window.openProductModal=function(id, purpose){
   modalProd=fullProd; // Use full product data
   modalVariant=null;
   document.getElementById('modalProdName').textContent=modalProd.name;
-  document.getElementById('modalProdSku').textContent=modalProd.sku||'';
+  const modalMetaParts=[modalProd.sku||''];
+  if(modalProd.category) modalMetaParts.push(modalProd.category);
+  if(modalProd.address) modalMetaParts.push('<i class="ti ti-map-pin"></i> '+modalProd.address);
+  document.getElementById('modalProdSku').innerHTML=modalMetaParts.filter(Boolean).join(' &middot; ');
   const vContainer=document.getElementById('modalVariants');
   if(!modalProd.variants||!modalProd.variants.length){
     vContainer.innerHTML=`<div style="text-align:center;padding:12px 0;font-size:13px;color:var(--teal)">${fmt(modalProd.price)}</div>`;
@@ -2580,7 +2634,7 @@ window.confirmAddToCart=function(){
   const qty=Math.max(1,parseInt(document.getElementById('modalQty').value)||1);
   const existing=cart.find(c=>c.prodId===modalProd.id&&c.size===v.size&&c.packaging===v.packaging);
   if(existing){existing.qty+=qty;}
-  else{cart.push({prodId:modalProd.id,name,size:v.size||'',packaging:v.packaging||'',price,cost:vcost,qty});}
+  else{cart.push({prodId:modalProd.id,name,size:v.size||'',packaging:v.packaging||'',price,cost:vcost,qty,address:modalProd.address||''});}
   closeModal(); renderCart(); toast(`${name} ×${qty} added`,'ok');
 };
 
@@ -2600,7 +2654,7 @@ function renderCart(){
     <div class="cart-item">
       <div class="ci-info">
         <div class="ci-name">${item.name}</div>
-        <div class="ci-variant">${[item.size,item.packaging].filter(Boolean).join(' · ')||'Standard'}</div>
+        <div class="ci-variant">${[item.size,item.packaging].filter(Boolean).join(' · ')||'Standard'}${item.address?` &middot; <i class="ti ti-map-pin"></i> ${item.address}`:''}</div>
         <div class="ci-price">${fmt(item.price)} each</div>
       </div>
       <div class="ci-controls">
@@ -3018,8 +3072,14 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.50';
+const APP_VERSION='v4.52';
 const CHANGELOG=[
+  {v:'v4.52', date:'2026-07-07', notes:[
+    'Cart items now also show the shelf address (e.g. D9) beside the size/variant line, so it stays visible all the way through checkout']},
+  {v:'v4.51', date:'2026-07-07', notes:[
+    'Cash Outs "Type" and Manual/Logbook Sales "Mode" are now tap buttons instead of dropdown menus — dropdowns were easy to miss, so staff kept defaulting to the first option instead of picking the right one',
+    'Products now have a Shelf Address field (Edit Product, next to Low Stock Alert) — old shelf codes baked into the product name (like "...tab-D9") are automatically split out into this field the first time each product loads, so names stay clean',
+    'POS search results and the Add to Cart screen now show each product\'s category and shelf address next to its SKU, so staff can find the item on the shelf without leaving the search']},
   {v:'v4.50', date:'2026-07-02', notes:[
     'Security: added Firebase App Check (reCAPTCHA v3) so the database can eventually restrict access to requests from this actual site, not just anyone with a valid login token. No visible change — runs silently in the background.']},
   {v:'v4.49', date:'2026-07-02', notes:[
@@ -3153,8 +3213,8 @@ setTimeout(bootOnce, 3500);
 // ═══════════════════════════════════════════════════
 
 window.downloadTemplate = function() {
-  const header = 'sku,name,category,suppliers,cost,price,inventory,lowStock,variants';
-  const example = 'MED-001,Amoxicillin 500mg,Antibiotics,"Zuellig,Mediline",8.50,12.00,100,20,500mg:Capsule:12.00|500mg:Tablet:11.00';
+  const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants';
+  const example = 'MED-001,Amoxicillin 500mg,Antibiotics,D9,"Zuellig,Mediline",8.50,12.00,100,20,500mg:Capsule:12.00|500mg:Tablet:11.00';
   const csv = header + '\n' + example;
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
@@ -3166,11 +3226,11 @@ window.downloadTemplate = function() {
 
 window.exportCSV = function() {
   if(!allProducts.length){toast('No products to export','err');return;}
-  const header = 'sku,name,category,suppliers,cost,price,inventory,lowStock,variants';
+  const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants';
   const rows = allProducts.map(p => {
     const variants = (p.variants||[]).map(v=>`${v.size||''}:${v.packaging||''}:${v.price||''}`).join('|');
     const esc = s => `"${(s||'').toString().replace(/"/g,'""')}"`;
-    return [esc(p.sku),esc(p.name),esc(p.category),esc(p.suppliers),p.cost||0,p.price||0,p.inventory||0,p.lowStock||10,esc(variants)].join(',');
+    return [esc(p.sku),esc(p.name),esc(p.category),esc(p.address),esc(p.suppliers),p.cost||0,p.price||0,p.inventory||0,p.lowStock||10,esc(variants)].join(',');
   });
   const csv = [header,...rows].join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
@@ -3201,6 +3261,7 @@ window.importCSV = async function(input) {
     const id = 'prod_'+Date.now()+'_'+i;
     const fullData={
       sku:row.sku||'', name:row.name, category:row.category||'',
+      address:(row.address||'').toUpperCase(),
       suppliers:row.suppliers||'',
       cost:parseFloat(row.cost)||0, price:parseFloat(row.price)||0,
       inventory:parseInt(row.inventory)||0, lowStock:parseInt(row.lowstock)||10,
@@ -3209,7 +3270,7 @@ window.importCSV = async function(input) {
     await fsSet('products', id, fullData);
     // Update caches
     allProductsFull[id]=fullData;
-    allProducts.push({id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,lowStock:fullData.lowStock});
+    allProducts.push({id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,address:fullData.address,lowStock:fullData.lowStock});
     imported++;
   }
   msg.style.color='var(--teal)'; msg.textContent=`Imported ${imported} products${skipped?' ('+skipped+' skipped)':''}`;
