@@ -984,7 +984,8 @@ select option{background:var(--bg3)}
       <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.7">
         <strong style="color:var(--text2)">CSV columns:</strong> sku, name, category, address, suppliers, cost, price, inventory, lowStock, variants<br>
         <strong style="color:var(--text2)">Variants format:</strong> size:packaging:cost:price:inventory|size:packaging:cost:price:inventory &nbsp;·&nbsp;
-        <strong style="color:var(--text2)">Suppliers format:</strong> Supplier A,Supplier B
+        <strong style="color:var(--text2)">Suppliers format:</strong> Supplier A,Supplier B<br>
+        <strong style="color:var(--text2)">Re-importing:</strong> matches rows to existing products by SKU (or by exact name if SKU is blank) and updates them in place — export, edit in a spreadsheet (e.g. variant costs/stock), then re-import to bulk-update instead of creating duplicates. Unmatched rows create new products. Leave a variant's inventory blank to keep it unmigrated (shared stock).
       </div>
     </div>
 
@@ -3187,8 +3188,12 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.54';
+const APP_VERSION='v4.55';
 const CHANGELOG=[
+  {v:'v4.55', date:'2026-07-07', notes:[
+    'Products CSV import now matches each row to an existing product by SKU (or by exact name if SKU is blank) and UPDATES it, instead of always creating a new product — so exporting, bulk-editing variant costs/stock in a spreadsheet, and re-importing now updates in place instead of leaving you with duplicates',
+    'Per-supplier costs (set in Edit Product\'s supplier picker) are no longer wiped out by a CSV re-import — there\'s no CSV column for them, so they\'re preserved on any product the import matches and updates',
+    'Import summary now shows "Imported X new, updated Y" instead of one combined count, so you can tell at a glance whether a re-import created duplicates or updated the right rows']},
   {v:'v4.54', date:'2026-07-07', notes:[
     'Products with variants (like EQ Dry Small/Large) can now track SEPARATE stock counts and costs per variant instead of one shared number for the whole product — Edit Product gets an Inventory box per variant, plus a one-time guided split ("Existing stock of 20 units needs to be split across the variants below") the first time you edit a product that hasn\'t been migrated yet; Save is blocked until the numbers add up so nothing gets lost',
     'Once a product is split, every place that touches stock now moves the RIGHT variant\'s count: POS checkout and voiding a sale, Personal Stock Use, Returns/Exchange (both the returned item and the replacement — the replacement side can now pick a variant, the same fix Orders got last time), and receiving a delivery',
@@ -3373,7 +3378,15 @@ window.importCSV = async function(input) {
   const text = await file.text();
   const lines = text.trim().split('\n');
   const headers = lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/"/g,''));
-  let imported=0, skipped=0;
+  // Match each row to an existing product by SKU first, then by exact name, so re-importing an
+  // exported/edited CSV (e.g. bulk-editing variant costs/inventory in a spreadsheet) UPDATES the
+  // same product instead of creating a duplicate. Only rows that match nothing become new products.
+  const bySku={}, byName={};
+  allProducts.forEach(p=>{
+    if(p.sku) bySku[p.sku.trim().toLowerCase()]=p.id;
+    byName[(p.name||'').trim().toLowerCase()]=p.id;
+  });
+  let created=0, updated=0, skipped=0;
   for(let i=1;i<lines.length;i++){
     const line = lines[i].trim(); if(!line)continue;
     const cols = parseCSVLine(line);
@@ -3385,11 +3398,16 @@ window.importCSV = async function(input) {
       return {size:parts[0]||'',packaging:parts[1]||'',cost:parseFloat(parts[2])||0,price:parseFloat(parts[3])||0,
               inventory:(rawInv===undefined||rawInv==='')?null:Math.max(0,parseInt(rawInv)||0)};
     }).filter(v=>v.size||v.packaging) : [];
-    const id = 'prod_'+Date.now()+'_'+i;
+    const skuKey=(row.sku||'').trim().toLowerCase();
+    const nameKey=row.name.trim().toLowerCase();
+    const matchId=(skuKey && bySku[skuKey]) || byName[nameKey];
+    const existing=matchId ? allProductsFull[matchId] : null;
+    const id = matchId || ('prod_'+Date.now()+'_'+i);
     const fullData={
       sku:row.sku||'', name:row.name, category:row.category||'',
       address:(row.address||'').toUpperCase(),
       suppliers:row.suppliers||'',
+      supplierCosts: (existing&&existing.supplierCosts) || {},   // no CSV column for this — preserve on update
       cost:parseFloat(row.cost)||0, price:parseFloat(row.price)||0,
       inventory: (variants.length && hasVariantInventory({variants})) ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(row.inventory)||0),
       lowStock:parseInt(row.lowstock)||10,
@@ -3398,10 +3416,17 @@ window.importCSV = async function(input) {
     await fsSet('products', id, fullData);
     // Update caches
     allProductsFull[id]=fullData;
-    allProducts.push({id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,address:fullData.address,lowStock:fullData.lowStock});
-    imported++;
+    const cacheEntry={id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,address:fullData.address,lowStock:fullData.lowStock};
+    const idx=allProducts.findIndex(p=>p.id===id);
+    if(idx>=0){ allProducts[idx]=cacheEntry; updated++; }
+    else {
+      allProducts.push(cacheEntry);
+      if(skuKey) bySku[skuKey]=id;
+      byName[nameKey]=id;
+      created++;
+    }
   }
-  msg.style.color='var(--teal)'; msg.textContent=`Imported ${imported} products${skipped?' ('+skipped+' skipped)':''}`;
+  msg.style.color='var(--teal)'; msg.textContent=`Imported ${created} new, updated ${updated}${skipped?' ('+skipped+' skipped)':''}`;
   setTimeout(()=>msg.textContent='',4000);
   input.value='';
   // Reset pagination and refresh
