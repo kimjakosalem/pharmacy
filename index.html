@@ -725,7 +725,7 @@ select option{background:var(--bg3)}
       <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
       <div class="field"><label>Margin %</label><input type="text" id="pMarginPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field"><label>Markup %</label><input type="text" id="pMarkupPct" placeholder="auto" readonly style="color:var(--teal)"></div>
-      <div class="field"><label>Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
+      <div class="field"><label id="pInventoryLabel">Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
       <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
       <div class="field"><label>Shelf Address <span style="color:var(--text3);font-weight:400">(e.g. D9)</span></label><input type="text" id="pAddress" placeholder="e.g. D9" style="text-transform:uppercase"></div>
       <div class="field fc"><label>Suppliers <span style="color:var(--text3);font-weight:400">(search registered suppliers — multiple allowed)</span></label>
@@ -736,6 +736,7 @@ select option{background:var(--bg3)}
     </div>
     <div class="sep"></div>
     <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.07em;margin-bottom:8px">VARIANTS <span style="font-weight:400;color:var(--text3)">(optional — leave blank if no variants)</span></div>
+    <div class="infonote" id="variantInvBanner" style="display:none;margin-bottom:9px"></div>
     <div class="variant-list" id="variantList"></div>
     <div class="btn-row">
       <button class="btn btn-ghost btn-sm" onclick="addVariantRow()"><i class="ti ti-plus"></i> Add Variant</button>
@@ -982,7 +983,7 @@ select option{background:var(--bg3)}
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.7">
         <strong style="color:var(--text2)">CSV columns:</strong> sku, name, category, address, suppliers, cost, price, inventory, lowStock, variants<br>
-        <strong style="color:var(--text2)">Variants format:</strong> size:packaging:price|size:packaging:price &nbsp;·&nbsp;
+        <strong style="color:var(--text2)">Variants format:</strong> size:packaging:cost:price:inventory|size:packaging:cost:price:inventory &nbsp;·&nbsp;
         <strong style="color:var(--text2)">Suppliers format:</strong> Supplier A,Supplier B
       </div>
     </div>
@@ -1700,7 +1701,7 @@ window.pickStockItem=function(i){
     openProductModal(p.id,'stockuse');   // let the picker say WHICH variant, so cost is accurate
     return;
   }
-  stockUseProd={id:p.id, name:p.name, cost:(fp?.cost ?? p.cost ?? 0)};
+  stockUseProd={id:p.id, name:p.name, cost:(fp?.cost ?? p.cost ?? 0), size:'', packaging:''};
   renderStockPicked(); updateStockCost();
 };
 window.clearStockItem=function(){ stockUseProd=null; renderStockPicked(); updateStockCost(); };
@@ -1752,9 +1753,9 @@ window.addCO=async function(){
     if(!stockUseProd){ toast('Search and pick the item taken','err'); return; }
     const qty=Math.max(1,parseInt(document.getElementById('suQty').value)||1);
     const unitCost=stockUseProd.cost||0, amt=Math.round(unitCost*qty*100)/100;
-    s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost});
+    s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost,size:stockUseProd.size||'',packaging:stockUseProd.packaging||''});
     const fp=allProductsFull[stockUseProd.id];
-    if(fp){ fp.inventory=(fp.inventory||0)-qty; fp.updatedAt=tnow(); await fsSet('products',stockUseProd.id,fp); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ adjustVariantInventory(fp, stockUseProd.size, stockUseProd.packaging, -qty); fp.updatedAt=tnow(); await fsSet('products',stockUseProd.id,fp); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
     document.getElementById('coNote').value=''; resetStockUse();
     await persistShift(curShift); renderCO();
     toast(`${qty} ${stockUseProd?stockUseProd.name:'item'} taken from stock`,'ok');
@@ -1772,7 +1773,7 @@ window.removeCO=async function(i,sh,dt){
   // Reverse a stock-use deduction: return the qty back into inventory.
   if(c.type==='Personal Stock Use' && c.prodId && c.qty){
     const fp=allProductsFull[c.prodId];
-    if(fp){ fp.inventory=(fp.inventory||0)+c.qty; fp.updatedAt=tnow(); await fsSet('products',c.prodId,fp); const lp=allProducts.find(p=>p.id===c.prodId); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ adjustVariantInventory(fp, c.size, c.packaging, c.qty); fp.updatedAt=tnow(); await fsSet('products',c.prodId,fp); const lp=allProducts.find(p=>p.id===c.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   c.voided=true; c.voidedBy=session?.name||''; c.voidedAt=tnow();
   await persistShift(sh,dt);
@@ -1931,7 +1932,7 @@ window.voidSale=async function(id,sh,dt){
   if(mk) s[mk]=Math.max(0,(s[mk]||0)-t.total);
   // Return stock
   for(const it of (t.items||[])){
-    const fp=allProductsFull[it.prodId]; if(fp){ fp.inventory=(fp.inventory||0)+it.qty; fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+    const fp=allProductsFull[it.prodId]; if(fp){ adjustVariantInventory(fp, it.size, it.packaging, it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   t.voided=true; t.voidedBy=session?.name||''; t.voidedAt=tnow();
   await persistShift(sh,dt);
@@ -2035,6 +2036,13 @@ window.renderRetSearch=function(which){
 };
 window.addRetItem=function(which,id){
   const p=allProducts.find(x=>x.id===id); if(!p) return;
+  // Both sides of a manually-searched return/exchange (the "no receipt" return side, and the
+  // "new" replacement side) are a live pick, same as Orders/POS — so a multi-variant product
+  // opens the shared variant picker instead of only ever adding the base product with no way to
+  // say which size/flavor is involved. (The OTHER return path — picking an original sale — already
+  // carries size/packaging from that sale's own items and doesn't go through this function.)
+  const full=allProductsFull[id];
+  if(full && full.variants && full.variants.length){ openProductModal(id, which==='new'?'return-new':'return-old'); return; }
   const arr=which==='return'?retState.returnItems:retState.newItems;
   const ex=arr.find(x=>x.prodId===id && (which==='new'||x.max>=9999));
   if(ex){ ex.qty+=1; } else { arr.push({prodId:id,name:p.name,size:'',packaging:'',price:p.price||0,qty:1,max:9999}); }
@@ -2042,6 +2050,20 @@ window.addRetItem=function(which,id){
   else { document.getElementById('retNewSearch').value=''; document.getElementById('retNewResults').innerHTML=''; renderRetNewList(); }
   renderReturnSummary();
 };
+// Shared by confirmAddToCart's 'return-new' branch and could be reused elsewhere: adds/increments
+// a specific variant of a product into the exchange's replacement-items list.
+// Shared by confirmAddToCart's 'return-new'/'return-old' branches: adds/increments a specific
+// variant of a product into either side of a manually-entered return/exchange.
+function addRetVariant(which, prod, variant, qty){
+  const arr=which==='return'?retState.returnItems:retState.newItems;
+  const price=variant.price||prod.price||0;
+  const existing=arr.find(x=>x.prodId===prod.id&&x.size===(variant.size||'')&&x.packaging===(variant.packaging||''));
+  if(existing){ existing.qty+=qty; }
+  else{ arr.push({prodId:prod.id,name:prod.name,size:variant.size||'',packaging:variant.packaging||'',price,qty,max:9999}); }
+  if(which==='return'){ document.getElementById('retReturnSearch').value=''; document.getElementById('retReturnResults').innerHTML=''; renderRetReturnList(); }
+  else{ document.getElementById('retNewSearch').value=''; document.getElementById('retNewResults').innerHTML=''; renderRetNewList(); }
+  renderReturnSummary();
+}
 window.toggleExchange=function(){
   const on=document.getElementById('retExchange').checked;
   document.getElementById('retExchangeBox').style.display=on?'block':'none';
@@ -2082,12 +2104,12 @@ window.confirmReturn=async function(){
   // Return items → back into stock
   for(const it of retItems){
     const fp=allProductsFull[it.prodId];
-    if(fp){ fp.inventory=(fp.inventory||0)+it.qty; fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ adjustVariantInventory(fp, it.size, it.packaging, it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   // Replacement items → out of stock
   for(const it of newItems){
     const fp=allProductsFull[it.prodId];
-    if(fp){ fp.inventory=Math.max(0,(fp.inventory||0)-it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ adjustVariantInventory(fp, it.size, it.packaging, -it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   // Net effect on the shift's POS sales (delta can be negative = money out of drawer)
   const mk={cash:'pbCash',gcash:'pbGcash',maya:'pbMaya',mcredit:'pbMcredit'}[mode];
@@ -2096,8 +2118,8 @@ window.confirmReturn=async function(){
   s.returns=s.returns||[];
   s.returns.push({ id:'ret_'+Date.now(), time:now, ts:Date.now(), type:exchange?'exchange':'refund', mode,
     origSaleId:retState.sale?.id||null, cashier:session?.name||'',
-    returnedItems:retItems.map(it=>({prodId:it.prodId,name:it.name,price:it.price,qty:it.qty})),
-    newItems:newItems.map(it=>({prodId:it.prodId,name:it.name,price:it.price,qty:it.qty})),
+    returnedItems:retItems.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty})),
+    newItems:newItems.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty})),
     returnValue, newValue, net });
   await persistShift(curShift,dt);
   document.getElementById('posTot').value=s.posTot||'';
@@ -2181,6 +2203,32 @@ function extractShelfAddress(name){
   const m=(name||'').match(/^(.*?)\s*-\s*([A-Za-z]{1,2}\d{1,3})\s*$/);
   if(!m || !m[1].trim()) return null;
   return {cleanName:m[1].trim(), address:m[2].toUpperCase()};
+}
+
+// ── Per-variant inventory/cost ──
+// A variant product is "migrated" once EVERY variant has an explicit numeric inventory (not
+// null/undefined). Until then, all stock math below falls back to the old parent-level total —
+// so shipping this never breaks a live product; it only takes effect once the owner splits that
+// product's existing stock across its variants in Edit Product.
+function hasVariantInventory(prod){ return !!(prod && prod.variants && prod.variants.length && prod.variants.every(v=>v.inventory!=null)); }
+function findVariantByLabel(prod, size, packaging){ return (prod&&prod.variants||[]).find(v=>(v.size||'')===(size||'')&&(v.packaging||'')===(packaging||'')); }
+// Adjusts stock by delta (+/-): targets the matching variant when migrated (and resyncs the
+// parent's cached sum), else falls back to the parent total directly (today's behavior).
+// Caller is still responsible for fsSet + syncing the light allProducts cache, same as before.
+function adjustVariantInventory(prod, size, packaging, delta){
+  if(hasVariantInventory(prod)){
+    const v=findVariantByLabel(prod, size, packaging);
+    if(v){ v.inventory=Math.max(0,(v.inventory||0)+delta); prod.inventory=prod.variants.reduce((a,x)=>a+(x.inventory||0),0); return; }
+  }
+  prod.inventory=Math.max(0,(prod.inventory||0)+delta);
+}
+// Sets cost on the matching variant when migrated, else on the parent product (today's fallback).
+function adjustVariantCost(prod, size, packaging, cost){
+  if(hasVariantInventory(prod)){
+    const v=findVariantByLabel(prod, size, packaging);
+    if(v){ v.cost=cost; return; }
+  }
+  prod.cost=cost;
 }
 
 // OPTIMIZED: Load lightweight index only (name, SKU, price, ID)
@@ -2321,6 +2369,8 @@ function renderProductTable(prods){
     const invClass=inv<=0?'inv-out':inv<=low?'inv-low':'inv-ok';
     const margin=p.cost&&p.price?((p.price-p.cost)/p.price*100).toFixed(1)+'%':'-';
     const markup=p.cost&&p.price?((p.price-p.cost)/p.cost*100).toFixed(1)+'%':'-';
+    const full=allProductsFull[p.id];
+    const invTitle=(full&&hasVariantInventory(full))?full.variants.map(v=>`${[v.size,v.packaging].filter(Boolean).join(' ')}: ${v.inventory||0}`).join(', '):'';
     return `<tr>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${p.sku||'-'}</td>
       <td><div style="font-weight:500">${p.name}</div>${p.category?`<div style="font-size:10px;color:var(--text3)">${p.category}</div>`:''}</td>
@@ -2329,7 +2379,7 @@ function renderProductTable(prods){
       <td class="c-tel" style="font-family:var(--mono);font-size:12px">${fmtShort(p.price)}</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${margin}</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--blue)">${markup}</td>
-      <td class="${invClass}" style="font-family:var(--mono);font-size:12px">${inv}${inv<=low&&inv>0?' ⚠':''}${inv<=0?' ✗':''}</td>
+      <td class="${invClass}" style="font-family:var(--mono);font-size:12px"${invTitle?` title="${invTitle}"`:''}>${inv}${inv<=low&&inv>0?' ⚠':''}${inv<=0?' ✗':''}</td>
       <td>
         <div style="display:flex;gap:5px;justify-content:flex-end">
           <button class="btn btn-ghost btn-xs" onclick="editProduct('${p.id}')"><i class="ti ti-edit"></i></button>
@@ -2413,29 +2463,64 @@ window.supSearchKey=function(e){ if(e.key==='Enter'){ e.preventDefault(); addTyp
 function setSuppliersFromString(str,costs){ selectedSuppliers=(str||'').split(',').map(s=>s.trim()).filter(Boolean); selectedSupplierCosts={...(costs||{})}; renderSupChips(); }
 
 let variantRows=[];
+// The product's inventory total AT THE MOMENT Edit Product was opened — the fixed target the
+// variant Inventory inputs must add up to while migrating an unmigrated variant product.
+let variantMigrationTarget=null;
 window.addVariantRow=function(v=null){
   const id='vr_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
   variantRows.push(id);
   const div=document.createElement('div');
   div.className='variant-row'; div.id=id;
   div.innerHTML=`
-    <div class="field"><input type="text" placeholder="Size (e.g. 500mg)" value="${v?.size||''}" class="vSize"></div>
-    <div class="field"><input type="text" placeholder="Packaging (e.g. Capsule)" value="${v?.packaging||''}" class="vPkg"></div>
+    <div class="field"><input type="text" placeholder="Size (e.g. 500mg)" value="${v?.size||''}" class="vSize" oninput="updateVariantInvBanner()"></div>
+    <div class="field"><input type="text" placeholder="Packaging (e.g. Capsule)" value="${v?.packaging||''}" class="vPkg" oninput="updateVariantInvBanner()"></div>
     <div class="field"><input type="number" placeholder="Cost" step="0.01" value="${v?.cost||''}" class="vCost"></div>
     <div class="field"><input type="number" placeholder="Price" step="0.01" value="${v?.price||''}" class="vPrice"></div>
+    <div class="field"><input type="number" placeholder="Inventory" step="1" value="${v?.inventory!=null?v.inventory:''}" class="vInv" oninput="updateVariantInvBanner()"></div>
     <button class="del-btn" onclick="removeVariantRow('${id}')"><i class="ti ti-x"></i></button>`;
   document.getElementById('variantList').appendChild(div);
+  updateVariantInvBanner();
 };
-window.removeVariantRow=function(id){ document.getElementById(id)?.remove(); variantRows=variantRows.filter(r=>r!==id); };
+window.removeVariantRow=function(id){ document.getElementById(id)?.remove(); variantRows=variantRows.filter(r=>r!==id); updateVariantInvBanner(); };
 
 function getVariantsFromForm(){
-  return [...document.getElementById('variantList').querySelectorAll('.variant-row')].map(row=>({
-    size:row.querySelector('.vSize').value.trim(),
-    packaging:row.querySelector('.vPkg').value.trim(),
-    cost:parseFloat(row.querySelector('.vCost').value)||0,
-    price:parseFloat(row.querySelector('.vPrice').value)||0
-  })).filter(v=>v.size||v.packaging);
+  return [...document.getElementById('variantList').querySelectorAll('.variant-row')].map(row=>{
+    const rawInv=row.querySelector('.vInv').value.trim();
+    return {
+      size:row.querySelector('.vSize').value.trim(),
+      packaging:row.querySelector('.vPkg').value.trim(),
+      cost:parseFloat(row.querySelector('.vCost').value)||0,
+      price:parseFloat(row.querySelector('.vPrice').value)||0,
+      inventory: rawInv==='' ? null : Math.max(0,parseInt(rawInv)||0)
+    };
+  }).filter(v=>v.size||v.packaging);
 }
+
+// Keeps the top-level Inventory field + migration banner in sync with the variant rows. While a
+// variant product hasn't been fully migrated yet (some variant Inventory boxes still blank), the
+// banner shows how many units are left to distribute against variantMigrationTarget (the total
+// captured when the form was opened). Once every variant has a number, the top field just mirrors
+// the live sum and the banner hides — no more special-casing needed going forward.
+window.updateVariantInvBanner=function(){
+  const variants=getVariantsFromForm();
+  const banner=document.getElementById('variantInvBanner');
+  const invField=document.getElementById('pInventory'), invLabel=document.getElementById('pInventoryLabel');
+  if(!variants.length){
+    invField.readOnly=false; invField.style.opacity='1'; invLabel.textContent='Inventory (base stock)';
+    banner.style.display='none';
+    return;
+  }
+  invLabel.textContent='Inventory — Total (sum of variants)';
+  invField.readOnly=true; invField.style.opacity='.7';
+  const migrated=hasVariantInventory({variants});
+  const sum=variants.reduce((a,v)=>a+(v.inventory||0),0);
+  invField.value=sum;
+  if(migrated){ banner.style.display='none'; return; }
+  const target=variantMigrationTarget||0;
+  const remaining=target-sum;
+  banner.style.display='block';
+  banner.innerHTML=`<i class="ti ti-info-circle"></i> Existing stock of <strong>${target}</strong> unit${target===1?'':'s'} needs to be split across the variants below — Remaining: <strong style="color:${remaining===0?'var(--teal)':'var(--amber)'}">${remaining}</strong>`;
+};
 
 window.saveProduct=async function(){
   let name=document.getElementById('pName').value.trim();
@@ -2446,6 +2531,17 @@ window.saveProduct=async function(){
   // strip it out and use it as the address instead of duplicating it in the name.
   const parsed=extractShelfAddress(name);
   if(parsed){ name=parsed.cleanName; if(!address) address=parsed.address; }
+  const variants=getVariantsFromForm();
+  // Once a product has variants, its stock must be fully split across them before saving —
+  // otherwise part of the existing count would silently vanish (neither on the parent nor on
+  // any variant). Products with no variants are unaffected.
+  if(variants.length && !hasVariantInventory({variants})){
+    const sum=variants.reduce((a,v)=>a+(v.inventory||0),0);
+    const target=variantMigrationTarget||0;
+    msg.style.color='var(--red)';
+    msg.textContent=`Split all ${target} units across the variants below — currently accounts for ${sum}`;
+    return;
+  }
   const id=editingProdId||'prod_'+Date.now();
   const data={
     sku:document.getElementById('pSku').value.trim(),
@@ -2456,9 +2552,9 @@ window.saveProduct=async function(){
     address,
     cost:parseFloat(document.getElementById('pCost').value)||0,
     price:parseFloat(document.getElementById('pPrice').value)||0,
-    inventory:parseInt(document.getElementById('pInventory').value)||0,
+    inventory: variants.length ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(document.getElementById('pInventory').value)||0),
     lowStock:parseInt(document.getElementById('pLowStock').value)||10,
-    variants:getVariantsFromForm(),
+    variants,
     updatedAt:tnow()
   };
   await fsSet('products',id,data);
@@ -2496,7 +2592,9 @@ window.editProduct=async function(id){
   document.getElementById('pLowStock').value=p.lowStock||'';
   document.getElementById('pAddress').value=p.address||'';
   document.getElementById('variantList').innerHTML=''; variantRows=[];
+  variantMigrationTarget=p.inventory||0;
   (p.variants||[]).forEach(v=>addVariantRow(v));
+  updateVariantInvBanner();
   calcMargin();
   document.getElementById('productModal').classList.add('show');
   setTimeout(()=>document.getElementById('pName').focus({preventScroll:true}),50);
@@ -2507,7 +2605,8 @@ window.cancelEditProduct=function(){
   document.getElementById('prodFormTitle').textContent='Add New Product';
   ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pAddress','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
   selectedSuppliers=[]; selectedSupplierCosts={}; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
-  document.getElementById('variantList').innerHTML=''; variantRows=[];
+  document.getElementById('variantList').innerHTML=''; variantRows=[]; variantMigrationTarget=0;
+  updateVariantInvBanner();
   document.getElementById('productModal').classList.remove('show');
 };
 
@@ -2606,7 +2705,7 @@ window.openProductModal=function(id, purpose){
   }
   document.getElementById('modalQty').value='1';
   document.getElementById('modalQtyRow').style.display=modalPurpose==='stockuse'?'none':'flex';
-  document.getElementById('modalAddBtnLabel').textContent=modalPurpose==='stockuse'?'Select for Stock Use':(modalPurpose==='order'?'Add to Order':'Add to Cart');
+  document.getElementById('modalAddBtnLabel').textContent=modalPurpose==='stockuse'?'Select for Stock Use':(modalPurpose==='order'?'Add to Order':(modalPurpose==='return-new'?'Add as Replacement':(modalPurpose==='return-old'?'Add as Returned Item':'Add to Cart')));
   document.getElementById('variantModal').classList.add('show');
 };
 
@@ -2627,7 +2726,7 @@ window.confirmAddToCart=function(){
   const name=modalProd.name;
   if(modalPurpose==='stockuse'){
     const label=name+([v.size,v.packaging].filter(Boolean).length?` (${[v.size,v.packaging].filter(Boolean).join(' ')})`:'');
-    stockUseProd={id:modalProd.id, name:label, cost:vcost};
+    stockUseProd={id:modalProd.id, name:label, cost:vcost, size:v.size||'', packaging:v.packaging||''};
     closeModal(); renderStockPicked(); updateStockCost();
     toast(`${label} selected for stock use`,'ok');
     return;
@@ -2639,6 +2738,13 @@ window.confirmAddToCart=function(){
     addOrderLine(lightProd, v, qty);
     closeModal();
     toast(`${label} added to order`,'ok');
+    return;
+  }
+  if(modalPurpose==='return-new'||modalPurpose==='return-old'){
+    const label=name+([v.size,v.packaging].filter(Boolean).length?` (${[v.size,v.packaging].filter(Boolean).join(' ')})`:'');
+    addRetVariant(modalPurpose==='return-new'?'new':'return', modalProd, v, qty);
+    closeModal();
+    toast(`${label} added`,'ok');
     return;
   }
   const existing=cart.find(c=>c.prodId===modalProd.id&&c.size===v.size&&c.packaging===v.packaging);
@@ -2790,7 +2896,7 @@ async function finalizeSale(total, cashInfo){
     const fullProd=allProductsFull[item.prodId];
     const lightProd=allProducts.find(p=>p.id===item.prodId);
     if(fullProd && lightProd){
-      fullProd.inventory=Math.max(0,(fullProd.inventory||0)-(item.qty));
+      adjustVariantInventory(fullProd, item.size, item.packaging, -item.qty);
       lightProd.inventory=fullProd.inventory;
       await fsSet('products',item.prodId,fullProd);
     }
@@ -3081,8 +3187,14 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.53';
+const APP_VERSION='v4.54';
 const CHANGELOG=[
+  {v:'v4.54', date:'2026-07-07', notes:[
+    'Products with variants (like EQ Dry Small/Large) can now track SEPARATE stock counts and costs per variant instead of one shared number for the whole product — Edit Product gets an Inventory box per variant, plus a one-time guided split ("Existing stock of 20 units needs to be split across the variants below") the first time you edit a product that hasn\'t been migrated yet; Save is blocked until the numbers add up so nothing gets lost',
+    'Once a product is split, every place that touches stock now moves the RIGHT variant\'s count: POS checkout and voiding a sale, Personal Stock Use, Returns/Exchange (both the returned item and the replacement — the replacement side can now pick a variant, the same fix Orders got last time), and receiving a delivery',
+    'Fixed: receiving a PO with two different variants used to overwrite the same cost field twice (last line always won) — each variant now keeps its own cost',
+    'Low Stock list now shows one row per variant for a migrated product (e.g. "EQ Dry (Small · Bottle) — Low: 3") instead of one combined number that could hide a real shortage in a specific size',
+    'Products not yet migrated keep working exactly as before — nothing changes until you open that product in Edit Product and do the one-time split']},
   {v:'v4.53', date:'2026-07-07', notes:[
     'Orders: searching for a product with variants (like POS "EQ Dry") now opens the same variant picker as the POS/Stock-Use screens, so you can choose which specific size/flavor you\'re ordering — previously it only ever added the parent product with no way to pick a variant',
     'Each variant now sits on the order as its own line (own qty + editable cost, defaulting to that variant\'s cost), and the variant name follows the product through the PO preview, saved PO, Send-to-supplier message, CSV export, print, and the Receive/Delivery screen']},
@@ -3226,7 +3338,7 @@ setTimeout(bootOnce, 3500);
 
 window.downloadTemplate = function() {
   const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants';
-  const example = 'MED-001,Amoxicillin 500mg,Antibiotics,D9,"Zuellig,Mediline",8.50,12.00,100,20,500mg:Capsule:12.00|500mg:Tablet:11.00';
+  const example = 'MED-001,Amoxicillin 500mg,Antibiotics,D9,"Zuellig,Mediline",8.50,12.00,100,20,500mg:Capsule:8.50:12.00:40|500mg:Tablet:9.00:11.00:60';
   const csv = header + '\n' + example;
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
@@ -3240,7 +3352,8 @@ window.exportCSV = function() {
   if(!allProducts.length){toast('No products to export','err');return;}
   const header = 'sku,name,category,address,suppliers,cost,price,inventory,lowStock,variants';
   const rows = allProducts.map(p => {
-    const variants = (p.variants||[]).map(v=>`${v.size||''}:${v.packaging||''}:${v.price||''}`).join('|');
+    const full=allProductsFull[p.id];
+    const variants = ((full&&full.variants)||[]).map(v=>`${v.size||''}:${v.packaging||''}:${v.cost||''}:${v.price||''}:${v.inventory!=null?v.inventory:''}`).join('|');
     const esc = s => `"${(s||'').toString().replace(/"/g,'""')}"`;
     return [esc(p.sku),esc(p.name),esc(p.category),esc(p.address),esc(p.suppliers),p.cost||0,p.price||0,p.inventory||0,p.lowStock||10,esc(variants)].join(',');
   });
@@ -3268,7 +3381,9 @@ window.importCSV = async function(input) {
     headers.forEach((h,j)=>row[h]=(cols[j]||'').replace(/^"|"$/g,'').trim());
     if(!row.name){skipped++;continue;}
     const variants = row.variants ? row.variants.split('|').map(v=>{
-      const parts=v.split(':'); return {size:parts[0]||'',packaging:parts[1]||'',price:parseFloat(parts[2])||0};
+      const parts=v.split(':'); const rawInv=parts[4];
+      return {size:parts[0]||'',packaging:parts[1]||'',cost:parseFloat(parts[2])||0,price:parseFloat(parts[3])||0,
+              inventory:(rawInv===undefined||rawInv==='')?null:Math.max(0,parseInt(rawInv)||0)};
     }).filter(v=>v.size||v.packaging) : [];
     const id = 'prod_'+Date.now()+'_'+i;
     const fullData={
@@ -3276,7 +3391,8 @@ window.importCSV = async function(input) {
       address:(row.address||'').toUpperCase(),
       suppliers:row.suppliers||'',
       cost:parseFloat(row.cost)||0, price:parseFloat(row.price)||0,
-      inventory:parseInt(row.inventory)||0, lowStock:parseInt(row.lowstock)||10,
+      inventory: (variants.length && hasVariantInventory({variants})) ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(row.inventory)||0),
+      lowStock:parseInt(row.lowstock)||10,
       variants, updatedAt:tnow()
     };
     await fsSet('products', id, fullData);
@@ -3320,34 +3436,64 @@ function initOrderTab() {
   loadPOs();
 }
 
+// Expands allProducts into one row per LOW item — a migrated variant product contributes one
+// row per variant that's at/under the shared lowStock threshold, so staff can see exactly which
+// size/flavor is running out instead of a combined total that can hide a real shortage. Plain
+// products (and variant products not yet migrated) still contribute a single row, as before.
+// Rows share the same key scheme as orderItems (orderLineKey) so checking one plugs straight
+// into the existing Orders draft via addOrderLine-shaped entries.
+function lowStockRows(){
+  const rows=[];
+  allProducts.forEach(p=>{
+    const full=allProductsFull[p.id];
+    const low=p.lowStock||10;
+    if(full && hasVariantInventory(full)){
+      full.variants.forEach(v=>{
+        const inv=v.inventory||0;
+        if(inv<=low) rows.push({key:orderLineKey(p.id,v), prod:p, name:p.name, sku:p.sku, cost:(v.cost!=null&&v.cost!==''?v.cost:(p.cost||0)), inventory:inv, lowStock:low, variant:v});
+      });
+    } else {
+      const inv=p.inventory||0;
+      if(inv<=low) rows.push({key:p.id, prod:p, name:p.name, sku:p.sku, cost:p.cost||0, inventory:inv, lowStock:low, variant:null});
+    }
+  });
+  return rows;
+}
+window.toggleLowStockItem=function(key,checked,qty){
+  const row=lowStockRows().find(r=>r.key===key); if(!row) return;
+  if(checked){ orderItems[key]={id:key, prod:row.prod, qty:qty||1, cost:row.cost, size:row.variant?(row.variant.size||''):'', packaging:row.variant?(row.variant.packaging||''):''}; }
+  else{ delete orderItems[key]; }
+  renderOrderList();
+};
 function renderLowStock() {
-  const low = allProducts.filter(p=>(p.inventory||0)<=(p.lowStock||10));
+  const low = lowStockRows();
   const el = document.getElementById('lowStockList');
   document.getElementById('lowStockCount').textContent = low.length+' items';
   if(!low.length){el.innerHTML='<div class="empty"><i class="ti ti-check"></i>All stock levels OK</div>';return;}
-  
+
   // Pagination
   const totalPages = Math.ceil(low.length / lowStockPageSize);
   const start = lowStockPageIndex * lowStockPageSize;
   const paginated = low.slice(start, start + lowStockPageSize);
-  
-  el.innerHTML = paginated.map(p=>{
-    const inv=p.inventory||0, isOut=inv<=0;
-    const suggested = Math.max((p.lowStock||10)*3 - inv, 1);
+
+  el.innerHTML = paginated.map(r=>{
+    const inv=r.inventory, isOut=inv<=0;
+    const suggested = Math.max(r.lowStock*3 - inv, 1);
+    const label=r.variant?` <span style="color:var(--text3);font-weight:400">(${[r.variant.size,r.variant.packaging].filter(Boolean).join(' · ')})</span>`:'';
     return `<div class="po-item">
-      <input type="checkbox" id="chk_${p.id}" onchange="toggleOrderItem('${p.id}',this.checked,${suggested})">
+      <input type="checkbox" id="chk_${r.key}" onchange="toggleLowStockItem('${r.key}',this.checked,${suggested})">
       <div class="po-info">
-        <div class="po-name">${p.name} <span class="${isOut?'chip chip-out':'chip chip-low'}">${isOut?'Out of stock':'Low: '+inv}</span></div>
-        <div class="po-meta">${p.sku||'No SKU'} · ${allProductsFull[p.id]?.suppliers||'No supplier'}</div>
+        <div class="po-name">${r.name}${label} <span class="${isOut?'chip chip-out':'chip chip-low'}">${isOut?'Out of stock':'Low: '+inv}</span></div>
+        <div class="po-meta">${r.sku||'No SKU'} · ${allProductsFull[r.prod.id]?.suppliers||'No supplier'}</div>
       </div>
       <div class="po-qty-wrap">
         <label style="font-size:10px;color:var(--text3)">Qty:</label>
-        <input type="number" class="po-qty" id="qty_${p.id}" value="${suggested}" min="1" onchange="updateOrderQty('${p.id}',this.value)">
+        <input type="number" class="po-qty" id="qty_${r.key}" value="${suggested}" min="1" onchange="updateOrderQty('${r.key}',this.value)">
       </div>
-      <div class="po-price">${fmt((p.cost||0)*suggested)}</div>
+      <div class="po-price">${fmt(r.cost*suggested)}</div>
     </div>`;
   }).join('');
-  
+
   // Add pagination controls
   const paginationHtml = `
     <div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;padding:12px;border-top:1px solid var(--border)">
@@ -3360,8 +3506,7 @@ function renderLowStock() {
 }
 
 window.nextLowStockPage = function() {
-  const low = allProducts.filter(p=>(p.inventory||0)<=(p.lowStock||10));
-  const totalPages = Math.ceil(low.length / lowStockPageSize);
+  const totalPages = Math.ceil(lowStockRows().length / lowStockPageSize);
   if(lowStockPageIndex < totalPages-1) {
     lowStockPageIndex++;
     renderLowStock();
@@ -3376,28 +3521,16 @@ window.prevLowStockPage = function() {
 };
 
 window.checkAllLow = function() {
-  const low = allProducts.filter(p=>(p.inventory||0)<=(p.lowStock||10));
-  low.forEach(p=>{
-    const chk=document.getElementById('chk_'+p.id);
-    const qty=parseInt(document.getElementById('qty_'+p.id)?.value)||1;
-    if(chk&&!chk.checked){chk.checked=true;orderItems[p.id]={id:p.id,prod:p,qty,cost:(p.cost||0)};}
+  lowStockRows().forEach(r=>{
+    const chk=document.getElementById('chk_'+r.key);
+    const qty=parseInt(document.getElementById('qty_'+r.key)?.value)||1;
+    if(chk&&!chk.checked){chk.checked=true;orderItems[r.key]={id:r.key,prod:r.prod,qty,cost:r.cost,size:r.variant?(r.variant.size||''):'',packaging:r.variant?(r.variant.packaging||''):''};}
   });
   renderOrderList();
 };
 window.uncheckAll = function() {
-  allProducts.forEach(p=>{const chk=document.getElementById('chk_'+p.id);if(chk)chk.checked=false;});
+  lowStockRows().forEach(r=>{const chk=document.getElementById('chk_'+r.key);if(chk)chk.checked=false;});
   orderItems={};renderOrderList();
-};
-
-window.toggleOrderItem = function(id,checked,qty) {
-  const prod=allProducts.find(p=>p.id===id); if(!prod)return;
-  if(checked) orderItems[id]={id:prod.id,prod,qty:qty||1,cost:(prod.cost||0)};
-  else delete orderItems[id];
-  renderOrderList();
-};
-window.updateOrderQty = function(id,qty) {
-  if(orderItems[id]) orderItems[id].qty=parseInt(qty)||1;
-  renderOrderList();
 };
 
 window.clearOrderSearch = function() {
@@ -3993,8 +4126,11 @@ window.confirmDelivery=async function(){
     it.recvCost=baseCost; it.landedCost=landed;
     const prod=allProductsFull[it.prodId];
     if(prod){
-      prod.inventory=(prod.inventory||0)+it.recvQty;        // restock
-      if(landed!==prod.cost){ prod.cost=Math.round(landed*100)/100; priceChanges++; }   // cost incl. fee
+      adjustVariantInventory(prod, it.size, it.packaging, it.recvQty);   // restock (variant if migrated, else parent)
+      const rounded=Math.round(landed*100)/100;
+      const v=hasVariantInventory(prod)?findVariantByLabel(prod,it.size,it.packaging):null;
+      if(rounded!==(v?v.cost:prod.cost)) priceChanges++;   // cost incl. fee
+      adjustVariantCost(prod, it.size, it.packaging, rounded);
       prod.updatedAt=tnow();
       await fsSet('products', it.prodId, prod);
       const lp=allProducts.find(p=>p.id===it.prodId);       // keep search cache in sync
