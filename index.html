@@ -2205,7 +2205,8 @@ async function loadProducts(){
     cost:p.cost||0,
     category:p.category||'',
     address:p.address||'',
-    lowStock:p.lowStock||10
+    lowStock:p.lowStock||10,
+    variantCount:(p.variants||[]).length
   }));
   // Store full versions in object for on-demand fetching
   rawProducts.forEach(p=>allProductsFull[p.id]=p);
@@ -2605,7 +2606,7 @@ window.openProductModal=function(id, purpose){
   }
   document.getElementById('modalQty').value='1';
   document.getElementById('modalQtyRow').style.display=modalPurpose==='stockuse'?'none':'flex';
-  document.getElementById('modalAddBtnLabel').textContent=modalPurpose==='stockuse'?'Select for Stock Use':'Add to Cart';
+  document.getElementById('modalAddBtnLabel').textContent=modalPurpose==='stockuse'?'Select for Stock Use':(modalPurpose==='order'?'Add to Order':'Add to Cart');
   document.getElementById('variantModal').classList.add('show');
 };
 
@@ -2632,6 +2633,14 @@ window.confirmAddToCart=function(){
     return;
   }
   const qty=Math.max(1,parseInt(document.getElementById('modalQty').value)||1);
+  if(modalPurpose==='order'){
+    const label=name+([v.size,v.packaging].filter(Boolean).length?` (${[v.size,v.packaging].filter(Boolean).join(' ')})`:'');
+    const lightProd=allProducts.find(p=>p.id===modalProd.id);
+    addOrderLine(lightProd, v, qty);
+    closeModal();
+    toast(`${label} added to order`,'ok');
+    return;
+  }
   const existing=cart.find(c=>c.prodId===modalProd.id&&c.size===v.size&&c.packaging===v.packaging);
   if(existing){existing.qty+=qty;}
   else{cart.push({prodId:modalProd.id,name,size:v.size||'',packaging:v.packaging||'',price,cost:vcost,qty,address:modalProd.address||''});}
@@ -3072,8 +3081,11 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.52';
+const APP_VERSION='v4.53';
 const CHANGELOG=[
+  {v:'v4.53', date:'2026-07-07', notes:[
+    'Orders: searching for a product with variants (like POS "EQ Dry") now opens the same variant picker as the POS/Stock-Use screens, so you can choose which specific size/flavor you\'re ordering — previously it only ever added the parent product with no way to pick a variant',
+    'Each variant now sits on the order as its own line (own qty + editable cost, defaulting to that variant\'s cost), and the variant name follows the product through the PO preview, saved PO, Send-to-supplier message, CSV export, print, and the Receive/Delivery screen']},
   {v:'v4.52', date:'2026-07-07', notes:[
     'Cart items now also show the shelf address (e.g. D9) beside the size/variant line, so it stays visible all the way through checkout']},
   {v:'v4.51', date:'2026-07-07', notes:[
@@ -3368,7 +3380,7 @@ window.checkAllLow = function() {
   low.forEach(p=>{
     const chk=document.getElementById('chk_'+p.id);
     const qty=parseInt(document.getElementById('qty_'+p.id)?.value)||1;
-    if(chk&&!chk.checked){chk.checked=true;orderItems[p.id]={prod:p,qty};}
+    if(chk&&!chk.checked){chk.checked=true;orderItems[p.id]={id:p.id,prod:p,qty,cost:(p.cost||0)};}
   });
   renderOrderList();
 };
@@ -3379,7 +3391,7 @@ window.uncheckAll = function() {
 
 window.toggleOrderItem = function(id,checked,qty) {
   const prod=allProducts.find(p=>p.id===id); if(!prod)return;
-  if(checked) orderItems[id]={prod,qty:qty||1};
+  if(checked) orderItems[id]={id:prod.id,prod,qty:qty||1,cost:(prod.cost||0)};
   else delete orderItems[id];
   renderOrderList();
 };
@@ -3431,14 +3443,17 @@ window.renderOrderSearch = function() {
   if(!q){el.innerHTML='';return;}
   const results=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q)).slice(0,8);
   if(!results.length){el.innerHTML='<div class="empty" style="padding:10px">No products found</div>';return;}
-  el.innerHTML=results.map(p=>`
+  el.innerHTML=results.map(p=>{
+    const variantTag=p.variantCount?`<span class="chip" style="margin-left:6px">${p.variantCount} variants</span>`:'';
+    return `
     <div class="po-item" style="cursor:pointer" onclick="addToOrder('${p.id}')">
       <div class="po-info">
-        <div class="po-name">${p.name}</div>
+        <div class="po-name">${p.name}${variantTag}</div>
         <div class="po-meta">${p.sku||'No SKU'} · Stock: ${p.inventory||0} · ${supplierListHtml(p.id)}</div>
       </div>
       <button class="btn btn-ghost btn-xs"><i class="ti ti-plus"></i> Add</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 };
 // Renders a product's supplier names, flagging the cheapest one (only when 2+ suppliers
 // actually have a cost on file) so ordering staff know which supplier to buy from.
@@ -3456,24 +3471,47 @@ function orderSupplierOf(){ return orderSupplier.trim() || 'No Supplier'; }
 // in the order list (and again at delivery). null/undefined falls back to the product cost.
 function oiCost(oi){ return (oi && oi.cost!=null) ? oi.cost : (oi&&oi.prod?(oi.prod.cost||0):0); }
 window.setOrderSupplier=function(val){ orderSupplier=(val||'').trim(); renderOrderList(); };
-window.addToOrder = function(id) {
-  const prod=allProducts.find(p=>p.id===id); if(!prod)return;
-  if(!orderItems[id]) orderItems[id]={prod,qty:1,cost:(prod.cost||0)};
-  else orderItems[id].qty++;
+// Order lines are keyed by product id alone UNLESS a specific variant was chosen, in which case
+// the key includes the variant's size/packaging so different variants of the same product can
+// sit on the order as separate lines (each with its own qty + cost).
+function orderLineKey(prodId, variant){
+  const size=variant?.size||'', packaging=variant?.packaging||'';
+  return (size||packaging) ? `${prodId}::${size}::${packaging}` : prodId;
+}
+function orderLineLabel(oi){ return [oi.size,oi.packaging].filter(Boolean).join(' · '); }
+// Same idea as orderLineLabel but for a SAVED PO's item (po.items[]), which has the same
+// size/packaging fields but isn't wrapped in the {prod,...} shape orderItems entries use.
+function poItemLabel(it){ return [it.size,it.packaging].filter(Boolean).join(' · '); }
+function addOrderLine(prod, variant, qty){
+  const key=orderLineKey(prod.id, variant);
+  if(orderItems[key]){ orderItems[key].qty+=qty; }
+  else{
+    const cost=(variant && variant.cost!=null && variant.cost!=='') ? variant.cost : (prod.cost||0);
+    orderItems[key]={id:key, prod, qty, cost, size:variant?.size||'', packaging:variant?.packaging||''};
+  }
   // Default the order's supplier to the product's first supplier if none chosen yet.
   // (The dropdown reflects this via populateSupplierList inside renderOrderList below.)
-  if(!orderSupplier){ const ps=((allProductsFull[id]?.suppliers||'').split(',')[0]||'').trim(); if(ps){ orderSupplier=ps; } }
+  if(!orderSupplier){ const ps=((allProductsFull[prod.id]?.suppliers||'').split(',')[0]||'').trim(); if(ps){ orderSupplier=ps; } }
   // Check the checkbox if in low stock list
-  const chk=document.getElementById('chk_'+id);
+  const chk=document.getElementById('chk_'+prod.id);
   if(chk) chk.checked=true;
-  toast(prod.name+' added to order','ok');
   renderOrderList();
+}
+window.addToOrder = function(id) {
+  const prod=allProducts.find(p=>p.id===id); if(!prod)return;
+  const full=allProductsFull[id];
+  if(full && full.variants && full.variants.length){
+    openProductModal(id,'order');
+    return;
+  }
+  addOrderLine(prod, null, 1);
+  toast(prod.name+' added to order','ok');
 };
 
-window.removeFromOrder = function(id) {
-  delete orderItems[id];
-  const chk=document.getElementById('chk_'+id);
-  if(chk) chk.checked=false;
+window.removeFromOrder = function(key) {
+  const oi=orderItems[key];
+  delete orderItems[key];
+  if(oi){ const chk=document.getElementById('chk_'+oi.prod.id); if(chk) chk.checked=false; }
   renderOrderList();
 };
 
@@ -3496,20 +3534,20 @@ function renderOrderList() {
   el.innerHTML=`
     <div class="supplier-section">
       <div class="supplier-header"><i class="ti ti-building-store" style="font-size:11px;margin-right:4px"></i>${supplier}</div>
-      ${items.map(oi=>{const prod=oi.prod,qty=oi.qty;return `
+      ${items.map(oi=>{const prod=oi.prod,qty=oi.qty,label=orderLineLabel(oi);return `
         <div class="po-item">
           <div class="po-info">
-            <div class="po-name">${prod.name}</div>
+            <div class="po-name">${prod.name}${label?` <span style="color:var(--text3);font-weight:400">(${label})</span>`:''}</div>
             <div class="po-meta">${prod.sku||'No SKU'} · Stock: ${prod.inventory||0}</div>
           </div>
           <div class="po-qty-wrap">
             <label style="font-size:10px;color:var(--text3)">Cost:</label>
-            <input type="number" class="po-qty" style="width:70px" step="0.01" min="0" value="${oiCost(oi)}" oninput="updateOrderCost('${prod.id}',this.value)" title="Editable unit cost">
+            <input type="number" class="po-qty" style="width:70px" step="0.01" min="0" value="${oiCost(oi)}" oninput="updateOrderCost('${oi.id}',this.value)" title="Editable unit cost">
             <label style="font-size:10px;color:var(--text3);margin-left:6px">Qty:</label>
-            <input type="number" class="po-qty" value="${qty}" min="1" oninput="updateOrderQty('${prod.id}',this.value)">
+            <input type="number" class="po-qty" value="${qty}" min="1" oninput="updateOrderQty('${oi.id}',this.value)">
           </div>
-          <div class="po-price" id="opx-${prod.id}">${fmt(oiCost(oi)*qty)}</div>
-          <button class="del-btn" onclick="removeFromOrder('${prod.id}')"><i class="ti ti-x"></i></button>
+          <div class="po-price" id="opx-${oi.id}">${fmt(oiCost(oi)*qty)}</div>
+          <button class="del-btn" onclick="removeFromOrder('${oi.id}')"><i class="ti ti-x"></i></button>
         </div>`}).join('')}
       <div style="text-align:right;font-size:11px;color:var(--amber);font-family:var(--mono);padding:4px 10px">
         Subtotal: <span id="orderSubtotal">${fmt(items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0))}</span>
@@ -3561,7 +3599,7 @@ function renderPOPreview(bySupplier) {
         <tr><th>SKU</th><th>Product</th><th style="text-align:right">Cost</th><th style="text-align:right">Qty</th><th style="text-align:right">Total</th></tr>
         ${sitems.map(oi=>`<tr>
           <td style="color:var(--text3)">${oi.prod.sku||'-'}</td>
-          <td>${oi.prod.name}</td>
+          <td>${oi.prod.name}${orderLineLabel(oi)?` <span style="color:var(--text3)">(${orderLineLabel(oi)})</span>`:''}</td>
           <td style="text-align:right">${fmtShort(oiCost(oi))}</td>
           <td style="text-align:right">${oi.qty}</td>
           <td style="text-align:right;color:var(--amber)">${fmtShort(oiCost(oi)*oi.qty)}</td>
@@ -3587,7 +3625,8 @@ window.exportPO = function() {
   const rows=items.map(oi=>{
     const prod=oi.prod,qty=oi.qty,c=oiCost(oi);
     const esc=s=>`"${(s||'').toString().replace(/"/g,'""')}"`;
-    return [esc(poNum),esc(poDate),esc(sup),esc(prod.sku),esc(prod.name),c,qty,(c*qty).toFixed(2)].join(',');
+    const name=prod.name+(orderLineLabel(oi)?` (${orderLineLabel(oi)})`:'');
+    return [esc(poNum),esc(poDate),esc(sup),esc(prod.sku),esc(name),c,qty,(c*qty).toFixed(2)].join(',');
   });
   const csv=[header,...rows].join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
@@ -3615,7 +3654,7 @@ window.printPO = function() {
       <div style="font-weight:600;font-size:13px;margin-bottom:6px;border-bottom:2px solid #000;padding-bottom:4px">SUPPLIER: ${supplier}</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <tr style="background:#f0f0f0"><th style="padding:6px;border:1px solid #ccc;text-align:left">SKU</th><th style="padding:6px;border:1px solid #ccc;text-align:left">Product</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Unit Cost</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Qty</th><th style="padding:6px;border:1px solid #ccc;text-align:right">Total</th></tr>
-        ${sitems.map(oi=>{const prod=oi.prod,qty=oi.qty,c=oiCost(oi);return `<tr><td style="padding:6px;border:1px solid #ccc">${prod.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${prod.name}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${c.toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${qty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(c*qty).toFixed(2)}</td></tr>`}).join('')}
+        ${sitems.map(oi=>{const prod=oi.prod,qty=oi.qty,c=oiCost(oi),name=prod.name+(orderLineLabel(oi)?` (${orderLineLabel(oi)})`:'');return `<tr><td style="padding:6px;border:1px solid #ccc">${prod.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${name}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${c.toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${qty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(c*qty).toFixed(2)}</td></tr>`}).join('')}
       </table>
     </div>`;
   });
@@ -3680,6 +3719,7 @@ window.savePO=async function(){
     items: items.map(oi=>{
       const prod=oi.prod, qty=oi.qty, c=oiCost(oi);
       return { prodId:prod.id, sku:prod.sku||'', name:prod.name, supplier,
+               size:oi.size||'', packaging:oi.packaging||'',
                orderedQty:qty, orderedCost:c, recvQty:qty, recvCost:c };
     }),
     createdAt:tnow(), createdBy:session?.name||''
@@ -3747,7 +3787,7 @@ function poRowHtml(po){
 function poMessageText(po){
   const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
   const lines=[`Purchase Order ${po.poNumber}`,`Date: ${po.date}`,`Supplier: ${po.supplier||''}`,'','ITEMS:',
-    ...po.items.map(it=>`- ${it.name}${it.sku?' ('+it.sku+')':''}: ${it.orderedQty} x ${fmt(it.orderedCost)} = ${fmt(it.orderedQty*it.orderedCost)}`),
+    ...po.items.map(it=>`- ${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}${it.sku?' ['+it.sku+']':''}: ${it.orderedQty} x ${fmt(it.orderedCost)} = ${fmt(it.orderedQty*it.orderedCost)}`),
     '',`TOTAL: ${fmt(tot)}`,'','— Dr. Kim Pharmacy'];
   return lines.join('\n');
 }
@@ -3808,7 +3848,7 @@ window.viewPO=function(id){
   const totItems=po.items.reduce((a,it)=>a+it.orderedQty,0);
   const rows=po.items.map(it=>`<tr>
     <td style="color:var(--text3)">${it.sku||'-'}</td>
-    <td>${it.name}</td>
+    <td>${it.name}${poItemLabel(it)?` <span style="color:var(--text3)">(${poItemLabel(it)})</span>`:''}</td>
     <td style="text-align:right">${fmtShort(it.orderedCost)}</td>
     <td style="text-align:right">${it.orderedQty}</td>
     <td style="text-align:right;color:var(--amber)">${fmtShort(it.orderedCost*it.orderedQty)}</td>
@@ -3830,7 +3870,7 @@ window.exportViewedPO=function(){
   const po=savedPOs.find(p=>p.id===viewedPoId); if(!po){ return; }
   const header='PO Number,DR/SI,Date,Supplier,SKU,Product,Cost,Qty,Total';
   const esc=s=>`"${(s||'').toString().replace(/"/g,'""')}"`;
-  const rows=(po.items||[]).map(it=>[esc(po.poNumber),esc(po.drNo),esc(po.date),esc(po.supplier),esc(it.sku),esc(it.name),it.orderedCost,it.orderedQty,(it.orderedCost*it.orderedQty).toFixed(2)].join(','));
+  const rows=(po.items||[]).map(it=>[esc(po.poNumber),esc(po.drNo),esc(po.date),esc(po.supplier),esc(it.sku),esc(it.name+(poItemLabel(it)?` (${poItemLabel(it)})`:'')),it.orderedCost,it.orderedQty,(it.orderedCost*it.orderedQty).toFixed(2)].join(','));
   const csv=[header,...rows].join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`PO_${po.poNumber}_${po.date||''}.csv`; a.click();
@@ -3839,7 +3879,7 @@ window.exportViewedPO=function(){
 window.printViewedPO=function(){
   const po=savedPOs.find(p=>p.id===viewedPoId); if(!po){ return; }
   const grandTotal=(po.items||[]).reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
-  const rows=(po.items||[]).map(it=>`<tr><td style="padding:6px;border:1px solid #ccc">${it.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${it.name}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(it.orderedCost||0).toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${it.orderedQty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${((it.orderedCost||0)*it.orderedQty).toFixed(2)}</td></tr>`).join('');
+  const rows=(po.items||[]).map(it=>`<tr><td style="padding:6px;border:1px solid #ccc">${it.sku||'-'}</td><td style="padding:6px;border:1px solid #ccc">${it.name}${poItemLabel(it)?` (${poItemLabel(it)})`:''}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${(it.orderedCost||0).toFixed(2)}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${it.orderedQty}</td><td style="padding:6px;border:1px solid #ccc;text-align:right">${((it.orderedCost||0)*it.orderedQty).toFixed(2)}</td></tr>`).join('');
   const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html><head><title>PO ${po.poNumber}</title><style>body{font-family:Arial,sans-serif;font-size:13px;padding:30px;color:#000}@media print{body{padding:10px}}</style></head><body>
     <div style="text-align:center;margin-bottom:20px;border-bottom:3px double #000;padding-bottom:16px">
@@ -3906,7 +3946,7 @@ window.openIntake=function(id){
   document.getElementById('intakeBody').innerHTML=po.items.map((it,i)=>`
     <div class="intake-item">
       <div class="po-info" style="min-width:0">
-        <div class="po-name">${it.name}</div>
+        <div class="po-name">${it.name}${poItemLabel(it)?` <span style="color:var(--text3);font-weight:400">(${poItemLabel(it)})</span>`:''}</div>
         <div class="po-meta">${it.sku||'No SKU'} · ${it.supplier||'No supplier'} · Ordered ${it.orderedQty} @ ${fmt(it.orderedCost)}</div>
       </div>
       <div class="field"><label>Recv Qty</label><input type="number" class="po-qty" id="iq_${i}" value="${it.recvQty}" min="0" step="1" oninput="updateIntakeSummary()"></div>
