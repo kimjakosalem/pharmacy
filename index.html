@@ -590,7 +590,13 @@ select option{background:var(--bg3)}
     </div>
     <div class="field" id="paySubWrap" style="margin-top:8px">
       <label id="paySubLabel">Cash source</label>
-      <select id="paySub"></select>
+      <select id="paySub" onchange="onPaySubChange()"></select>
+    </div>
+    <div class="field" id="payEnvWrap" style="margin-top:8px;display:none">
+      <label>Envelope(s) <span style="color:var(--red)">*</span></label>
+      <div id="payEnvRows"></div>
+      <div class="btn-row" style="margin-bottom:6px"><button type="button" class="btn btn-ghost btn-xs" onclick="addPayEnvRow()"><i class="ti ti-plus"></i> Add Envelope</button></div>
+      <div id="payEnvAllocSummary" style="font-size:11px;color:var(--text3)"></div>
     </div>
     <div style="font-size:10px;color:var(--text3);margin-top:6px" id="payHint"></div>
     <div class="btn-row" style="margin-top:14px">
@@ -1135,18 +1141,10 @@ select option{background:var(--bg3)}
             <input type="hidden" id="qrCashSource" value="Drawer Cash">
           </div>
           <div id="qrEnvelopeBox" style="display:none;margin-bottom:9px">
-            <div class="infonote" style="margin-bottom:9px"><i class="ti ti-info-circle"></i> Take Home cash comes from a past shift's envelope, not today's drawer — say which envelope it's coming from.</div>
-            <div class="fg fg2" style="margin-bottom:9px">
-              <div class="field"><label>Envelope Date <span style="color:var(--red)">*</span></label><input type="date" id="qrEnvDate"></div>
-              <div class="field"><label>Envelope Shift <span style="color:var(--red)">*</span></label>
-                <div class="seg-grid" id="qrEnvShiftGroup" style="grid-template-columns:1fr 1fr">
-                  <button type="button" class="disc-btn active" data-val="AM" onclick="setQrEnvShift(this)">Morning (AM)</button>
-                  <button type="button" class="disc-btn" data-val="PM" onclick="setQrEnvShift(this)">Evening (PM)</button>
-                </div>
-                <input type="hidden" id="qrEnvShift" value="AM">
-              </div>
-            </div>
-            <div class="field"><label>Envelope Remaining Balance (after this) <span style="color:var(--red)">*</span></label><input type="number" id="qrEnvBalance" placeholder="0.00" step="0.01" min="0"></div>
+            <div class="infonote" style="margin-bottom:9px"><i class="ti ti-info-circle"></i> Take Home cash comes from undeposited envelope(s), not today's drawer — pick which one(s) this is coming from. A large delivery can draw from more than one.</div>
+            <div id="qrEnvRows"></div>
+            <div class="btn-row" style="margin-bottom:6px"><button type="button" class="btn btn-ghost btn-xs" onclick="addQrEnvRow()"><i class="ti ti-plus"></i> Add Envelope</button></div>
+            <div id="qrEnvAllocSummary" style="font-size:11px;color:var(--text3)"></div>
           </div>
           <div class="infonote" id="qrCheckNote" style="display:none"><i class="ti ti-info-circle"></i> Saved as an unpaid delivery — pay it later from the Payables log, same as any other PO.</div>
           <div id="qrSummary" style="font-size:11px;color:var(--text3);margin:8px 0"></div>
@@ -1158,6 +1156,30 @@ select option{background:var(--bg3)}
 
   <!-- ═══ PAYABLES ═══ -->
   <div class="panel" id="panel-payables">
+    <div class="card card-accent-blue">
+      <div class="card-title ct-blue"><i class="ti ti-mailbox"></i> Undeposited Envelopes <span id="envListCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">Take-Home cash from a closed shift is automatically put into an envelope here (labeled by date + shift). It stays "undeposited" — and counts toward what's still sitting in the drawer, not the bank — until you tap <strong style="color:var(--teal)">Deposit</strong>. Paying a supplier with Take Home cash (Orders → Receive Delivery, or Payables → Pay) draws down the envelope's balance.</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;margin-bottom:9px;padding:8px 10px;background:var(--bg3);border-radius:var(--r)">
+        <span style="color:var(--text2)">Total undeposited</span>
+        <span id="envTotal" style="font-family:var(--mono);color:var(--blue)">PHP 0.00</span>
+      </div>
+      <div class="elist" id="envList"></div>
+      <div id="envArchiveContainer"></div>
+      <div class="sep"></div>
+      <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px"><i class="ti ti-pencil-plus" style="font-size:11px"></i> ADD / ADJUST AN ENVELOPE <span style="font-weight:400;text-transform:none;color:var(--text3)">(owner — e.g. to backfill one from before this tracker existed)</span></div>
+      <div class="fg fg3">
+        <div class="field"><label>Date</label><input type="date" id="envAddDate"></div>
+        <div class="field"><label>Shift</label>
+          <div class="seg-grid" id="envAddShiftGroup" style="grid-template-columns:1fr 1fr">
+            <button type="button" class="disc-btn active" data-val="1" onclick="setEnvAddShift(this)">Morning</button>
+            <button type="button" class="disc-btn" data-val="2" onclick="setEnvAddShift(this)">Evening</button>
+          </div>
+          <input type="hidden" id="envAddShift" value="1">
+        </div>
+        <div class="field"><label>Amount (PHP)</label><input type="number" id="envAddAmt" placeholder="0.00" step="0.01" min="0"></div>
+      </div>
+      <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="manualAddEnvelope()"><i class="ti ti-plus"></i> Add / Update Envelope</button></div>
+    </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-plus"></i> Add Bank / Account Payable</div>
       <div class="fg fg3">
@@ -1579,6 +1601,7 @@ window.finishShift=async function(){
   // csManual is read-only — it just reflects manual sales already logged this shift; no new entry to add.
   s.saved=true; s.savedAt=tnow(); s.closedBy=session.name;
   await persistShift(curShift);
+  await upsertEnvelope(s.date||today(), curShift, s.takehome);
   closeCloseShift();
   toast('Shift closed — logged out','ok');
   session=null; applyRole();
@@ -1647,7 +1670,7 @@ window.switchTab=function(tab){
   // Guard owner-only tabs against direct/programmatic access by non-owners.
   if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='shift'){renderSales();renderReturns();} if(tab==='reports')setReportView(reportView); if(tab==='payables')renderPayables(); if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff(); if(tab==='pos')renderPosBackdateBanner();
+  if(tab==='shift'){renderSales();renderReturns();} if(tab==='reports')setReportView(reportView); if(tab==='payables'){renderPayables();renderEnvelopes();} if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff(); if(tab==='pos')renderPosBackdateBanner();
 };
 
 // ── SHIFT ──
@@ -1695,6 +1718,7 @@ async function flushFields(){
   s.drawer=parseFloat(document.getElementById('drawer').value)||0;
   s.takehome=parseFloat(document.getElementById('takehome').value)||0;
   s.nextCash=parseFloat(document.getElementById('nextCash').value)||0;
+  await upsertEnvelope(s.date||today(), curShift, s.takehome);
 }
 window.saveShift=async function(){ await flushFields(); const s=await getShift(curShift); s.saved=true; s.savedAt=tnow(); await persistShift(curShift); document.getElementById('savingInd').classList.remove('show'); toast(`${curShift===1?'Morning':'Evening'} shift saved OK`,'ok'); };
 // Clearing a shift wipes its entire doc (cashier, cash ins/outs, POS sales log, manual sales,
@@ -3202,6 +3226,200 @@ window.renderDaily=async function(){
 };
 async function renderDaily(){ await window.renderDaily(); }
 
+// ── Take-Home Envelopes: physical cash pulled from the drawer at shift-close, held in a
+// (non-cash) drawer until deposited to the bank. One envelope per shift per date, auto-created/
+// updated whenever that shift's Take-Home figure is saved; drawn down when Take Home cash is
+// used to pay a supplier/payable, and marked deposited once the owner actually banks it. ──
+function envelopeId(date,shift){ return `env_${date}_${shift}`; }
+function envShiftLabel(shift){ return (parseInt(shift)===1)?'Morning':'Evening'; }
+async function upsertEnvelope(date, shift, amount){
+  if(!date || !shift) return;
+  amount = Math.round((amount||0)*100)/100;
+  const id = envelopeId(date, shift);
+  const existing = await fsGet('envelopes', id);
+  if(amount<=0){
+    // Take-home corrected down to zero/blank — drop the envelope, but only if untouched
+    // (never withdrawn from, still undeposited), so a real record is never silently lost.
+    if(existing && !(existing.withdrawals||[]).length && existing.status!=='deposited'){
+      await fsDel('envelopes', id);
+    }
+    return;
+  }
+  if(existing){
+    if(existing.originalAmount===amount) return;   // no change — skip the write
+    const withdrawn=(existing.withdrawals||[]).reduce((a,w)=>a+w.amount,0);
+    existing.originalAmount=amount;
+    existing.balance=Math.round((amount-withdrawn)*100)/100;
+    existing.updatedAt=tnow();
+    await fsSet('envelopes', id, existing);
+  } else {
+    await fsSet('envelopes', id, {
+      id, date, shift:parseInt(shift), originalAmount:amount, balance:amount,
+      status:'undeposited', withdrawals:[], createdAt:tnow(), createdBy:session?.name||''
+    });
+  }
+  if(document.getElementById('panel-payables')?.classList.contains('active')) renderEnvelopes();
+}
+// Draws cash out of one or more envelopes at once (e.g. a delivery too big for a single
+// envelope). Validates every allocation FIRST (no writes) so a shortfall on any one envelope
+// aborts the whole payment instead of leaving it partially drawn down. `allocations`:
+// [{id, amount}] — the same envelope id can appear more than once, amounts are combined.
+async function withdrawFromEnvelopes(allocations, note){
+  const byId={};
+  for(const a of allocations){
+    if(!a.id) return {ok:false, msg:'Pick an envelope for each row'};
+    if(!(a.amount>0)) return {ok:false, msg:'Each envelope needs an amount greater than 0'};
+    byId[a.id]=Math.round(((byId[a.id]||0)+a.amount)*100)/100;
+  }
+  const envs={};
+  for(const id of Object.keys(byId)){
+    const env=await fsGet('envelopes', id); if(!env) return {ok:false, msg:'Envelope not found'};
+    if(env.status==='deposited') return {ok:false, msg:'One of the selected envelopes has already been deposited'};
+    if((env.balance||0) < byId[id]-0.005) return {ok:false, msg:`${env.date} · ${envShiftLabel(env.shift)} only has ${fmt(env.balance||0)} left`};
+    envs[id]=env;
+  }
+  const touched=[];
+  for(const id of Object.keys(byId)){
+    const env=envs[id];
+    env.withdrawals=env.withdrawals||[];
+    env.withdrawals.push({amount:byId[id], note:note||'', time:tnow(), by:session?.name||''});
+    env.balance=Math.round(((env.balance||0)-byId[id])*100)/100;
+    await fsSet('envelopes', id, env);
+    touched.push(env);
+  }
+  return {ok:true, envelopes:touched};
+}
+window.confirmDepositEnvelope=async function(id){
+  if(session?.role!=='owner'){ toast('Only the owner can mark an envelope deposited','err'); return; }
+  if(!confirm('Mark this envelope as deposited to the bank?')) return;
+  const env=await fsGet('envelopes', id); if(!env) return;
+  env.status='deposited'; env.depositedAt=tnow(); env.depositedBy=session?.name||'';
+  await fsSet('envelopes', id, env);
+  renderEnvelopes();
+  toast('Envelope marked deposited','ok');
+};
+let envArchiveOpen=false;
+window.toggleEnvArchive=function(){ envArchiveOpen=!envArchiveOpen; renderEnvelopes(); };
+function envRowHtml(e){
+  const withdrawn=(e.withdrawals||[]).reduce((a,w)=>a+w.amount,0);
+  const deposited=e.status==='deposited';
+  const chip=deposited?'<span class="chip chip-ok">Deposited</span>':'<span class="chip chip-low">Undeposited</span>';
+  const sub=withdrawn>0?` · ${fmt(withdrawn)} withdrawn (orig ${fmt(e.originalAmount)})`:'';
+  const depInfo=deposited?` · deposited ${e.depositedAt||''}${e.depositedBy?' by '+e.depositedBy:''}`:'';
+  return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${e.date} · ${envShiftLabel(e.shift)} ${chip}</div><div class="ed">Balance: ${fmt(e.balance)}${sub}${depInfo}</div></div><div style="display:flex;align-items:center;gap:6px">${(!deposited&&session?.role==='owner')?`<button class="btn btn-teal btn-xs" onclick="confirmDepositEnvelope('${e.id}')"><i class="ti ti-building-bank"></i> Deposit</button>`:''}</div></div>`;
+}
+window.renderEnvelopes=async function(){
+  const el=document.getElementById('envList'); if(!el) return;
+  const all=await fsGetAll('envelopes');
+  all.sort((a,b)=>(b.date||'').localeCompare(a.date||'')||((b.shift||0)-(a.shift||0)));
+  const active=all.filter(e=>e.status!=='deposited');
+  const archived=all.filter(e=>e.status==='deposited');
+  const total=active.reduce((a,e)=>a+(e.balance||0),0);
+  document.getElementById('envTotal').textContent=fmt(total);
+  document.getElementById('envListCount').textContent=`${active.length} undeposited · ${archived.length} deposited`;
+  el.innerHTML=active.length?active.map(envRowHtml).join(''):'<div class="empty"><i class="ti ti-mailbox"></i>No undeposited envelopes</div>';
+  const arEl=document.getElementById('envArchiveContainer');
+  if(arEl){
+    arEl.innerHTML = archived.length
+      ? `<button class="archive-toggle ${envArchiveOpen?'open':''}" onclick="toggleEnvArchive()"><i class="ti ti-archive"></i> ARCHIVE — Deposited (${archived.length}) <i class="ti ti-chevron-right chev"></i></button>${envArchiveOpen?`<div class="archive-body elist">${archived.map(envRowHtml).join('')}</div>`:''}`
+      : '';
+  }
+};
+async function renderEnvelopes(){ await window.renderEnvelopes(); }
+window.setEnvAddShift=function(btn){
+  if(!btn) return;
+  document.getElementById('envAddShiftGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('envAddShift').value=btn.dataset.val;
+};
+window.manualAddEnvelope=async function(){
+  if(session?.role!=='owner'){ toast('Only the owner can add/adjust an envelope','err'); return; }
+  const date=document.getElementById('envAddDate').value;
+  const shift=parseInt(document.getElementById('envAddShift').value)||1;
+  const amt=parseFloat(document.getElementById('envAddAmt').value);
+  if(!date){ toast('Pick a date','err'); return; }
+  if(isNaN(amt)||amt<0){ toast('Enter an amount','err'); return; }
+  await upsertEnvelope(date, shift, amt);
+  document.getElementById('envAddAmt').value='';
+  renderEnvelopes();
+  toast('Envelope saved','ok');
+};
+// ── Multi-envelope allocator: a small reusable "pick envelope(s) + amount each" widget,
+// used by both the Receive Delivery "Take Home" picker and the Payables "Pay" modal's Take
+// Home picker — a single envelope isn't always enough (e.g. a large delivery), so this lets
+// the owner/staff split one payment across several undeposited envelopes. ──
+async function fetchUndepositedEnvelopes(){
+  const all=await fsGetAll('envelopes');
+  return all.filter(e=>e.status!=='deposited' && (e.balance||0)>0)
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||((b.shift||0)-(a.shift||0)));
+}
+function envOptionsHtml(options, selectedId){
+  if(!options.length) return `<option value="">No undeposited envelopes — add one in Payables</option>`;
+  return `<option value="">— Select —</option>`+options.map(e=>`<option value="${e.id}"${e.id===selectedId?' selected':''}>${e.date} · ${envShiftLabel(e.shift)} — balance ${fmt(e.balance)}</option>`).join('');
+}
+function envAllocSummaryHtml(target, allocated){
+  const diff=Math.round((target-allocated)*100)/100;
+  const ok=Math.abs(diff)<0.01;
+  return `Allocated: <strong style="color:${ok?'var(--green)':'var(--amber)'}">${fmt(allocated)}</strong> / ${fmt(target)}${!ok?` <span style="color:var(--amber)">(${diff>0?'short':'over'} ${fmt(Math.abs(diff))})</span>`:''}`;
+}
+// Receive Delivery's envelope rows
+let qrEnvRows=[], qrEnvOptions=[];
+async function initQrEnvRows(){
+  qrEnvOptions=await fetchUndepositedEnvelopes();
+  qrEnvRows=[{id:'', amount:qrGrandTotal()}];
+  renderQrEnvRows();
+}
+function renderQrEnvRows(){
+  const el=document.getElementById('qrEnvRows'); if(!el) return;
+  el.innerHTML=qrEnvRows.map((r,i)=>`
+    <div class="fg" style="grid-template-columns:1fr 110px 28px;gap:6px;margin-bottom:6px;align-items:end">
+      <div class="field"><label style="${i>0?'visibility:hidden':''}">Envelope</label><select onchange="updateQrEnvRow(${i},'id',this.value)">${envOptionsHtml(qrEnvOptions,r.id)}</select></div>
+      <div class="field"><label style="${i>0?'visibility:hidden':''}">Amount</label><input type="number" step="0.01" min="0" value="${r.amount||''}" oninput="updateQrEnvRow(${i},'amount',this.value)"></div>
+      ${qrEnvRows.length>1?`<button type="button" class="del-btn" onclick="removeQrEnvRow(${i})"><i class="ti ti-x"></i></button>`:'<span></span>'}
+    </div>`).join('');
+  updateQrEnvAllocSummary();
+}
+window.addQrEnvRow=function(){
+  const allocated=qrEnvRows.reduce((a,r)=>a+(r.amount||0),0);
+  qrEnvRows.push({id:'', amount:Math.max(0,Math.round((qrGrandTotal()-allocated)*100)/100)});
+  renderQrEnvRows();
+};
+window.removeQrEnvRow=function(i){ qrEnvRows.splice(i,1); if(!qrEnvRows.length) qrEnvRows.push({id:'',amount:0}); renderQrEnvRows(); };
+window.updateQrEnvRow=function(i,field,val){ qrEnvRows[i][field]=field==='amount'?(parseFloat(val)||0):val; updateQrEnvAllocSummary(); };
+function updateQrEnvAllocSummary(){
+  const el=document.getElementById('qrEnvAllocSummary'); if(!el) return;
+  el.innerHTML=envAllocSummaryHtml(qrGrandTotal(), qrEnvRows.reduce((a,r)=>a+(r.amount||0),0));
+}
+// Payables "Pay" modal's envelope rows
+let payEnvRows=[], payEnvOptions=[];
+async function initPayEnvRows(targetAmount){
+  payEnvOptions=await fetchUndepositedEnvelopes();
+  payEnvRows=[{id:'', amount:targetAmount}];
+  renderPayEnvRows(targetAmount);
+}
+function renderPayEnvRows(targetAmount){
+  const el=document.getElementById('payEnvRows'); if(!el) return;
+  el.innerHTML=payEnvRows.map((r,i)=>`
+    <div class="fg" style="grid-template-columns:1fr 110px 28px;gap:6px;margin-bottom:6px;align-items:end">
+      <div class="field"><label style="${i>0?'visibility:hidden':''}">Envelope</label><select onchange="updatePayEnvRow(${i},'id',this.value)">${envOptionsHtml(payEnvOptions,r.id)}</select></div>
+      <div class="field"><label style="${i>0?'visibility:hidden':''}">Amount</label><input type="number" step="0.01" min="0" value="${r.amount||''}" oninput="updatePayEnvRow(${i},'amount',this.value)"></div>
+      ${payEnvRows.length>1?`<button type="button" class="del-btn" onclick="removePayEnvRow(${i})"><i class="ti ti-x"></i></button>`:'<span></span>'}
+    </div>`).join('');
+  updatePayEnvAllocSummary(targetAmount);
+}
+window.addPayEnvRow=function(){
+  const target=payTargetAmount();
+  const allocated=payEnvRows.reduce((a,r)=>a+(r.amount||0),0);
+  payEnvRows.push({id:'', amount:Math.max(0,Math.round((target-allocated)*100)/100)});
+  renderPayEnvRows(target);
+};
+window.removePayEnvRow=function(i){ payEnvRows.splice(i,1); if(!payEnvRows.length) payEnvRows.push({id:'',amount:0}); renderPayEnvRows(payTargetAmount()); };
+window.updatePayEnvRow=function(i,field,val){ payEnvRows[i][field]=field==='amount'?(parseFloat(val)||0):val; updatePayEnvAllocSummary(payTargetAmount()); };
+function updatePayEnvAllocSummary(targetAmount){
+  const el=document.getElementById('payEnvAllocSummary'); if(!el) return;
+  el.innerHTML=envAllocSummaryHtml(targetAmount, payEnvRows.reduce((a,r)=>a+(r.amount||0),0));
+}
+function payTargetAmount(){ return payingAmount||0; }
+
 window.addPayable=async function(){
   const amt=parseFloat(document.getElementById('payAmt').value)||0; if(!amt){toast('Enter amount','err');return;}
   const id='pay_'+Date.now();
@@ -3253,10 +3471,10 @@ window.renderPayables=async function(){
 async function renderPayables(){ await window.renderPayables(); }
 
 // ── Issue payment for a payable (SS4) ──
-let payingId=null;
+let payingId=null, payingAmount=0;
 window.openPayModal=async function(id){
   const list=await fsGetAll('payables'); const p=list.find(x=>x.id===id); if(!p) return;
-  payingId=id;
+  payingId=id; payingAmount=p.amount||0;
   document.getElementById('payModalInfo').innerHTML=`<strong>${p.desc||p.category}</strong><br>Amount: <strong style="color:var(--red)">${fmt(p.amount)}</strong>`;
   document.getElementById('payTerms').value='cod';
   onPayTermsChange();
@@ -3275,6 +3493,13 @@ window.onPayTermsChange=function(){
     sub.innerHTML=[['Drawer Cash','Drawer Cash'],['Take Home','Take Home']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
     hint.textContent='Logs a “Delivery Payment” cash-out in the current shift.';
   }
+  onPaySubChange();
+};
+// Take Home requires picking which undeposited envelope the cash is coming from.
+window.onPaySubChange=function(){
+  const isTakeHome=document.getElementById('payTerms').value==='cod' && document.getElementById('paySub').value==='Take Home';
+  document.getElementById('payEnvWrap').style.display=isTakeHome?'':'none';
+  if(isTakeHome) initPayEnvRows(payTargetAmount());
 };
 window.closePayModal=function(){ document.getElementById('payModal').classList.remove('show'); payingId=null; };
 window.confirmPay=async function(){
@@ -3283,17 +3508,34 @@ window.confirmPay=async function(){
   const terms=document.getElementById('payTerms').value;          // 'cod' | 'check'
   const sub=document.getElementById('paySub').value;              // cash source OR check term
   const isCash=terms==='cod';
-  const label=(isCash?'Cash on Delivery':'Check')+' — '+sub;
+  const isTakeHome=isCash && sub==='Take Home';
+  let envAllocations=null;
+  if(isTakeHome){
+    envAllocations=payEnvRows.filter(r=>r.id && r.amount>0).map(r=>({id:r.id, amount:r.amount}));
+    if(!envAllocations.length){ toast('Pick at least one envelope for this Take Home payment','err'); return; }
+    const allocated=envAllocations.reduce((a,r)=>a+r.amount,0);
+    if(Math.abs(allocated-p.amount)>0.01){ toast(`Envelope amounts must add up to ${fmt(p.amount)} (currently ${fmt(allocated)})`,'err'); return; }
+  }
+  let envResult=null;
+  if(envAllocations){
+    envResult=await withdrawFromEnvelopes(envAllocations, p.desc||p.supplier||'Payable settlement');
+    if(!envResult.ok){ toast(envResult.msg,'err'); return; }
+  }
+  const envLabel=envResult?` (envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)}`).join(', ')})`:'';
+  const label=(isCash?'Cash on Delivery':'Check')+' — '+sub+envLabel;
   p.status='paid'; p.paidVia=label; p.payTerm=label; p.paidBy=session?.name||''; p.paidByRole=session?.role||'staff'; p.paidAt=tnow(); p.paidDate=today();
+  if(envResult) p.envelopeIds=envResult.envelopes.map(e=>e.id);
   await fsSet('payables', p.id, p);
   // Cash payments (Take Home or Drawer) log a settlement cash-out in the current shift — the usual way.
   if(isCash){
     const s=await getShift(curShift);
     // Take-Home cash isn't register cash → flag nonDrawer so it's still listed as an expense
     // but doesn't reduce the expected drawer. Drawer Cash does reduce it.
-    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})`, time:tnow(), settlement:true, nonDrawer:(sub==='Take Home'), payableId:p.id});
+    const envNote=envResult?` · envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)} (remaining ${fmt(e.balance)})`).join(', ')}`:'';
+    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})${envNote}`, time:tnow(), cashier:session?.name||'', settlement:true, nonDrawer:(sub==='Take Home'), payableId:p.id, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
     await persistShift(curShift);
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
+    if(document.getElementById('panel-payables')?.classList.contains('active')) renderEnvelopes();
   }
   // Tag the linked PO as Paid.
   if(p.poId){
@@ -3397,8 +3639,14 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.60';
+const APP_VERSION='v4.62';
 const CHANGELOG=[
+  {v:'v4.62', date:'2026-07-07', notes:[
+    'Take Home payments (Orders → Receive Delivery, and Payables → Pay) can now draw from more than one envelope — tap "+ Add Envelope" to split a large delivery across two shifts\' worth of Take-Home cash. Each row still requires picking a real envelope and an amount; a running "Allocated: X / Y" total keeps it honest and blocks the payment until the envelopes add up to the full amount']},
+  {v:'v4.61', date:'2026-07-07', notes:[
+    'New "Undeposited Envelopes" tracker (Payables tab): when a shift is closed with a Take-Home/Remittance amount, an envelope is automatically created (labeled by date + shift) and stays "undeposited" until the owner taps Deposit — so you can always see exactly how much cash is sitting in the drawer waiting to go to the bank',
+    'Paying a supplier or payable with Take Home cash (Orders → Receive Delivery, or Payables → Pay) now requires picking WHICH undeposited envelope the cash is coming from — it draws down that envelope\'s real balance instead of a manually-typed figure, and blocks the payment if that envelope doesn\'t have enough left',
+    'Owner can manually add/adjust an envelope (e.g. to backfill ones from before this tracker existed) right from the Payables tab']},
   {v:'v4.60', date:'2026-07-07', notes:[
     'Receive Delivery: Payment (Cash/Check) and Cash source (Drawer/Take Home) are now tap-button pills instead of dropdowns, same defaults as before (Cash, Drawer Cash)',
     'Take Home now requires saying which envelope the cash is coming from — envelope date, AM/PM shift, and that envelope\'s remaining balance after taking the money out — so it\'s traceable back to a specific physical envelope of not-yet-deposited cash from a past shift',
@@ -3701,11 +3949,9 @@ function initOrderTab() {
 window.openNewOrderModal=function(mode){
   document.getElementById('orderSearch').value=''; document.getElementById('orderSearchResults').innerHTML='';
   document.getElementById('qrDR').value=''; document.getElementById('qrFee').value=0;
-  document.getElementById('qrEnvDate').value=''; document.getElementById('qrEnvBalance').value='';
-  // Reset the pill groups back to their defaults (Cash / Drawer Cash / AM).
+  // Reset the pill groups back to their defaults (Cash / Drawer Cash).
   setQrPayMode(document.querySelector('#qrPayModeGroup [data-val="cash"]'));
   setQrCashSource(document.querySelector('#qrCashSourceGroup [data-val="Drawer Cash"]'));
-  setQrEnvShift(document.querySelector('#qrEnvShiftGroup [data-val="AM"]'));
   setOrderModalMode(mode||'create');
   populateSupplierList();
   renderOrderList();
@@ -3734,11 +3980,6 @@ window.setQrCashSource=function(btn){
   document.getElementById('qrCashSource').value=btn.dataset.val;
   onQrCashSourceChange();
 };
-window.setQrEnvShift=function(btn){
-  if(!btn) return;
-  document.getElementById('qrEnvShiftGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
-  document.getElementById('qrEnvShift').value=btn.dataset.val;
-};
 window.onQrPayModeChange=function(){
   const isCash=document.getElementById('qrPayMode').value==='cash';
   document.getElementById('qrCashSourceField').style.display=isCash?'':'none';
@@ -3747,12 +3988,20 @@ window.onQrPayModeChange=function(){
   updateQrSummary();
 };
 // Take Home cash comes out of a past shift's not-yet-deposited envelope, not today's drawer —
-// require which envelope (date + AM/PM) and what's left in it, so it's traceable to a physical envelope.
+// require picking WHICH envelope it's coming from, so it's traceable to a physical envelope.
 window.onQrCashSourceChange=function(){
   const isCash=document.getElementById('qrPayMode').value==='cash';
   const isTakeHome=document.getElementById('qrCashSource').value==='Take Home';
-  document.getElementById('qrEnvelopeBox').style.display=(isCash&&isTakeHome)?'':'none';
+  const show=isCash&&isTakeHome;
+  document.getElementById('qrEnvelopeBox').style.display=show?'':'none';
+  if(show) initQrEnvRows();
 };
+function qrGrandTotal(){
+  const items=Object.values(orderItems);
+  const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
+  const fee=parseFloat(document.getElementById('qrFee').value)||0;
+  return Math.round((goods+fee)*100)/100;
+}
 window.updateQrSummary=function(){
   const el=document.getElementById('qrSummary'); if(!el) return;
   const items=Object.values(orderItems);
@@ -3763,6 +4012,7 @@ window.updateQrSummary=function(){
   el.innerHTML = units
     ? `Units: <strong style="color:var(--text)">${units}</strong> · Goods: <strong style="color:var(--text)">${fmt(goods)}</strong>${fee>0?` · Fee: <strong style="color:var(--amber)">+${fmt(fee)}</strong>`:''}<br>Total to settle: <strong style="color:var(--teal)">${fmt(grand)}</strong>`
     : '';
+  if(getComputedStyle(document.getElementById('qrEnvelopeBox')).display!=='none') updateQrEnvAllocSummary();
 };
 window.goToDeliveryPayment=function(){
   switchTab('orders');
@@ -3776,20 +4026,18 @@ window.confirmReceiveDelivery=async function(){
   if(!drNo){ toast('Enter the Delivery Receipt / Sales Invoice no.','err'); document.getElementById('qrDR').focus(); return; }
   const payMode=document.getElementById('qrPayMode').value;               // 'cash' | 'check'
   const cashSource=document.getElementById('qrCashSource').value;         // 'Drawer Cash' | 'Take Home'
-  let envelope=null;
-  if(payMode==='cash' && cashSource==='Take Home'){
-    const envDate=document.getElementById('qrEnvDate').value;
-    const envShift=document.getElementById('qrEnvShift').value;
-    const envBalance=parseFloat(document.getElementById('qrEnvBalance').value);
-    if(!envDate){ toast('Pick which envelope this Take Home cash is coming from (date)','err'); document.getElementById('qrEnvDate').focus(); return; }
-    if(isNaN(envBalance)||envBalance<0){ toast("Enter that envelope's remaining balance after this","err"); document.getElementById('qrEnvBalance').focus(); return; }
-    envelope={date:envDate, shift:envShift, remainingBalance:envBalance};
-  }
   const fee=parseFloat(document.getElementById('qrFee').value)||0;
   const units=items.reduce((a,oi)=>a+oi.qty,0);
   const feePerUnit=units>0?fee/units:0;
   const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
   const grand=Math.round((goods+fee)*100)/100;
+  let envAllocations=null;
+  if(payMode==='cash' && cashSource==='Take Home'){
+    envAllocations=qrEnvRows.filter(r=>r.id && r.amount>0).map(r=>({id:r.id, amount:r.amount}));
+    if(!envAllocations.length){ toast('Pick at least one envelope for this Take Home payment','err'); return; }
+    const allocated=envAllocations.reduce((a,r)=>a+r.amount,0);
+    if(Math.abs(allocated-grand)>0.01){ toast(`Envelope amounts must add up to ${fmt(grand)} (currently ${fmt(allocated)})`,'err'); return; }
+  }
   const poNum=document.getElementById('poNumber').value||('PO-'+Date.now());
   const id='po_'+Date.now();
   const supplier=orderSupplierOf();
@@ -3826,10 +4074,13 @@ window.confirmReceiveDelivery=async function(){
     payTerm:'', status:'unpaid'
   };
   let toastMsg=`Received — ${fmt(grand)} logged to Payables (unpaid)`;
+  let envResult=null;
   if(payMode==='cash'){
-    const label='Cash on Delivery — '+cashSource+(envelope?` (envelope ${envelope.date} ${envelope.shift})`:'');
+    if(envAllocations){ envResult=await withdrawFromEnvelopes(envAllocations, `${poNum} — ${supplier||'delivery'}`); if(!envResult.ok){ toast(envResult.msg,'err'); return; } }
+    const envLabel=envResult?` (envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)}`).join(', ')})`:'';
+    const label='Cash on Delivery — '+cashSource+envLabel;
     payable.status='paid'; payable.paidVia=label; payable.payTerm=label; payable.paidBy=session?.name||''; payable.paidByRole=session?.role||'staff'; payable.paidAt=now; payable.paidDate=today();
-    if(envelope) payable.envelope=envelope;
+    if(envResult) payable.envelopeIds=envResult.envelopes.map(e=>e.id);
     po.payStatus='paid'; po.paidVia=label; po.payTerm=label;
     toastMsg=`Received & paid — archived (${fmt(grand)})`;
   }
@@ -3848,11 +4099,12 @@ window.confirmReceiveDelivery=async function(){
   }
   if(payMode==='cash'){
     const s=await getShift(curShift);
-    const envNote=envelope?` · envelope ${envelope.date} ${envelope.shift}, remaining ${fmt(envelope.remainingBalance)}`:'';
-    s.cashOuts.push({type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})${envNote}`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId, envelope});
+    const envNote=envResult?` · envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)} (remaining ${fmt(e.balance)})`).join(', ')}`:'';
+    s.cashOuts.push({type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})${envNote}`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
     await persistShift(curShift);
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
   }
+  if(document.getElementById('panel-payables')?.classList.contains('active')) renderEnvelopes();
   orderItems={}; orderSupplier=''; document.getElementById('poNumber').value=''; poNumberManual=false;
   closeNewOrderModal();
   initOrderTab(); renderPayables(); renderLowStock();
