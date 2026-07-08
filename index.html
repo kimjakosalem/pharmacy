@@ -1056,6 +1056,7 @@ select option{background:var(--bg3)}
     <div class="card">
       <div class="card-title"><i class="ti ti-shopping-bag"></i> Orders</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">Ordering ahead? Use <strong style="color:var(--text2)">Create PO</strong>. A supplier dropping off stock in person? Use <strong style="color:var(--teal)">Receive Delivery</strong> — it logs the items, updates inventory/cost, and settles payment in one go.</div>
+      <div id="orderDraftBanner" style="display:none;margin-bottom:10px"></div>
       <div class="btn-row">
         <button class="btn btn-teal btn-sm" onclick="openNewOrderModal('create')"><i class="ti ti-plus"></i> New Order</button>
       </div>
@@ -1096,11 +1097,11 @@ select option{background:var(--bg3)}
           <select id="orderSupplierSelect" onchange="onOrderSupplierSelect()"></select>
           <input type="text" id="orderSupplierOther" placeholder="Enter supplier name..." autocomplete="off" oninput="setOrderSupplier(this.value)" style="display:none;margin-top:6px">
         </div>
-        <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001" oninput="markPoNumberManual()"></div>
+        <div class="field"><label>PO Number</label><input type="text" id="poNumber" placeholder="e.g. PO-2024-001" oninput="markPoNumberManual();saveOrderDraft()"></div>
       </div>
       <div class="fg fg2">
-        <div class="field"><label>Order Date</label><input type="date" id="poDate"></div>
-        <div class="field" id="poNotesField"><label>Notes / Terms</label><input type="text" id="poNotes" placeholder="e.g. Please deliver within 3 days"></div>
+        <div class="field"><label>Order Date</label><input type="date" id="poDate" onchange="saveOrderDraft()"></div>
+        <div class="field" id="poNotesField"><label>Notes / Terms</label><input type="text" id="poNotes" placeholder="e.g. Please deliver within 3 days" oninput="saveOrderDraft()"></div>
         <div class="field" id="qrDRField" style="display:none"><label>Delivery Receipt / SI No. <span style="color:var(--red)">*</span></label><input type="text" id="qrDR" placeholder="e.g. DR-00123"></div>
       </div>
       <div class="sep"></div>
@@ -1121,6 +1122,7 @@ select option{background:var(--bg3)}
           <button class="btn btn-teal btn-sm" onclick="savePO()"><i class="ti ti-device-floppy"></i> Save PO</button>
           <button class="btn btn-ghost btn-sm" onclick="exportPO()"><i class="ti ti-download"></i> Export CSV</button>
           <button class="btn btn-ghost btn-sm" onclick="printPO()"><i class="ti ti-printer"></i> Print / PDF</button>
+          <button class="btn btn-ghost btn-sm" onclick="pauseOrder()" title="Save progress and continue later"><i class="ti ti-clock-pause"></i> Pause</button>
         </div>
         <div id="receiveDeliveryFooter" style="display:none;margin-top:12px">
           <div class="field" style="margin-bottom:9px"><label>Delivery fee (optional, split across units)</label><input type="number" id="qrFee" placeholder="0.00" step="0.01" min="0" value="0" oninput="updateQrSummary()"></div>
@@ -1148,7 +1150,10 @@ select option{background:var(--bg3)}
           </div>
           <div class="infonote" id="qrCheckNote" style="display:none"><i class="ti ti-info-circle"></i> Saved as an unpaid delivery — pay it later from the Payables log, same as any other PO.</div>
           <div id="qrSummary" style="font-size:11px;color:var(--text3);margin:8px 0"></div>
-          <div class="btn-row"><button class="btn btn-teal btn-sm" onclick="confirmReceiveDelivery()"><i class="ti ti-truck-delivery"></i> Receive &amp; Pay</button></div>
+          <div class="btn-row">
+            <button class="btn btn-teal btn-sm" onclick="confirmReceiveDelivery()"><i class="ti ti-truck-delivery"></i> Receive &amp; Pay</button>
+            <button class="btn btn-ghost btn-sm" onclick="pauseOrder()" title="Save progress and continue later"><i class="ti ti-clock-pause"></i> Pause</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3639,8 +3644,10 @@ window.exportDay=async function(){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.62';
+const APP_VERSION='v4.63';
 const CHANGELOG=[
+  {v:'v4.63', date:'2026-07-08', notes:[
+    'Orders: creating a PO or receiving a delivery now autosaves as you build it — tap "Pause" (or just close the window) to stop mid-order, and a "Paused order" banner appears on the Orders tab so you can pick up right where you left off, even on a different day. It clears automatically once you Save PO or Receive & Pay']},
   {v:'v4.62', date:'2026-07-07', notes:[
     'Take Home payments (Orders → Receive Delivery, and Payables → Pay) can now draw from more than one envelope — tap "+ Add Envelope" to split a large delivery across two shifts\' worth of Take-Home cash. Each row still requires picking a real envelope and an amount; a running "Allocated: X / Y" total keeps it honest and blocks the payment until the envelopes add up to the full amount']},
   {v:'v4.61', date:'2026-07-07', notes:[
@@ -3943,6 +3950,78 @@ function initOrderTab() {
   renderLowStock();
   renderOrderList();
   loadPOs();
+  renderDraftBanner();
+}
+
+// ── Order Draft (pause/resume an in-progress PO or delivery) ──
+// Autosaved to localStorage on every cart change so a half-built order survives a page
+// reload / different day, without cluttering Firestore with abandoned drafts.
+const ORDER_DRAFT_KEY='pos_orderDraft';
+window.saveOrderDraft=function saveOrderDraft(){
+  const items=Object.values(orderItems);
+  if(!items.length){ clearOrderDraft(); return; }
+  const draft={
+    items: items.map(oi=>({prodId:oi.prod.id, qty:oi.qty, cost:oi.cost, size:oi.size||'', packaging:oi.packaging||''})),
+    supplier: orderSupplier,
+    poNumber: document.getElementById('poNumber')?.value||'',
+    poDate: document.getElementById('poDate')?.value||'',
+    poNotes: document.getElementById('poNotes')?.value||'',
+    mode: document.getElementById('orderModalMode')?.value||'create',
+    savedAt: `${today()} ${tnow()}`, savedBy: session?.name||''
+  };
+  try{ localStorage.setItem(ORDER_DRAFT_KEY, JSON.stringify(draft)); }catch(e){}
+}
+function getOrderDraft(){
+  try{ const raw=localStorage.getItem(ORDER_DRAFT_KEY); return raw?JSON.parse(raw):null; }catch(e){ return null; }
+}
+function clearOrderDraft(){ try{ localStorage.removeItem(ORDER_DRAFT_KEY); }catch(e){} }
+window.pauseOrder=function(){
+  if(!Object.keys(orderItems).length){ toast('Nothing to pause — order is empty','info'); return; }
+  saveOrderDraft();
+  orderItems={}; orderSupplier=''; poNumberManual=false;
+  closeNewOrderModal();
+  renderDraftBanner();
+  toast('Order paused — resume it anytime from the Orders tab','ok');
+};
+window.resumeOrderDraft=function(){
+  const d=getOrderDraft();
+  if(!d || !d.items || !d.items.length){ toast('No paused order found','err'); return; }
+  orderItems={}; orderSupplier=d.supplier||'';
+  let missing=0;
+  d.items.forEach(it=>{
+    const prod=allProducts.find(p=>p.id===it.prodId);
+    if(!prod){ missing++; return; }
+    const key=orderLineKey(it.prodId, {size:it.size, packaging:it.packaging});
+    orderItems[key]={id:key, prod, qty:it.qty, cost:it.cost, size:it.size||'', packaging:it.packaging||''};
+  });
+  openNewOrderModal(d.mode||'create');
+  if(d.poNumber){ document.getElementById('poNumber').value=d.poNumber; poNumberManual=true; }
+  if(d.poDate) document.getElementById('poDate').value=d.poDate;
+  if(d.poNotes) document.getElementById('poNotes').value=d.poNotes;
+  renderOrderList();
+  toast(missing?`Resumed — ${missing} item(s) no longer exist and were skipped`:'Paused order resumed','ok');
+};
+window.discardOrderDraft=function(){
+  clearOrderDraft();
+  renderDraftBanner();
+  toast('Paused order discarded','info');
+};
+function renderDraftBanner(){
+  const el=document.getElementById('orderDraftBanner'); if(!el) return;
+  const d=getOrderDraft();
+  if(!d || Object.keys(orderItems).length){ el.style.display='none'; el.innerHTML=''; return; }
+  const n=d.items.length;
+  el.style.display='';
+  el.innerHTML=`<div class="po-item" style="border:1px dashed var(--amber);background:rgba(255,180,0,.06)">
+      <div class="po-info">
+        <div class="po-name"><i class="ti ti-clock-pause" style="color:var(--amber)"></i> Paused order — ${n} item${n===1?'':'s'}${d.supplier?' · '+d.supplier:''}</div>
+        <div class="po-meta">Saved ${d.savedAt||''}${d.savedBy?' by '+d.savedBy:''} — resume to keep ordering</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-teal btn-xs" onclick="resumeOrderDraft()"><i class="ti ti-player-play"></i> Resume</button>
+        <button class="del-btn" onclick="discardOrderDraft()"><i class="ti ti-x"></i></button>
+      </div>
+    </div>`;
 }
 
 // ── New Order modal: Create PO (unchanged flow) vs Receive Delivery (combined create+receive+pay) ──
@@ -4106,6 +4185,7 @@ window.confirmReceiveDelivery=async function(){
   }
   if(document.getElementById('panel-payables')?.classList.contains('active')) renderEnvelopes();
   orderItems={}; orderSupplier=''; document.getElementById('poNumber').value=''; poNumberManual=false;
+  clearOrderDraft();
   closeNewOrderModal();
   initOrderTab(); renderPayables(); renderLowStock();
   toast(toastMsg,'ok');
@@ -4366,6 +4446,7 @@ function renderOrderList() {
 
   renderPOPreview(bySupplier);
   if(typeof updateQrSummary==='function') updateQrSummary();
+  saveOrderDraft();
 }
 
 // Live qty edit: update the line price, the order subtotal, and the PO preview in place —
@@ -4387,6 +4468,7 @@ function refreshOrderLine(id){
   const se=document.getElementById('orderSubtotal'); if(se) se.textContent=fmt(sub);
   renderPOPreview({[orderSupplierOf()]:Object.values(orderItems)});
   if(typeof updateQrSummary==='function') updateQrSummary();
+  saveOrderDraft();
 }
 
 function renderPOPreview(bySupplier) {
@@ -4551,6 +4633,7 @@ window.savePO=async function(){
     }
   }
   orderItems={}; orderSupplier=''; document.getElementById('poNumber').value=''; poNumberManual=false;
+  clearOrderDraft();
   closeNewOrderModal();
   initOrderTab();
   toast(`PO saved for ${supplier}`,'ok');
