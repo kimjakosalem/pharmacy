@@ -1034,6 +1034,21 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
+    <!-- Brand → Supplier mapping (Branded category auto-assign) -->
+    <div class="card" id="brandSupCard" style="margin-bottom:10px">
+      <div class="card-title"><i class="ti ti-building-factory-2"></i> Brand → Supplier Map <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">for Branded category auto-assign</span></div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.6">Map a brand name (e.g. Biogesic) to its usual supplier/manufacturer (e.g. Unilab). "Apply to Branded Products" scans every product in the <strong style="color:var(--text2)">Branded</strong> category and adds the matching supplier — it never removes or overwrites a supplier a product already has. Starter list is a guess at common ones; review and add more here.</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <input type="text" id="brandName" placeholder="Brand, e.g. Biogesic" style="flex:1;min-width:110px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none">
+        <input type="text" id="brandSupplier" list="brandSupplierList" placeholder="Supplier, e.g. Unilab" style="flex:1;min-width:110px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none">
+        <datalist id="brandSupplierList"></datalist>
+        <button class="btn btn-teal btn-sm" onclick="addBrandMap()"><i class="ti ti-plus"></i></button>
+      </div>
+      <div class="elist" id="brandMapList" style="max-height:220px;margin-bottom:10px"></div>
+      <button class="btn btn-ghost btn-sm" onclick="applyBrandSuppliers()"><i class="ti ti-wand"></i> Apply to Branded Products</button>
+      <span id="brandApplyMsg" style="font-size:11px;margin-left:8px;color:var(--text3)"></span>
+    </div>
+
     <div class="card">
       <div class="card-title"><i class="ti ti-package"></i> Product Inventory
         <span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400" id="prodCount"></span>
@@ -1226,6 +1241,7 @@ select option{background:var(--bg3)}
       <button class="pb" id="wkBtn" onclick="setReportView('week')">Weekly</button>
       <button class="pb" id="moBtn" onclick="setReportView('month')">Monthly</button>
       <button class="pb" id="yrBtn" onclick="setReportView('year')">Yearly</button>
+      <button class="pb" id="roBtn" onclick="setReportView('reorder')">Reorder</button>
     </div>
     <!-- Daily date picker (Daily view) -->
     <div class="fg fg2" id="dailyDateRow" style="margin-bottom:12px">
@@ -1237,8 +1253,16 @@ select option{background:var(--bg3)}
       <div class="field"><label>From</label><input type="date" id="rpFrom" onchange="renderReports()"></div>
       <div class="field"><label>To</label><input type="date" id="rpTo" onchange="renderReports()"></div>
     </div>
+    <!-- Reorder Suggestions controls (Reorder view) -->
+    <div class="fg fg4" id="reorderRow" style="margin-bottom:12px;display:none">
+      <div class="field"><label>Sales lookback (days)</label><input type="number" id="roLookback" value="30" min="7" step="1"></div>
+      <div class="field"><label>Supplier lead time (days)</label><input type="number" id="roLeadTime" value="3" min="0" step="1"></div>
+      <div class="field"><label>Restock to cover (days)</label><input type="number" id="roCoverage" value="14" min="1" step="1"></div>
+      <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-teal btn-sm" onclick="renderReorder()"><i class="ti ti-refresh"></i> Recalculate</button></div>
+    </div>
     <div id="dailyContent"></div>
     <div id="reportContent" style="display:none"></div>
+    <div id="reorderContent" style="display:none"></div>
   </div>
 
   <!-- ═══ SETTINGS ═══ -->
@@ -1567,7 +1591,7 @@ function applyRole(){
   const coOtherBtn=document.getElementById('coTypeOtherBtn'); if(coOtherBtn) coOtherBtn.style.display = owner?'':'none';
   // Products tab is open to all roles, but bulk import/export and the category/supplier
   // databases are owner-only management tools.
-  ['importExportCard','catSupCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=owner?'':'none'; });
+  ['importExportCard','catSupCard','brandSupCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=owner?'':'none'; });
   document.getElementById('userChip').style.display = session?'flex':'none';
   document.getElementById('closeShiftBtn').style.display = session?'inline-flex':'none';
   document.getElementById('logoutBtn').style.display = session?'inline-flex':'none';
@@ -2461,12 +2485,40 @@ async function loadProducts(){
 }
 // ── Categories & Suppliers databases (config/categories, config/suppliers) ──
 // Categories: [{name, markup}] (recommended markup %). Suppliers: [{name}].
-let categories=[], suppliers=[];
+let categories=[], suppliers=[], brandMap=[];
+// Starter brand → usual-supplier map for the Branded-category auto-assign tool. Seeded once
+// into config/brandMap on first load only (never overwrites later edits/deletions); freely
+// editable/extendable in Settings — this is a starting point, not a verified directory, so
+// review it before relying on it for real ordering decisions.
+const DEFAULT_BRAND_MAP=[
+  {brand:'Biogesic',supplier:'Unilab'},
+  {brand:'Tempra',supplier:'Taisho'},
+  {brand:'Neozep',supplier:'Unilab'},
+  {brand:'Bioflu',supplier:'Unilab'},
+  {brand:'Decolgen',supplier:'Unilab'},
+  {brand:'Solmux',supplier:'Unilab'},
+  {brand:'Alaxan',supplier:'Unilab'},
+  {brand:'Kremil-S',supplier:'Unilab'},
+  {brand:'Diatabs',supplier:'Unilab'},
+  {brand:'Enervon',supplier:'Unilab'},
+  {brand:'Ceelin',supplier:'Unilab'},
+  {brand:'Myra',supplier:'Unilab'},
+  {brand:'Buscopan',supplier:'Sanofi'},
+  {brand:'Neurobion',supplier:'P&G Health'},
+  {brand:'Centrum',supplier:'Haleon'},
+  {brand:'Robitussin',supplier:'Haleon'},
+  {brand:'Amoxil',supplier:'GSK'},
+  {brand:'Augmentin',supplier:'GSK'},
+  {brand:'Ventolin',supplier:'GSK'},
+];
 async function loadCatSup(){
   const c=await fsGet('config','categories',fresh=>{ if(Array.isArray(fresh?.value)){ categories=fresh.value.map(normCat); try{ renderCatSup(); populateCategoryList(); }catch(_){} } });
   categories=Array.isArray(c?.value)?c.value.map(normCat):[];
   const s=await fsGet('config','suppliers',fresh=>{ if(Array.isArray(fresh?.value)){ suppliers=fresh.value; try{ renderCatSup(); populateSupplierList(); }catch(_){} } });
   suppliers=Array.isArray(s?.value)?s.value:[];
+  const b=await fsGet('config','brandMap',fresh=>{ if(Array.isArray(fresh?.value)){ brandMap=fresh.value; try{ renderBrandMap(); }catch(_){} } });
+  if(b===null){ brandMap=DEFAULT_BRAND_MAP.slice(); await saveBrandMapDb(); }
+  else{ brandMap=Array.isArray(b.value)?b.value:[]; }
   await migrateConsignmentCategoriesDb();
 }
 // One-time migration (Settings → Categories & Suppliers DB): collapse any compound
@@ -2495,7 +2547,7 @@ function normCat(c){
 async function saveCategoriesDb(){ await fsSet('config','categories',{value:categories}); }
 async function saveSuppliersDb(){ await fsSet('config','suppliers',{value:suppliers}); }
 
-window.renderCatSup=function(){ renderCategoriesDb(); renderSuppliersDb(); };
+window.renderCatSup=function(){ renderCategoriesDb(); renderSuppliersDb(); renderBrandMap(); };
 function renderCategoriesDb(){
   const el=document.getElementById('catDbList'); if(!el)return;
   if(!categories.length){ el.innerHTML='<div class="empty" style="padding:10px">No categories yet</div>'; return; }
@@ -2539,6 +2591,52 @@ window.addSupplier=async function(){
   renderSuppliersDb(); populateSupplierList();
 };
 window.delSupplier=async function(i){ suppliers.splice(i,1); await saveSuppliersDb(); renderSuppliersDb(); populateSupplierList(); };
+async function saveBrandMapDb(){ await fsSet('config','brandMap',{value:brandMap}); }
+function renderBrandMap(){
+  const el=document.getElementById('brandMapList'); if(!el)return;
+  if(!brandMap.length){ el.innerHTML='<div class="empty" style="padding:10px">No brand mappings yet</div>'; }
+  else{
+    el.innerHTML=brandMap.map((b,i)=>`<div class="eitem"><div class="el" style="flex:1"><strong>${b.brand}</strong> <i class="ti ti-arrow-right" style="font-size:11px;color:var(--text3)"></i> ${b.supplier}</div><button class="del-btn" onclick="delBrandMap(${i})"><i class="ti ti-x"></i></button></div>`).join('');
+  }
+  const dl=document.getElementById('brandSupplierList');
+  if(dl) dl.innerHTML=knownSuppliers().map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+}
+window.addBrandMap=async function(){
+  const brand=document.getElementById('brandName').value.trim();
+  const supplier=document.getElementById('brandSupplier').value.trim();
+  if(!brand||!supplier){ toast('Enter both a brand and a supplier','err'); return; }
+  if(brandMap.some(b=>b.brand.toLowerCase()===brand.toLowerCase())){ toast('Brand already mapped','err'); return; }
+  brandMap.push({brand,supplier}); await saveBrandMapDb();
+  document.getElementById('brandName').value=''; document.getElementById('brandSupplier').value='';
+  renderBrandMap();
+};
+window.delBrandMap=async function(i){ brandMap.splice(i,1); await saveBrandMapDb(); renderBrandMap(); };
+// Scans every product in the "Branded" category against the brand→supplier map above and adds
+// the matching supplier to any product that's missing it. Additive only — never removes or
+// replaces a supplier a product already has (a Branded product can carry more than one).
+window.applyBrandSuppliers=async function(){
+  if(!brandMap.length){ toast('Add at least one brand mapping first','err'); return; }
+  const branded=Object.values(allProductsFull).filter(p=>(p.category||'').trim().toLowerCase()==='branded');
+  let updated=0, alreadyHad=0, noMatch=0;
+  const newSuppliers=new Set();
+  for(const p of branded){
+    const match=brandMap.find(b=>new RegExp('\\b'+b.brand.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(p.name||''));
+    if(!match){ noMatch++; continue; }
+    const cur=(p.suppliers||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(cur.some(s=>s.toLowerCase()===match.supplier.toLowerCase())){ alreadyHad++; continue; }
+    cur.push(match.supplier);
+    p.suppliers=cur.join(', ');
+    p.updatedAt=tnow();
+    newSuppliers.add(match.supplier);
+    await fsSet('products',p.id,p);
+    updated++;
+  }
+  if(newSuppliers.size) await ensureSuppliersRegistered([...newSuppliers]);
+  const msgEl=document.getElementById('brandApplyMsg');
+  if(msgEl) msgEl.textContent=`${updated} product${updated===1?'':'s'} updated · ${alreadyHad} already had it · ${noMatch} no match`;
+  toast(`Assigned suppliers to ${updated} product${updated===1?'':'s'}`, updated?'ok':'info');
+  if(updated) renderProducts();
+};
 // Auto-register supplier names (from product chips / saved POs) into the suppliers DB so they
 // become reusable, searchable entries instead of one-off free text.
 async function ensureSuppliersRegistered(names){
@@ -3734,14 +3832,17 @@ let rChart=null, curPeriod='week', reportView='daily';
 // Reports tab hosts the Daily summaries inline with Weekly/Monthly/Yearly.
 window.setReportView=function(v){
   reportView=v;
-  const map={daily:'dy',week:'wk',month:'mo',year:'yr'};
+  const map={daily:'dy',week:'wk',month:'mo',year:'yr',reorder:'ro'};
   Object.entries(map).forEach(([k,id])=>document.getElementById(id+'Btn')?.classList.toggle('active',k===v));
-  const daily=v==='daily';
+  const daily=v==='daily', reorder=v==='reorder';
   document.getElementById('dailyDateRow').style.display=daily?'':'none';
-  document.getElementById('rangeRow').style.display=daily?'none':'';
+  document.getElementById('rangeRow').style.display=(!daily&&!reorder)?'':'none';
+  document.getElementById('reorderRow').style.display=reorder?'':'none';
   document.getElementById('dailyContent').style.display=daily?'':'none';
-  document.getElementById('reportContent').style.display=daily?'none':'';
+  document.getElementById('reportContent').style.display=(!daily&&!reorder)?'':'none';
+  document.getElementById('reorderContent').style.display=reorder?'':'none';
   if(daily){ if(!document.getElementById('sumDate').value)document.getElementById('sumDate').value=today(); renderDaily(); }
+  else if(reorder){ renderReorder(); }
   else setPeriod(v);
 };
 window.setPeriod=function(p){
@@ -3820,10 +3921,128 @@ window.exportDay=async function(){
   const blob=new Blob([txt],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`drkimpharmacy_${dt}.txt`;a.click();
 };
 
+// ── Reorder Suggestions (Reports → Reorder) ──
+// Sales-velocity-based reordering: sums each product's units sold over a trailing window from
+// its shift sales history (same per-day shift docs Reports already reads), then flags anything
+// at/under a reorder point (velocity × lead time + the product's own Low Stock Alert as a safety
+// buffer) with a suggested qty to refill to a target coverage. Products with no recent sales but
+// already under their Low Stock Alert are still flagged (falls back to that manual threshold) so
+// slow movers and brand-new products aren't invisible just for lacking sales history.
+let reorderGroups=[];   // [[supplierName, rows[]], ...] from the last render — index is the onclick contract
+window.renderReorder=async function(){
+  const el=document.getElementById('reorderContent'); if(!el) return;
+  el.innerHTML='<div class="card"><div class="empty"><i class="ti ti-loader-2 spin" style="font-size:22px"></i>Crunching sales history...</div></div>';
+  if(!Object.keys(allProductsFull).length) await loadProducts();
+  const lookback=Math.max(7, parseInt(document.getElementById('roLookback').value)||30);
+  const leadTime=Math.max(0, parseInt(document.getElementById('roLeadTime').value)||0);
+  const coverage=Math.max(1, parseInt(document.getElementById('roCoverage').value)||14);
+
+  const qtyByProd={};
+  const end=new Date(), start=new Date(); start.setDate(end.getDate()-(lookback-1));
+  for(let cur=new Date(start); cur<=end; cur.setDate(cur.getDate()+1)){
+    const d=cur.toISOString().slice(0,10);
+    for(const n of [1,2]){
+      const s=await fsGet('shifts',shiftKey(n,d));
+      if(!s||!s.sales||!s.sales.length) continue;
+      s.sales.forEach(sale=>{ if(sale.voided) return; (sale.items||[]).forEach(it=>{ qtyByProd[it.prodId]=(qtyByProd[it.prodId]||0)+(it.qty||0); }); });
+    }
+  }
+
+  const rows=[];
+  Object.values(allProductsFull).forEach(p=>{
+    const velocity=(qtyByProd[p.id]||0)/lookback;
+    const stock=p.inventory||0;
+    const safety=p.lowStock||0;
+    const reorderPoint=velocity*leadTime+safety;
+    const needsReorder = (velocity>0 && stock<=reorderPoint) || (velocity===0 && stock<safety);
+    if(!needsReorder) return;
+    const targetStock=velocity*(leadTime+coverage)+safety;
+    const suggestQty=Math.max(0,Math.ceil(targetStock-stock));
+    if(suggestQty<=0) return;
+    const supplier=(p.suppliers||'').split(',').map(s=>s.trim()).filter(Boolean)[0] || 'No supplier';
+    rows.push({id:p.id, name:p.name, sku:p.sku||'', category:p.category||'', stock, velocity,
+      daysLeft: velocity>0 ? stock/velocity : null, suggestQty, supplier, noHistory: velocity===0});
+  });
+  // Most urgent first — no recent sales AND already under the alert floor is treated as most urgent.
+  rows.sort((a,b)=>(a.daysLeft==null?-1:a.daysLeft)-(b.daysLeft==null?-1:b.daysLeft));
+
+  if(!rows.length){
+    reorderGroups=[];
+    el.innerHTML='<div class="card"><div class="empty"><i class="ti ti-check"></i> Nothing needs reordering right now.</div></div>';
+    return;
+  }
+  const bySupplier={};
+  rows.forEach(r=>{ (bySupplier[r.supplier]=bySupplier[r.supplier]||[]).push(r); });
+  reorderGroups=Object.entries(bySupplier);
+
+  el.innerHTML=`<div class="mrow m3">
+      <div class="metric"><div class="ml">Products to Reorder</div><div class="mv c-tel">${rows.length}</div></div>
+      <div class="metric"><div class="ml">Lookback</div><div class="mv">${lookback}d</div></div>
+      <div class="metric"><div class="ml">Suppliers Involved</div><div class="mv">${reorderGroups.length}</div></div>
+    </div>` +
+    reorderGroups.map(([sup,items],gi)=>`
+    <div class="card">
+      <div class="card-title"><i class="ti ti-building-store"></i> ${sup} <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">${items.length} item${items.length===1?'':'s'}</span></div>
+      <div class="scroll-pan-x" style="overflow-x:auto">
+        <table class="prod-table">
+          <thead><tr><th>Product</th><th style="text-align:right">Stock</th><th style="text-align:right">Avg/day</th><th style="text-align:right">Days Left</th><th style="text-align:right">Suggest Qty</th><th style="text-align:right">Action</th></tr></thead>
+          <tbody>${items.map(r=>`<tr>
+            <td><div style="font-weight:500">${r.name}</div><div style="font-size:10px;color:var(--text3)">${r.sku||'-'}${r.category?' · '+r.category:''}${r.noHistory?' · <span style="color:var(--amber)">no recent sales</span>':''}</div></td>
+            <td style="text-align:right">${r.stock}</td>
+            <td style="text-align:right">${r.velocity.toFixed(2)}</td>
+            <td style="text-align:right">${r.daysLeft==null?'—':r.daysLeft.toFixed(1)}</td>
+            <td style="text-align:right;font-weight:600">${r.suggestQty}</td>
+            <td style="text-align:right"><button class="btn btn-ghost btn-xs" onclick="reorderAddToOrder('${r.id}',${r.suggestQty})"><i class="ti ti-plus"></i> Add</button></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div class="btn-row" style="margin-top:8px"><button class="btn btn-teal btn-sm" onclick="reorderAddGroupToOrder(${gi})"><i class="ti ti-shopping-cart-plus"></i> Add All ${items.length} to Order</button></div>
+    </div>`).join('');
+};
+async function renderReorder(){ await window.renderReorder(); }
+
+// Adds one suggested line to the in-progress Order (Orders tab) and jumps there. Variant
+// products can't get an exact split from product-level velocity, so those open the picker
+// instead of guessing a size.
+window.reorderAddToOrder=function(id, qty){
+  const prod=allProducts.find(p=>p.id===id); if(!prod){ toast('Product not found','err'); return; }
+  const full=allProductsFull[id];
+  switchTab('orders');
+  if(full && full.variants && full.variants.length){
+    openProductModal(id,'order');
+    toast('This item has variants — pick sizes for '+prod.name,'info');
+    return;
+  }
+  addOrderLine(prod, null, qty);
+  toast(`${prod.name} (x${qty}) added to order`,'ok');
+};
+window.reorderAddGroupToOrder=function(gi){
+  const grp=reorderGroups[gi]; if(!grp) return;
+  const [sup, items]=grp;
+  switchTab('orders');
+  let added=0, skippedVariants=0;
+  items.forEach(r=>{
+    const prod=allProducts.find(p=>p.id===r.id); if(!prod) return;
+    const full=allProductsFull[r.id];
+    if(full && full.variants && full.variants.length){ skippedVariants++; return; }   // add these individually above
+    addOrderLine(prod, null, r.suggestQty);
+    added++;
+  });
+  if(!orderSupplier && sup!=='No supplier'){ orderSupplier=sup; populateSupplierList(); renderOrderList(); }
+  toast(`${added} item${added===1?'':'s'} added to order${skippedVariants?` · ${skippedVariants} with variants need picking individually`:''}`, added?'ok':'info');
+};
+
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.68';
+const APP_VERSION='v4.70';
 const CHANGELOG=[
+  {v:'v4.70', date:'2026-07-14', notes:[
+    'Reports gets a new "Reorder" view: sums each product\'s units sold over a trailing window (default 30 days, adjustable) from shift sales history, flags anything at/under a reorder point (sales velocity × supplier lead time + its Low Stock Alert as a safety buffer), and suggests a qty to refill to a target coverage window — grouped by supplier so it\'s ready to feed into a PO',
+    'Products with no recent sales but already under their Low Stock Alert are still flagged (tagged "no recent sales") so brand-new or slow-moving items aren\'t invisible for lacking history',
+    'Each suggestion has a one-tap "Add" (or "Add All" per supplier) that drops it straight into the in-progress Order in the Orders tab, pre-filling the supplier when one isn\'t chosen yet']},
+  {v:'v4.69', date:'2026-07-14', notes:[
+    'Settings → new "Brand → Supplier Map" card: map a brand name (e.g. Biogesic) to its usual supplier/manufacturer (e.g. Unilab), then "Apply to Branded Products" scans every product in the Branded category and adds the matching supplier — additive only, never overwrites a supplier a product already has',
+    'Seeded with a starter list of ~19 common OTC brand→supplier pairs (Biogesic/Tempra/Neozep/etc.) — this is a guess to save typing, not a verified directory, so review and extend it in Settings before relying on it for ordering']},
   {v:'v4.68', date:'2026-07-14', notes:[
     'Owner: a delivered PO\'s View screen now has "Fix Discount/Fee" — corrects a mis-entered discount % or delivery fee after the fact (e.g. an accidental 100% discount that zeroed out what was owed) and syncs the linked Payables amount, without needing to delete and recreate the whole PO',
     'Owner: Cash Outs (today\'s Shift tab and Review Past Day) now have a pencil button to correct the amount in place — for when real cash left the drawer but got logged wrong (e.g. that same discount mistake). The old amount stays visible on the row so nothing is silently rewritten']},
