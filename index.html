@@ -573,8 +573,15 @@ select option{background:var(--bg3)}
       <input type="number" id="intakeFee" class="po-qty" value="0" min="0" step="0.01" style="width:110px" oninput="updateIntakeSummary()">
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
-      <div><div style="font-size:11px;color:var(--text);font-weight:500">Supplier Discount (%)</div><div style="font-size:9px;color:var(--text3)">Applied to the goods total, before the delivery fee</div></div>
-      <input type="number" id="intakeDiscPct" class="po-qty" value="0" min="0" max="100" step="0.01" style="width:110px" oninput="updateIntakeSummary()">
+      <div><div style="font-size:11px;color:var(--text);font-weight:500">Supplier Discount</div><div style="font-size:9px;color:var(--text3)">Applied to the goods total, before the delivery fee</div></div>
+      <div style="display:flex;gap:5px;align-items:center">
+        <input type="number" id="intakeDiscVal" class="po-qty" value="0" min="0" max="100" step="0.01" style="width:90px" oninput="updateIntakeSummary()">
+        <div class="seg-grid" id="intakeDiscModeGroup" style="width:66px;margin-top:0">
+          <button type="button" class="disc-btn active" data-val="pct" onclick="setIntakeDiscMode(this)" style="padding:6px 2px;font-size:10px">%</button>
+          <button type="button" class="disc-btn" data-val="php" onclick="setIntakeDiscMode(this)" style="padding:6px 2px;font-size:10px">₱</button>
+        </div>
+        <input type="hidden" id="intakeDiscMode" value="pct">
+      </div>
     </div>
     <div id="intakeSummary" style="font-size:11px;color:var(--text2);margin-top:10px;line-height:1.7"></div>
     <div style="font-size:9px;color:var(--text3);margin-top:6px">Confirming logs this delivery into Payables to settle later (payment terms are chosen when you pay).</div>
@@ -1133,7 +1140,8 @@ select option{background:var(--bg3)}
         <div class="field"><label>Search Product</label><div class="search-wrap"><input type="text" id="orderSearch" placeholder="Type name or SKU..." oninput="renderOrderSearch()"><button class="search-clear" id="orderSearchClear" onclick="clearOrderSearch()" title="Clear">&#x2715;</button></div></div><datalist id="supplierList"></datalist>
         <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="renderOrderSearch()"><i class="ti ti-search"></i> Search</button></div>
       </div>
-      <div id="orderSearchResults" style="margin-top:8px"></div>
+      <button class="btn btn-ghost btn-xs" style="margin-bottom:8px" onclick="quickAddProductFromOrder()"><i class="ti ti-plus"></i> Can't find it? Create new product</button>
+      <div id="orderSearchResults" style="margin-top:8px;max-height:420px;overflow-y:auto"></div>
       <div class="sep"></div>
       <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center"><i class="ti ti-shopping-bag" style="font-size:11px;margin-right:4px"></i> ORDER LIST <span id="orderItemCount" style="margin-left:auto;font-weight:400;color:var(--text3)"></span></div>
       <div id="orderList"></div>
@@ -1149,7 +1157,17 @@ select option{background:var(--bg3)}
         </div>
         <div id="receiveDeliveryFooter" style="display:none;margin-top:12px">
           <div class="field" style="margin-bottom:9px"><label>Delivery fee (optional, split across units)</label><input type="number" id="qrFee" placeholder="0.00" step="0.01" min="0" value="0" oninput="updateQrSummary()"></div>
-          <div class="field" style="margin-bottom:9px"><label>Supplier discount % (optional, applied to goods total)</label><input type="number" id="qrDiscPct" placeholder="0" step="0.01" min="0" max="100" value="0" oninput="updateQrSummary()"></div>
+          <div class="field" style="margin-bottom:9px">
+            <label>Supplier discount <span style="font-weight:400;color:var(--text3)">(optional, applied to goods total)</span></label>
+            <div style="display:flex;gap:6px;align-items:stretch">
+              <input type="number" id="qrDiscVal" placeholder="0" step="0.01" min="0" max="100" value="0" oninput="updateQrSummary()" style="flex:1;min-width:0">
+              <div class="seg-grid" id="qrDiscModeGroup" style="width:100px;flex-shrink:0;margin-top:0">
+                <button type="button" class="disc-btn active" data-val="pct" onclick="setQrDiscMode(this)">%</button>
+                <button type="button" class="disc-btn" data-val="php" onclick="setQrDiscMode(this)">₱</button>
+              </div>
+            </div>
+            <input type="hidden" id="qrDiscMode" value="pct">
+          </div>
           <div class="field" style="margin-bottom:9px">
             <label>Payment</label>
             <div class="seg-grid" id="qrPayModeGroup" style="grid-template-columns:1fr 1fr">
@@ -1317,6 +1335,8 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gsta
 import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
 Chart.register(...registerables);
+import { jsPDF } from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm';
+import autoTable from 'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/+esm';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBILAxqEi_2Zc5bCdaD4moGOgp5WDu4_xs",
@@ -3073,6 +3093,9 @@ window.saveProduct=async function(){
   msg.style.color='var(--teal)'; msg.textContent='Saved!';
   setTimeout(()=>msg.textContent='',2000);
   cancelEditProduct(); loadProducts(); toast('Product saved','ok');
+  // If this was created/edited from Create Order's quick-add or edit shortcut, refresh that
+  // search so the new item / added variant shows up immediately instead of needing a re-search.
+  if(document.getElementById('orderSearch')?.value.trim()) renderOrderSearch();
 };
 
 window.openAddProduct=function(){
@@ -3322,7 +3345,11 @@ window.clearCart=function(){ cart=[]; renderCart(); };
 window.removeCartItem=function(i){ cart.splice(i,1); renderCart(); };
 
 // ── Reusable numpad (cart qty + cash tendered) ──
-let npBuf='', npMode='qty', npCtx=null;
+// npTouched tracks whether any digit has been typed yet this time the pad is open. A pre-filled
+// value (e.g. a cart line's current qty of "1") sits in the buffer so confirming without typing
+// anything keeps it unchanged — but the FIRST digit typed replaces that buffer outright instead
+// of appending to it (tapping a qty of "1" and typing "50" used to produce "150").
+let npBuf='', npMode='qty', npCtx=null, npTouched=false;
 function npRender(){
   document.getElementById('npDisplay').textContent = npBuf||'0';
   const ch=document.getElementById('npChange');
@@ -3335,7 +3362,7 @@ function npRender(){
   } else { ch.textContent=''; }
 }
 function openNumpad(mode, ctx, title, okLabel){
-  npMode=mode; npCtx=ctx; npBuf=ctx.initial!=null?String(ctx.initial):'';
+  npMode=mode; npCtx=ctx; npBuf=ctx.initial!=null?String(ctx.initial):''; npTouched=false;
   document.getElementById('npTitle').textContent=title;
   document.getElementById('npOkLabel').textContent=okLabel||'OK';
   document.getElementById('npDecimal').style.visibility = (mode==='cash'||mode==='disc')?'visible':'hidden';
@@ -3344,9 +3371,14 @@ function openNumpad(mode, ctx, title, okLabel){
 }
 window.npKey=function(k){
   const dec=(npMode==='cash'||npMode==='disc');
-  if(k==='back'){ npBuf=npBuf.slice(0,-1); }
-  else if(k==='.'){ if(dec&&!npBuf.includes('.')) npBuf=(npBuf||'0')+'.'; }
-  else { if(npMode==='qty'&&npBuf.length>=4)return; if(dec){const parts=npBuf.split('.'); if(parts[1]&&parts[1].length>=2)return;} npBuf+=k; }
+  if(k==='back'){ npBuf=npBuf.slice(0,-1); npTouched=true; }
+  else if(k==='.'){ if(dec&&!npBuf.includes('.')) npBuf=(npBuf||'0')+'.'; npTouched=true; }
+  else {
+    if(!npTouched){ npBuf=''; npTouched=true; }   // first digit replaces the pre-filled value instead of appending to it
+    if(npMode==='qty'&&npBuf.length>=4)return;
+    if(dec){const parts=npBuf.split('.'); if(parts[1]&&parts[1].length>=2)return;}
+    npBuf+=k;
+  }
   npRender();
 };
 window.closeNumpad=function(){ document.getElementById('numpadModal').classList.remove('show'); npCtx=null; };
@@ -4034,8 +4066,16 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.70';
+const APP_VERSION='v4.72';
 const CHANGELOG=[
+  {v:'v4.72', date:'2026-07-16', notes:[
+    'Orders → "Send" on a saved PO now generates an actual PDF of the PO (header, item table, grand total) instead of copying plain text to the clipboard. On a phone/tablet it hands the PDF straight to your device\'s share sheet so you can pick Messenger and it goes in as a file attachment; on desktop (no share-to-app support) it downloads the PDF and opens the chat so you can attach it by hand']},
+  {v:'v4.71', date:'2026-07-16', notes:[
+    'Fixed: entering a quantity on the numpad (Add-to-Order variant picker, or editing a cart line) used to append to whatever number was already showing instead of replacing it — tapping a qty of "1" and typing "50" produced "150". First digit now always replaces the old value; confirming without typing anything still keeps it unchanged',
+    'Create Order search: no longer capped at the first 8 matches with the rest invisible — now shows up to 60 in a scrollable list, with a count of how many more matched if you\'re still over that',
+    'Create Order search: each result has an Edit shortcut to add a variant (or any other change) to that product without leaving Orders, plus a "Create new product" button (pre-filled with what you searched) for anything not registered yet',
+    'Paused orders: pausing an order now saves it into a list instead of one single slot, so you can pause a PO for one supplier, start a new PO/delivery for another, and resume either one later — the Orders tab banner lists every paused order, not just the last one',
+    'Receive Delivery\'s Supplier Discount field (both the quick on-the-spot flow and receiving from a saved PO) now has a %/₱ switch, for suppliers who quote a flat peso discount instead of a percentage']},
   {v:'v4.70', date:'2026-07-14', notes:[
     'Reports gets a new "Reorder" view: sums each product\'s units sold over a trailing window (default 30 days, adjustable) from shift sales history, flags anything at/under a reorder point (sales velocity × supplier lead time + its Low Stock Alert as a safety buffer), and suggests a qty to refill to a target coverage window — grouped by supplier so it\'s ready to feed into a PO',
     'Products with no recent sales but already under their Low Stock Alert are still flagged (tagged "no recent sales") so brand-new or slow-moving items aren\'t invisible for lacking history',
@@ -4367,14 +4407,39 @@ function initOrderTab() {
   renderDraftBanner();
 }
 
-// ── Order Draft (pause/resume an in-progress PO or delivery) ──
+// ── Order Drafts (pause/resume one or more in-progress POs or deliveries) ──
 // Autosaved to localStorage on every cart change so a half-built order survives a page
-// reload / different day, without cluttering Firestore with abandoned drafts.
-const ORDER_DRAFT_KEY='pos_orderDraft';
+// reload / different day, without cluttering Firestore with abandoned drafts. Stored as a LIST
+// so pausing one order (e.g. Supplier A) and starting another (Supplier B) keeps both around —
+// `activeDraftId` tracks which entry (if any) the currently-open order corresponds to, so
+// autosave updates that one entry in place instead of piling up duplicates.
+const ORDER_DRAFT_KEY='pos_orderDraft';        // legacy single-draft key — migrated once, then unused
+const ORDER_DRAFTS_KEY='pos_orderDrafts';
+let activeDraftId=null;
+function saveOrderDraftsList(list){ try{ localStorage.setItem(ORDER_DRAFTS_KEY, JSON.stringify(list)); }catch(e){} }
+function getOrderDrafts(){
+  try{
+    const raw=localStorage.getItem(ORDER_DRAFTS_KEY);
+    let list=raw?JSON.parse(raw):null;
+    if(!Array.isArray(list)){
+      // One-time migration from the old single-draft key, so an order paused before this
+      // upgrade isn't silently lost.
+      list=[];
+      try{
+        const legacyRaw=localStorage.getItem(ORDER_DRAFT_KEY);
+        if(legacyRaw){ const legacy=JSON.parse(legacyRaw); if(legacy&&legacy.items&&legacy.items.length){ legacy.id=legacy.id||('draft_'+Date.now()); list.push(legacy); } }
+      }catch(_){}
+      localStorage.removeItem(ORDER_DRAFT_KEY);
+      saveOrderDraftsList(list);
+    }
+    return list;
+  }catch(e){ return []; }
+}
 window.saveOrderDraft=function saveOrderDraft(){
   const items=Object.values(orderItems);
   if(!items.length){ clearOrderDraft(); return; }
   const draft={
+    id: activeDraftId || ('draft_'+Date.now()),
     items: items.map(oi=>({prodId:oi.prod.id, qty:oi.qty, cost:oi.cost, size:oi.size||'', packaging:oi.packaging||''})),
     supplier: orderSupplier,
     poNumber: document.getElementById('poNumber')?.value||'',
@@ -4383,24 +4448,31 @@ window.saveOrderDraft=function saveOrderDraft(){
     mode: document.getElementById('orderModalMode')?.value||'create',
     savedAt: `${today()} ${tnow()}`, savedBy: session?.name||''
   };
-  try{ localStorage.setItem(ORDER_DRAFT_KEY, JSON.stringify(draft)); }catch(e){}
+  activeDraftId=draft.id;
+  const drafts=getOrderDrafts();
+  const idx=drafts.findIndex(d=>d.id===draft.id);
+  if(idx>=0) drafts[idx]=draft; else drafts.push(draft);
+  saveOrderDraftsList(drafts);
 }
-function getOrderDraft(){
-  try{ const raw=localStorage.getItem(ORDER_DRAFT_KEY); return raw?JSON.parse(raw):null; }catch(e){ return null; }
+// Drops just the draft the currently-open order corresponds to (not the whole list) — called
+// both when the order empties out and after a successful Save PO / Receive & Pay.
+function clearOrderDraft(){
+  if(!activeDraftId) return;
+  saveOrderDraftsList(getOrderDrafts().filter(d=>d.id!==activeDraftId));
+  activeDraftId=null;
 }
-function clearOrderDraft(){ try{ localStorage.removeItem(ORDER_DRAFT_KEY); }catch(e){} }
 window.pauseOrder=function(){
   if(!Object.keys(orderItems).length){ toast('Nothing to pause — order is empty','info'); return; }
   saveOrderDraft();
-  orderItems={}; orderSupplier=''; poNumberManual=false;
+  orderItems={}; orderSupplier=''; activeDraftId=null; poNumberManual=false;
   closeNewOrderModal();
   renderDraftBanner();
   toast('Order paused — resume it anytime from the Orders tab','ok');
 };
-window.resumeOrderDraft=function(){
-  const d=getOrderDraft();
+window.resumeOrderDraft=function(id){
+  const d=getOrderDrafts().find(x=>x.id===id);
   if(!d || !d.items || !d.items.length){ toast('No paused order found','err'); return; }
-  orderItems={}; orderSupplier=d.supplier||'';
+  orderItems={}; orderSupplier=d.supplier||''; activeDraftId=d.id;
   let missing=0;
   d.items.forEach(it=>{
     const prod=allProducts.find(p=>p.id===it.prodId);
@@ -4413,38 +4485,44 @@ window.resumeOrderDraft=function(){
   if(d.poDate) document.getElementById('poDate').value=d.poDate;
   if(d.poNotes) document.getElementById('poNotes').value=d.poNotes;
   renderOrderList();
+  renderDraftBanner();
   toast(missing?`Resumed — ${missing} item(s) no longer exist and were skipped`:'Paused order resumed','ok');
 };
-window.discardOrderDraft=function(){
-  clearOrderDraft();
+window.discardOrderDraft=function(id){
+  saveOrderDraftsList(getOrderDrafts().filter(d=>d.id!==id));
   renderDraftBanner();
   toast('Paused order discarded','info');
 };
 function renderDraftBanner(){
   const el=document.getElementById('orderDraftBanner'); if(!el) return;
-  const d=getOrderDraft();
-  if(!d || Object.keys(orderItems).length){ el.style.display='none'; el.innerHTML=''; return; }
-  const n=d.items.length;
+  // Exclude whichever draft the currently-open order corresponds to — that one isn't "paused",
+  // it's just being edited right now, so it shouldn't show up in this list of its own siblings.
+  const drafts=getOrderDrafts().filter(d=>d.id!==activeDraftId);
+  if(!drafts.length){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='';
-  el.innerHTML=`<div class="po-item" style="border:1px dashed var(--amber);background:rgba(255,180,0,.06)">
+  el.innerHTML=drafts.map(d=>{
+    const n=d.items.length;
+    return `<div class="po-item" style="border:1px dashed var(--amber);background:rgba(255,180,0,.06);margin-bottom:6px">
       <div class="po-info">
         <div class="po-name"><i class="ti ti-clock-pause" style="color:var(--amber)"></i> Paused order — ${n} item${n===1?'':'s'}${d.supplier?' · '+d.supplier:''}</div>
         <div class="po-meta">Saved ${d.savedAt||''}${d.savedBy?' by '+d.savedBy:''} — resume to keep ordering</div>
       </div>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-teal btn-xs" onclick="resumeOrderDraft()"><i class="ti ti-player-play"></i> Resume</button>
-        <button class="del-btn" onclick="discardOrderDraft()"><i class="ti ti-x"></i></button>
+        <button class="btn btn-teal btn-xs" onclick="resumeOrderDraft('${d.id}')"><i class="ti ti-player-play"></i> Resume</button>
+        <button class="del-btn" onclick="discardOrderDraft('${d.id}')"><i class="ti ti-x"></i></button>
       </div>
     </div>`;
+  }).join('');
 }
 
 // ── New Order modal: Create PO (unchanged flow) vs Receive Delivery (combined create+receive+pay) ──
 window.openNewOrderModal=function(mode){
   document.getElementById('orderSearch').value=''; document.getElementById('orderSearchResults').innerHTML='';
-  document.getElementById('qrDR').value=''; document.getElementById('qrFee').value=0; document.getElementById('qrDiscPct').value=0;
-  // Reset the pill groups back to their defaults (Cash / Drawer Cash).
+  document.getElementById('qrDR').value=''; document.getElementById('qrFee').value=0; document.getElementById('qrDiscVal').value=0;
+  // Reset the pill groups back to their defaults (Cash / Drawer Cash / % discount).
   setQrPayMode(document.querySelector('#qrPayModeGroup [data-val="cash"]'));
   setQrCashSource(document.querySelector('#qrCashSourceGroup [data-val="Drawer Cash"]'));
+  setQrDiscMode(document.querySelector('#qrDiscModeGroup [data-val="pct"]'));
   setOrderModalMode(mode||'create');
   populateSupplierList();
   renderOrderList();
@@ -4473,6 +4551,27 @@ window.setQrCashSource=function(btn){
   document.getElementById('qrCashSource').value=btn.dataset.val;
   onQrCashSourceChange();
 };
+// Supplier discount can be entered as a % of the goods total or as a flat peso amount — this
+// just switches how the same input's number is interpreted (see qrDiscPctResolved).
+window.setQrDiscMode=function(btn){
+  if(!btn) return;
+  document.getElementById('qrDiscModeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('qrDiscMode').value=btn.dataset.val;
+  const input=document.getElementById('qrDiscVal');
+  if(btn.dataset.val==='php'){ input.removeAttribute('max'); input.placeholder='0.00'; }
+  else { input.max='100'; input.placeholder='0'; }
+  updateQrSummary();
+};
+// Resolves the discount input to an equivalent % of the goods total, whichever mode it was
+// entered in — every downstream calc (per-unit landed cost, payable total) already assumes a %
+// spread proportionally across each line's cost, so converting once here means nothing else
+// needs to branch on which mode was picked.
+function qrDiscPctResolved(goods){
+  const mode=document.getElementById('qrDiscMode')?.value||'pct';
+  const raw=parseFloat(document.getElementById('qrDiscVal').value)||0;
+  if(mode==='php') return goods>0 ? Math.min(100,Math.max(0, raw/goods*100)) : 0;
+  return Math.min(100,Math.max(0, raw));
+}
 window.onQrPayModeChange=function(){
   const isCash=document.getElementById('qrPayMode').value==='cash';
   document.getElementById('qrCashSourceField').style.display=isCash?'':'none';
@@ -4492,7 +4591,7 @@ window.onQrCashSourceChange=function(){
 function qrGrandTotal(){
   const items=Object.values(orderItems);
   const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
-  const discPct=Math.min(100,Math.max(0,parseFloat(document.getElementById('qrDiscPct').value)||0));
+  const discPct=qrDiscPctResolved(goods);
   const fee=parseFloat(document.getElementById('qrFee').value)||0;
   return Math.round((goods*(1-discPct/100)+fee)*100)/100;
 }
@@ -4501,12 +4600,13 @@ window.updateQrSummary=function(){
   const items=Object.values(orderItems);
   const units=items.reduce((a,oi)=>a+oi.qty,0);
   const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
-  const discPct=Math.min(100,Math.max(0,parseFloat(document.getElementById('qrDiscPct').value)||0));
+  const discPct=qrDiscPctResolved(goods);
   const discAmt=goods*discPct/100;
+  const discLabel=(document.getElementById('qrDiscMode')?.value==='php')?`₱${(parseFloat(document.getElementById('qrDiscVal').value)||0).toFixed(2)}`:`${discPct}%`;
   const fee=parseFloat(document.getElementById('qrFee').value)||0;
   const grand=goods-discAmt+fee;
   el.innerHTML = units
-    ? `Units: <strong style="color:var(--text)">${units}</strong> · Goods: <strong style="color:var(--text)">${fmt(goods)}</strong>${discAmt>0?` · Discount (${discPct}%): <strong style="color:var(--teal)">-${fmt(discAmt)}</strong>`:''}${fee>0?` · Fee: <strong style="color:var(--amber)">+${fmt(fee)}</strong>`:''}<br>Total to settle: <strong style="color:var(--teal)">${fmt(grand)}</strong>`
+    ? `Units: <strong style="color:var(--text)">${units}</strong> · Goods: <strong style="color:var(--text)">${fmt(goods)}</strong>${discAmt>0?` · Discount (${discLabel}): <strong style="color:var(--teal)">-${fmt(discAmt)}</strong>`:''}${fee>0?` · Fee: <strong style="color:var(--amber)">+${fmt(fee)}</strong>`:''}<br>Total to settle: <strong style="color:var(--teal)">${fmt(grand)}</strong>`
     : '';
   if(getComputedStyle(document.getElementById('qrEnvelopeBox')).display!=='none') updateQrEnvAllocSummary();
 };
@@ -4523,10 +4623,10 @@ window.confirmReceiveDelivery=async function(){
   const payMode=document.getElementById('qrPayMode').value;               // 'cash' | 'check'
   const cashSource=document.getElementById('qrCashSource').value;         // 'Drawer Cash' | 'Take Home'
   const fee=parseFloat(document.getElementById('qrFee').value)||0;
-  const discPct=Math.min(100,Math.max(0,parseFloat(document.getElementById('qrDiscPct').value)||0));
   const units=items.reduce((a,oi)=>a+oi.qty,0);
   const feePerUnit=units>0?fee/units:0;
   const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
+  const discPct=qrDiscPctResolved(goods);
   const grand=Math.round((goods*(1-discPct/100)+fee)*100)/100;
   let envAllocations=null;
   if(payMode==='cash' && cashSource==='Take Home'){
@@ -4742,13 +4842,23 @@ window.onOrderSupplierSelect=function(){
   if(sel.value==='__OTHER__'){ oth.style.display=''; oth.value=''; setOrderSupplier(''); oth.focus(); }
   else { oth.style.display='none'; oth.value=''; setOrderSupplier(sel.value); }
 };
+// Product search for Create Order. Was hard-capped to the first 8 matches with no way to reach
+// anything past that — a broad query on a big catalog could hide the item you actually wanted.
+// Now shows up to ORDER_SEARCH_CAP inside a scrollable list (see #orderSearchResults max-height)
+// and tells you how many more matched if you're still over that cap, instead of silently dropping them.
+const ORDER_SEARCH_CAP=60;
 window.renderOrderSearch = function() {
   const q=document.getElementById('orderSearch').value.trim().toLowerCase();
   const el=document.getElementById('orderSearchResults');
   document.getElementById('orderSearchClear').classList.toggle('show', !!q);
   if(!q){el.innerHTML='';return;}
-  const results=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q)).slice(0,8);
-  if(!results.length){el.innerHTML='<div class="empty" style="padding:10px">No products found</div>';return;}
+  const matches=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q));
+  const results=matches.slice(0,ORDER_SEARCH_CAP);
+  if(!results.length){
+    el.innerHTML=`<div class="empty" style="padding:10px">No products found</div>
+      <button class="btn btn-ghost btn-sm" onclick="quickAddProductFromOrder()"><i class="ti ti-plus"></i> Create "${document.getElementById('orderSearch').value.trim()}" as a new product</button>`;
+    return;
+  }
   el.innerHTML=results.map(p=>{
     const variantTag=p.variantCount?`<span class="chip" style="margin-left:6px">${p.variantCount} variants</span>`:'';
     return `
@@ -4757,9 +4867,17 @@ window.renderOrderSearch = function() {
         <div class="po-name">${p.name}${variantTag}</div>
         <div class="po-meta">${p.sku||'No SKU'} · Stock: ${p.inventory||0} · ${supplierListHtml(p.id)}</div>
       </div>
+      <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editProduct('${p.id}')" title="Edit product / add a variant"><i class="ti ti-edit"></i></button>
       <button class="btn btn-ghost btn-xs"><i class="ti ti-plus"></i> Add</button>
     </div>`;
-  }).join('');
+  }).join('') + (matches.length>ORDER_SEARCH_CAP?`<div style="font-size:10px;color:var(--text3);padding:6px 2px;text-align:center">+${matches.length-ORDER_SEARCH_CAP} more match — narrow your search to see them</div>`:'');
+};
+// Quick-create a product without leaving Create Order — opens the same Add Product form used in
+// Products, pre-filled with whatever was typed in the order search box (if anything).
+window.quickAddProductFromOrder=function(){
+  const q=document.getElementById('orderSearch').value.trim();
+  openAddProduct();
+  if(q) document.getElementById('pName').value=q;
 };
 // Renders a product's supplier names, flagging the cheapest one (only when 2+ suppliers
 // actually have a cost on file) so ordering staff know which supplier to buy from.
@@ -5090,20 +5208,13 @@ function poRowHtml(po){
         <div class="po-meta">${po.date} · ${po.items.length} items · ${fmt(tot)}${po.createdBy?' · by '+po.createdBy:''}${delivered&&po.receivedBy?' · recv '+po.receivedBy:''}${paid&&po.paidVia?' · paid '+po.paidVia:''}${po.sent&&po.sentAt?' · sent '+po.sentAt+(po.sentBy?' by '+po.sentBy:''):''}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
-        <button class="btn btn-ghost btn-xs" onclick="sendPoViaMessenger('${po.id}')" title="Copy PO text and open Messenger"><i class="ti ti-brand-messenger"></i> Send</button>
+        <button class="btn btn-ghost btn-xs" onclick="sendPoViaMessenger('${po.id}')" title="Share this PO as a PDF to Messenger"><i class="ti ti-brand-messenger"></i> Send</button>
         <button class="btn btn-ghost btn-xs" onclick="openEditSup('${po.id}')" title="Edit supplier"><i class="ti ti-building-store"></i></button>
         <button class="btn btn-ghost btn-xs" onclick="viewPO('${po.id}')"><i class="ti ti-eye"></i> View</button>
         ${delivered?'':`<button class="btn btn-teal btn-xs" onclick="openIntake('${po.id}')"><i class="ti ti-truck-delivery"></i> Receive</button>`}
         ${session?.role==='owner'?`<button class="del-btn" onclick="deletePO('${po.id}')"><i class="ti ti-x"></i></button>`:''}
       </div>
     </div>`;
-}
-function poMessageText(po){
-  const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
-  const lines=[`Purchase Order ${po.poNumber}`,`Date: ${po.date}`,`Supplier: ${po.supplier||''}`,'','ITEMS:',
-    ...po.items.map(it=>`- ${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}${it.sku?' ['+it.sku+']':''}: ${it.orderedQty} x ${fmt(it.orderedCost)} = ${fmt(it.orderedQty*it.orderedCost)}`),
-    '',`TOTAL: ${fmt(tot)}`,'','— Dr. Kim Pharmacy'];
-  return lines.join('\n');
 }
 window.togglePoSent=async function(id){
   const po=savedPOs.find(p=>p.id===id); if(!po) return;
@@ -5120,15 +5231,69 @@ function resolveMessengerLink(raw){
   if(/^https?:\/\//i.test(raw)) return raw;
   return `https://m.me/${raw.replace(/^@/,'')}`;
 }
+// Same layout as printPO/poMessageText, rendered as an actual PDF (not a print dialog, not
+// clipboard text) so it can be handed straight to Messenger as a file attachment.
+function buildPoPdfBlob(po){
+  const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
+  const pdf=new jsPDF({unit:'pt', format:'a4'});
+  const pageWidth=pdf.internal.pageSize.getWidth();
+  pdf.setFontSize(16); pdf.setFont(undefined,'bold');
+  pdf.text('PURCHASE ORDER', pageWidth/2, 40, {align:'center'});
+  pdf.setFontSize(11); pdf.setFont(undefined,'normal');
+  pdf.text('Dr. Kim Pharmacy', pageWidth/2, 58, {align:'center'});
+  pdf.setFontSize(10);
+  pdf.text(`PO#: ${po.poNumber}    Date: ${po.date}    Supplier: ${po.supplier||''}`, pageWidth/2, 74, {align:'center'});
+  autoTable(pdf, {
+    startY: 88,
+    head: [['SKU','Product','Unit Cost','Qty','Total']],
+    body: po.items.map(it=>[
+      it.sku||'-',
+      it.name+(poItemLabel(it)?` (${poItemLabel(it)})`:''),
+      fmt(it.orderedCost), String(it.orderedQty), fmt(it.orderedQty*it.orderedCost)
+    ]),
+    styles:{ fontSize:9, cellPadding:5 },
+    headStyles:{ fillColor:[240,240,240], textColor:20, fontStyle:'bold' },
+    columnStyles:{ 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'} },
+    margin:{left:40,right:40}
+  });
+  const afterTableY=(pdf.lastAutoTable?.finalY||100)+24;
+  pdf.setFontSize(12); pdf.setFont(undefined,'bold');
+  pdf.text(`GRAND TOTAL: ${fmt(tot)}`, pageWidth-40, afterTableY, {align:'right'});
+  pdf.setFontSize(9); pdf.setFont(undefined,'normal');
+  pdf.text('Prepared by: _______________________', 40, afterTableY+40);
+  pdf.text('Approved by: _______________________', pageWidth-40, afterTableY+40, {align:'right'});
+  return pdf.output('blob');
+}
 window.sendPoViaMessenger=async function(id){
   const po=savedPOs.find(p=>p.id===id); if(!po) return;
   const sup=suppliers.find(s=>s.name.toLowerCase()===(po.supplier||'').toLowerCase());
-  const text=poMessageText(po);
-  try{ await navigator.clipboard.writeText(text); toast('PO text copied — paste it into Messenger','ok'); }
-  catch(e){ toast('Could not copy automatically — see PO text in the popup','info'); }
   const link=resolveMessengerLink(sup?.messenger);
-  if(link){ window.open(link,'_blank'); }
-  else { toast(`No Messenger link set for ${po.supplier||'this supplier'} — add one in Products → Suppliers`,'info'); }
+  const fileName=`${po.poNumber||'PO'}.pdf`;
+  let pdfBlob;
+  try{ pdfBlob=buildPoPdfBlob(po); }
+  catch(e){ toast('Could not generate the PDF','err'); return; }
+  const file=new File([pdfBlob], fileName, {type:'application/pdf'});
+  // A website has no way to attach a file straight into one specific Messenger conversation —
+  // the OS share sheet (where Messenger shows up as an option on phones/tablets) is as close as
+  // the web platform gets to "just send the PDF", so prefer that when the browser supports it.
+  let shared=false;
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file], title:`PO ${po.poNumber}`, text:`Purchase Order ${po.poNumber} — ${po.supplier||''}`});
+      shared=true;
+      toast('PDF shared — pick Messenger from the share sheet','ok');
+    }catch(e){ if(e?.name==='AbortError') return; /* user cancelled — don't fall through to downloading it too */ }
+  }
+  if(!shared){
+    // No file-share support here (typical on a desktop browser) — download the PDF and open
+    // the chat so it can be attached by hand.
+    const url=URL.createObjectURL(pdfBlob);
+    const a=document.createElement('a'); a.href=url; a.download=fileName; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 10000);
+    toast('PDF downloaded — attach it in the Messenger chat that just opened','info');
+    if(link){ window.open(link,'_blank'); }
+    else { toast(`No Messenger link set for ${po.supplier||'this supplier'} — add one in Products → Suppliers`,'info'); }
+  }
   po.sent=true; po.sentAt=tnow(); po.sentBy=session?.name||'';
   await fsSet('purchaseOrders', po.id, po);
   renderPOList();
@@ -5285,7 +5450,8 @@ window.openIntake=function(id){
   intakePOId=id;
   document.getElementById('intakeTitle').innerHTML=`<i class="ti ti-truck-delivery" style="margin-right:6px"></i>Receive — ${po.poNumber}`;
   document.getElementById('intakeFee').value=0;
-  document.getElementById('intakeDiscPct').value=0;
+  document.getElementById('intakeDiscVal').value=0;
+  setIntakeDiscMode(document.querySelector('#intakeDiscModeGroup [data-val="pct"]'));
   document.getElementById('intakeDR').value=po.drNo||'';
   document.getElementById('intakeBody').innerHTML=po.items.map((it,i)=>`
     <div class="intake-item">
@@ -5300,6 +5466,17 @@ window.openIntake=function(id){
   document.getElementById('intakeModal').classList.add('show');
 };
 window.closeIntake=function(){ document.getElementById('intakeModal').classList.remove('show'); intakePOId=null; };
+// Supplier discount can be entered as a % of the goods total or as a flat peso amount — same
+// toggle pattern as the quick-receive flow's discount field (see setQrDiscMode).
+window.setIntakeDiscMode=function(btn){
+  if(!btn) return;
+  document.getElementById('intakeDiscModeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  document.getElementById('intakeDiscMode').value=btn.dataset.val;
+  const input=document.getElementById('intakeDiscVal');
+  if(btn.dataset.val==='php'){ input.removeAttribute('max'); input.placeholder='0.00'; }
+  else { input.max='100'; input.placeholder='0'; }
+  updateIntakeSummary();
+};
 
 // Live summary: total units, goods value, the supplier discount, and the per-unit delivery-fee spread.
 function intakeTotals(){
@@ -5310,18 +5487,23 @@ function intakeTotals(){
     const c=parseFloat(document.getElementById('ic_'+i)?.value); const cost=isNaN(c)?it.orderedCost:c;
     units+=q; goods+=q*cost;
   });
-  const discPct=Math.min(100,Math.max(0,parseFloat(document.getElementById('intakeDiscPct').value)||0));
+  // Resolve the discount input to an equivalent % of goods, whichever mode it was entered in —
+  // downstream math (per-unit landed cost, the PO's stored discountPct) stays % based either way.
+  const discMode=document.getElementById('intakeDiscMode')?.value||'pct';
+  const discRaw=parseFloat(document.getElementById('intakeDiscVal').value)||0;
+  const discPct=discMode==='php' ? (goods>0?Math.min(100,Math.max(0, discRaw/goods*100)):0) : Math.min(100,Math.max(0, discRaw));
   const discAmt=Math.round(goods*discPct/100*100)/100;
   const goodsAfterDisc=goods-discAmt;
   const fee=parseFloat(document.getElementById('intakeFee').value)||0;
   const feePerUnit = units>0 ? fee/units : 0;
-  return {units, goods, discPct, discAmt, goodsAfterDisc, fee, feePerUnit, grand:goodsAfterDisc+fee};
+  return {units, goods, discPct, discAmt, goodsAfterDisc, fee, feePerUnit, grand:goodsAfterDisc+fee, discMode, discRaw};
 }
 window.updateIntakeSummary=function(){
   const t=intakeTotals(); if(!t) return;
+  const discLabel=t.discMode==='php'?`₱${t.discRaw.toFixed(2)}`:`${t.discPct}%`;
   document.getElementById('intakeSummary').innerHTML=
     `Units received: <strong style="color:var(--text)">${t.units}</strong> · Goods: <strong style="color:var(--text)">${fmt(t.goods)}</strong>`+
-    (t.discAmt>0?` · Discount (${t.discPct}%): <strong style="color:var(--teal)">-${fmt(t.discAmt)}</strong>`:'')+
+    (t.discAmt>0?` · Discount (${discLabel}): <strong style="color:var(--teal)">-${fmt(t.discAmt)}</strong>`:'')+
     (t.fee>0?` · Fee/unit: <strong style="color:var(--amber)">+${fmt(t.feePerUnit)}</strong>`:'')+
     `<br>Total landed cost: <strong style="color:var(--teal)">${fmt(t.grand)}</strong>`;
 };
