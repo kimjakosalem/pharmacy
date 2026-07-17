@@ -1336,7 +1336,6 @@ import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
 Chart.register(...registerables);
 import { jsPDF } from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm';
-import autoTable from 'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/+esm';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBILAxqEi_2Zc5bCdaD4moGOgp5WDu4_xs",
@@ -4066,8 +4065,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.73';
+const APP_VERSION='v4.74';
 const CHANGELOG=[
+  {v:'v4.74', date:'2026-07-18', notes:[
+    'PO PDF send: root-caused the "autoTable is not a function" error — jsdelivr\'s ESM build of the jspdf-autotable plugin wasn\'t exporting a usable function in the browser. Replaced it with a hand-drawn table (own page-break handling for long POs) using just jsPDF directly, removing that dependency entirely instead of working around it']},
   {v:'v4.73', date:'2026-07-16', notes:[
     'PO "Send" PDF: the generic "Could not generate the PDF" error now shows the real reason instead of hiding it, and no longer crashes with that message if a PO somehow has no items or a blank cost/qty on a line — it computes what it can instead of failing outright']},
   {v:'v4.72', date:'2026-07-16', notes:[
@@ -5234,38 +5235,69 @@ function resolveMessengerLink(raw){
   return `https://m.me/${raw.replace(/^@/,'')}`;
 }
 // Same layout as printPO/poMessageText, rendered as an actual PDF (not a print dialog, not
-// clipboard text) so it can be handed straight to Messenger as a file attachment.
+// clipboard text) so it can be handed straight to Messenger as a file attachment. The table is
+// hand-drawn with jsPDF's own text/rect/line primitives (own pagination via addPage) rather than
+// the jspdf-autotable plugin — confirmed in production that jsdelivr's ESM build of that plugin
+// does not reliably export a callable function ("autoTable is not a function"), so this avoids
+// that dependency entirely instead of fighting the CDN conversion.
 function buildPoPdfBlob(po){
   if(typeof jsPDF!=='function') throw new Error('PDF library failed to load — check your internet connection and try again');
   if(!po.items || !po.items.length) throw new Error('This PO has no items');
   const tot=po.items.reduce((a,it)=>a+(it.orderedCost||0)*(it.orderedQty||0),0);
   const pdf=new jsPDF({unit:'pt', format:'a4'});
-  const pageWidth=pdf.internal.pageSize.getWidth();
+  const pageWidth=pdf.internal.pageSize.getWidth(), pageHeight=pdf.internal.pageSize.getHeight();
+  const L=40, R=pageWidth-40, BOTTOM=pageHeight-50;
+  const xSku=L, xProduct=L+60, xCostR=R-140, xQtyR=R-80, xTotalR=R;
+  const productW=xCostR-xProduct-10;
+  let y=40;
+
   pdf.setFontSize(16); pdf.setFont(undefined,'bold');
-  pdf.text('PURCHASE ORDER', pageWidth/2, 40, {align:'center'});
+  pdf.text('PURCHASE ORDER', pageWidth/2, y, {align:'center'}); y+=18;
   pdf.setFontSize(11); pdf.setFont(undefined,'normal');
-  pdf.text('Dr. Kim Pharmacy', pageWidth/2, 58, {align:'center'});
+  pdf.text('Dr. Kim Pharmacy', pageWidth/2, y, {align:'center'}); y+=16;
   pdf.setFontSize(10);
-  pdf.text(`PO#: ${po.poNumber}    Date: ${po.date}    Supplier: ${po.supplier||''}`, pageWidth/2, 74, {align:'center'});
-  autoTable(pdf, {
-    startY: 88,
-    head: [['SKU','Product','Unit Cost','Qty','Total']],
-    body: po.items.map(it=>[
-      it.sku||'-',
-      it.name+(poItemLabel(it)?` (${poItemLabel(it)})`:''),
-      fmt(it.orderedCost), String(it.orderedQty), fmt(it.orderedQty*it.orderedCost)
-    ]),
-    styles:{ fontSize:9, cellPadding:5 },
-    headStyles:{ fillColor:[240,240,240], textColor:20, fontStyle:'bold' },
-    columnStyles:{ 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'} },
-    margin:{left:40,right:40}
+  pdf.text(`PO#: ${po.poNumber}    Date: ${po.date}    Supplier: ${po.supplier||''}`, pageWidth/2, y, {align:'center'}); y+=24;
+
+  const lineH=11;
+  function drawHead(){
+    pdf.setFillColor(240,240,240);
+    pdf.rect(L, y, R-L, lineH+8, 'F');
+    pdf.setFont(undefined,'bold'); pdf.setFontSize(9);
+    const ty=y+lineH+1;
+    pdf.text('SKU', xSku+4, ty);
+    pdf.text('Product', xProduct+4, ty);
+    pdf.text('Unit Cost', xCostR, ty, {align:'right'});
+    pdf.text('Qty', xQtyR, ty, {align:'right'});
+    pdf.text('Total', xTotalR, ty, {align:'right'});
+    y+=lineH+8;
+    pdf.setFont(undefined,'normal'); pdf.setFontSize(9);
+  }
+  drawHead();
+  po.items.forEach(it=>{
+    const name=it.name+(poItemLabel(it)?` (${poItemLabel(it)})`:'');
+    const lines=pdf.splitTextToSize(name, productW);
+    const rowH=Math.max(lines.length,1)*lineH+6;
+    if(y+rowH>BOTTOM){ pdf.addPage(); y=40; drawHead(); }
+    const ty=y+lineH;
+    pdf.text(it.sku||'-', xSku+4, ty);
+    pdf.text(lines, xProduct+4, ty);
+    pdf.text(fmt(it.orderedCost||0), xCostR, ty, {align:'right'});
+    pdf.text(String(it.orderedQty||0), xQtyR, ty, {align:'right'});
+    pdf.text(fmt((it.orderedQty||0)*(it.orderedCost||0)), xTotalR, ty, {align:'right'});
+    pdf.setDrawColor(225,225,225);
+    pdf.line(L, y+rowH, R, y+rowH);
+    y+=rowH;
   });
-  const afterTableY=(pdf.lastAutoTable?.finalY||100)+24;
+
+  y+=24;
+  if(y>BOTTOM){ pdf.addPage(); y=40; }
   pdf.setFontSize(12); pdf.setFont(undefined,'bold');
-  pdf.text(`GRAND TOTAL: ${fmt(tot)}`, pageWidth-40, afterTableY, {align:'right'});
+  pdf.text(`GRAND TOTAL: ${fmt(tot)}`, xTotalR, y, {align:'right'});
+  y+=40;
+  if(y>BOTTOM){ pdf.addPage(); y=40; }
   pdf.setFontSize(9); pdf.setFont(undefined,'normal');
-  pdf.text('Prepared by: _______________________', 40, afterTableY+40);
-  pdf.text('Approved by: _______________________', pageWidth-40, afterTableY+40, {align:'right'});
+  pdf.text('Prepared by: _______________________', L, y);
+  pdf.text('Approved by: _______________________', xTotalR, y, {align:'right'});
   return pdf.output('blob');
 }
 window.sendPoViaMessenger=async function(id){
