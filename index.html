@@ -4066,8 +4066,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.72';
+const APP_VERSION='v4.73';
 const CHANGELOG=[
+  {v:'v4.73', date:'2026-07-16', notes:[
+    'PO "Send" PDF: the generic "Could not generate the PDF" error now shows the real reason instead of hiding it, and no longer crashes with that message if a PO somehow has no items or a blank cost/qty on a line — it computes what it can instead of failing outright']},
   {v:'v4.72', date:'2026-07-16', notes:[
     'Orders → "Send" on a saved PO now generates an actual PDF of the PO (header, item table, grand total) instead of copying plain text to the clipboard. On a phone/tablet it hands the PDF straight to your device\'s share sheet so you can pick Messenger and it goes in as a file attachment; on desktop (no share-to-app support) it downloads the PDF and opens the chat so you can attach it by hand']},
   {v:'v4.71', date:'2026-07-16', notes:[
@@ -5234,7 +5236,9 @@ function resolveMessengerLink(raw){
 // Same layout as printPO/poMessageText, rendered as an actual PDF (not a print dialog, not
 // clipboard text) so it can be handed straight to Messenger as a file attachment.
 function buildPoPdfBlob(po){
-  const tot=po.items.reduce((a,it)=>a+it.orderedCost*it.orderedQty,0);
+  if(typeof jsPDF!=='function') throw new Error('PDF library failed to load — check your internet connection and try again');
+  if(!po.items || !po.items.length) throw new Error('This PO has no items');
+  const tot=po.items.reduce((a,it)=>a+(it.orderedCost||0)*(it.orderedQty||0),0);
   const pdf=new jsPDF({unit:'pt', format:'a4'});
   const pageWidth=pdf.internal.pageSize.getWidth();
   pdf.setFontSize(16); pdf.setFont(undefined,'bold');
@@ -5271,7 +5275,7 @@ window.sendPoViaMessenger=async function(id){
   const fileName=`${po.poNumber||'PO'}.pdf`;
   let pdfBlob;
   try{ pdfBlob=buildPoPdfBlob(po); }
-  catch(e){ toast('Could not generate the PDF','err'); return; }
+  catch(e){ console.error('buildPoPdfBlob failed:', e); toast('Could not generate the PDF: '+(e?.message||e), 'err'); return; }
   const file=new File([pdfBlob], fileName, {type:'application/pdf'});
   // A website has no way to attach a file straight into one specific Messenger conversation —
   // the OS share sheet (where Messenger shows up as an option on phones/tablets) is as close as
