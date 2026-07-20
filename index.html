@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Dr. Kim Pharmacy">
-<meta name="theme-color" content="#0b0f1a">
+<meta name="theme-color" content="#131a2a">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -22,8 +22,8 @@ if('serviceWorker' in navigator){
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0b0f1a;--bg2:#111827;--bg3:#1a2236;--bg4:#222d42;--bg5:#2a3550;
-  --border:#1e2d45;--border2:#2e4060;--border3:#3d5278;
+  --bg:#131a2a;--bg2:#1a2338;--bg3:#242f48;--bg4:#2d3a56;--bg5:#374565;
+  --border:#2e4060;--border2:#40527a;--border3:#516694;
   --teal:#00d4aa;--teal2:#00a889;--teal-dim:#002920;--teal-mid:#004d3d;
   --amber:#f5a623;--amber2:#c47d0d;--amber-dim:#2d1c00;
   --red:#ff4d6a;--red-dim:#2d0010;
@@ -33,7 +33,7 @@ if('serviceWorker' in navigator){
   --gcash:#4da6ff;--gcash-dim:#001433;
   --maya:#00d4aa;--maya-dim:#002920;
   --mcredit:#b388ff;--mcredit-dim:#150d33;
-  --text:#dde6f5;--text2:#7d94b5;--text3:#3d5070;
+  --text:#eef3fb;--text2:#9cb0d1;--text3:#64799e;
   --mono:'DM Mono',monospace;--sans:'Sora',sans-serif;
   --r:10px;--r2:14px;--r3:18px;
 }
@@ -157,7 +157,7 @@ select option{background:var(--bg3)}
 .sale-item-row{display:flex;align-items:baseline;gap:6px;font-size:11px;color:var(--text2);border-left:2px solid var(--border);padding-left:8px}
 .sale-item-row .si-name{flex:1;min-width:0}
 .sale-item-row .si-size{color:var(--text3)}
-.sale-item-row .si-qty{font-family:var(--mono);color:var(--text3);flex-shrink:0}
+.sale-item-row .si-qty{font-family:var(--mono);color:var(--text2);flex-shrink:0}
 .sale-amt-col{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;margin-left:8px}
 .btn-ghost{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
 .btn-ghost:hover{border-color:var(--border2);color:var(--text)}
@@ -172,7 +172,7 @@ select option{background:var(--bg3)}
 .elist::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 .eitem{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;background:var(--bg3);border-radius:7px;border:1px solid var(--border)}
 .el{font-size:12px;color:var(--text)}
-.ed{font-size:10px;color:var(--text3);margin-top:1px}
+.ed{font-size:10px;color:var(--text2);margin-top:1px}
 .eval{font-family:var(--mono);font-size:13px;font-weight:500}
 .c-pos{color:var(--green)}.c-neg{color:var(--red)}.c-amb{color:var(--amber)}.c-blu{color:var(--blue)}.c-tel{color:var(--teal)}
 .del-btn{width:22px;height:22px;border:1px solid var(--border);background:transparent;color:var(--text3);border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;transition:all .15s;flex-shrink:0;margin-left:7px}
@@ -648,6 +648,17 @@ select option{background:var(--bg3)}
     <div class="btn-row">
       <button class="btn btn-teal" onclick="newSale()"><i class="ti ti-plus"></i> New Sale</button>
       <button class="btn btn-ghost" onclick="closeReceipt()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sale detail (tap a POS Transactions row) -->
+<div class="modal-overlay" id="saleDetailModal">
+  <div class="modal" style="width:420px">
+    <h3 style="margin-bottom:4px;color:var(--teal)"><i class="ti ti-receipt" style="margin-right:6px"></i>Sale Detail</h3>
+    <div id="saleDetailContent" style="margin:14px 0"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="closeSaleDetail()">Close</button>
     </div>
   </div>
 </div>
@@ -1351,6 +1362,12 @@ const fbApp = initializeApp(firebaseConfig);
 // cached by the SDK and auto-refresh; isTokenAutoRefreshEnabled keeps that going in the
 // background so a long-open tablet session doesn't need a reload. Registered in Monitor mode in
 // the Firebase console first — nothing is blocked until enforcement is explicitly turned on there.
+// Local dev only: the reCAPTCHA v3 key isn't registered for localhost, so App Check tokens fail
+// there and every Firestore read gets rejected (permission-denied) even with valid PINs/data.
+// Firebase's own escape hatch for this is a debug token — hostname-guarded so it can never
+// activate on the deployed site. First run prints a token to the console; add it once in
+// Firebase Console → App Check → this app → Manage debug tokens, then reload.
+if (['localhost','127.0.0.1'].includes(location.hostname)) { self.FIREBASE_APPCHECK_DEBUG_TOKEN = true; }
 initializeAppCheck(fbApp, {
   provider: new ReCaptchaV3Provider('6LeybkEtAAAAAKak2-pWz-rfA5lf7lBx92IyLnFR'),
   isTokenAutoRefreshEnabled: true
@@ -2010,18 +2027,44 @@ function saleRowHtml(t,canVoid,voidArgs){
   const itemRows=(t.items||[]).length
     ? (t.items||[]).map(it=>`<div class="sale-item-row"><span class="si-name">${it.name}${it.size?' <span class="si-size">('+it.size+')</span>':''}</span><span class="si-qty">×${it.qty}</span></div>`).join('')
     : `<div class="sale-item-row" style="color:var(--text3)">Sale</div>`;
-  return `<div class="eitem sale-row" style="${t.voided?'opacity:.55':''}">
+  const discRow=t.discount?`<div class="sale-item-row" style="color:var(--amber);border-left-color:var(--amber)"><span class="si-name">Discount${t.discount.mode==='pct'?' ('+t.discount.value+'%)':''}</span><span class="si-qty" style="color:var(--amber)">-${fmtShort(t.discount.amount)}</span></div>`:'';
+  return `<div class="eitem sale-row" style="${t.voided?'opacity:.55;':''}cursor:pointer" onclick="openSaleDetail(${voidArgs})">
     <div style="flex:1;min-width:0">
       <div class="el" style="margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;${t.voided?'text-decoration:line-through':''}">${modeTag(t.mode,'editSaleMode',voidArgs,t.voided)}<span class="ed" style="margin:0">${t.time||''}${t.cashier?' · '+t.cashier:''}${t.change!=null?` · cash ${fmtShort(t.cashReceived)} · change ${fmtShort(t.change)}`:''}</span></div>
-      <div class="sale-items">${itemRows}</div>
+      <div class="sale-items">${itemRows}${discRow}</div>
       ${voidTag(t)}
     </div>
     <div class="sale-amt-col">
       <span class="eval c-tel">${fmt(t.total)}</span>
-      ${(canVoid&&!t.voided)?`<button class="del-btn" title="Void this sale" onclick="voidSale(${voidArgs})"><i class="ti ti-x"></i></button>`:''}
+      ${(canVoid&&!t.voided)?`<button class="del-btn" title="Void this sale" onclick="event.stopPropagation();voidSale(${voidArgs})"><i class="ti ti-x"></i></button>`:''}
     </div>
   </div>`;
 }
+// Tap a sale row to open a read-only detail modal (line items, discount, payment, cashier) —
+// reuses the same voidArgs the row already carries so it can look the sale back up.
+window.openSaleDetail=async function(id,sh,dt){
+  sh=sh||curShift; dt=dt||today();
+  const s=await getShift(sh,dt);
+  const t=(s.sales||[]).find(t=>t.id===id); if(!t) return;
+  const itemsHtml=(t.items||[]).map(it=>`<div class="receipt-row"><span>${it.name}${it.size?' ('+it.size+')':''} x${it.qty}</span><span>${fmtShort(it.price*it.qty)}</span></div>`).join('')||`<div class="receipt-row"><span>Sale</span><span></span></div>`;
+  document.getElementById('saleDetailContent').innerHTML=`<div class="receipt">
+    <div class="receipt-header">
+      <div style="font-weight:600;font-size:13px">DR. KIM PHARMACY</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${dt} ${t.time||''}${t.backdated?' · BACKDATED ENTRY':''}</div>
+    </div>
+    ${itemsHtml}
+    ${t.discount?`<div class="receipt-row" style="margin-top:4px"><span>Subtotal</span><span>${fmtShort(t.subtotal)}</span></div>
+    <div class="receipt-row" style="color:var(--amber)"><span>Discount${t.discount.mode==='pct'?' ('+t.discount.value+'%)':''}</span><span>-${fmtShort(t.discount.amount)}</span></div>`:''}
+    <div class="receipt-total"><span>TOTAL</span><span>${fmtShort(t.total)}</span></div>
+    <div class="receipt-row" style="margin-top:4px"><span>Payment</span><span style="text-transform:uppercase">${t.mode||'cash'}</span></div>
+    ${t.change!=null?`<div class="receipt-row"><span>Cash</span><span>${fmtShort(t.cashReceived)}</span></div>
+    <div class="receipt-row" style="font-weight:600;color:var(--teal)"><span>CHANGE</span><span>${fmtShort(t.change)}</span></div>`:''}
+    <div class="receipt-row" style="margin-top:4px"><span>Cashier</span><span>${t.cashier||''}</span></div>
+    ${t.voided?`<div class="receipt-row" style="color:var(--red)"><span>VOIDED</span><span>${t.voidedBy||'?'}</span></div>`:''}
+  </div>`;
+  document.getElementById('saleDetailModal').classList.add('show');
+};
+window.closeSaleDetail=function(){ document.getElementById('saleDetailModal').classList.remove('show'); };
 async function renderSales(){
   const el=document.getElementById('salesList'); if(!el) return;
   const s=await getShift(curShift);
@@ -4065,8 +4108,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.74';
+const APP_VERSION='v4.76';
 const CHANGELOG=[
+  {v:'v4.76', date:'2026-07-20', notes:[
+    'App-wide: lightened the dark theme\'s background/border/text colors for better contrast and readability, while keeping the same dark navy look and feel']},
+  {v:'v4.75', date:'2026-07-20', notes:[
+    'POS Transactions: tap any sale row to open a detail popup (full item list, discount, payment mode, cash/change, cashier) instead of only seeing the collapsed row',
+    'POS Transactions: sale rows now show the discount applied (if any), and the row\'s time/cashier/cash/change line and item quantities are more readable against the dark background']},
   {v:'v4.74', date:'2026-07-18', notes:[
     'PO PDF send: root-caused the "autoTable is not a function" error — jsdelivr\'s ESM build of the jspdf-autotable plugin wasn\'t exporting a usable function in the browser. Replaced it with a hand-drawn table (own page-break handling for long POs) using just jsPDF directly, removing that dependency entirely instead of working around it']},
   {v:'v4.73', date:'2026-07-16', notes:[
