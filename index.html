@@ -882,6 +882,11 @@ select option{background:var(--bg3)}
       </div>
       <div class="btn-row"><button class="btn btn-ghost btn-sm" id="coAddBtn" onclick="addCO()"><i class="ti ti-plus"></i> Add</button></div>
       <div class="elist" id="coList"></div>
+      <div class="pay-footer" id="coTotalFoot" style="display:none;flex-direction:column;align-items:stretch;gap:5px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Drawer Cash Total:</span><span class="eval c-neg" id="coTotalVal"></span></div>
+        <div id="coEnvRow" style="display:none;justify-content:space-between"><span style="color:var(--text2)">+ Paid from Take-Home Envelopes:</span><span class="eval c-neg" id="coEnvVal"></span></div>
+        <div id="coAllExpRow" style="display:none;justify-content:space-between;padding-top:5px;border-top:1px solid var(--border)"><span style="color:var(--text2);font-weight:600">All Expenses:</span><span class="eval c-neg" id="coAllExpVal" style="font-weight:600"></span></div>
+      </div>
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-device-desktop"></i> POS / Encoded Sales <span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:6px">(auto from POS — read-only)</span></div>
@@ -909,6 +914,13 @@ select option{background:var(--bg3)}
       </div>
       <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Each POS checkout is logged here for this shift. Tap ✕ to <strong style="color:var(--text2)">void</strong> a sale (reverses the totals &amp; returns stock). <strong style="color:var(--text2)">Reset</strong> permanently clears this shift's entire sales log (owner) — use only to clear old/test data, not as a daily action.</div>
       <div class="elist" style="max-height:280px" id="salesList"></div>
+      <div class="pay-footer" id="salesTotalFoot" style="display:none;flex-wrap:wrap;gap:6px">
+        <span style="color:var(--text2)">Total:</span>
+        <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <span class="eval c-tel" id="salesTotalVal"></span>
+          <span id="salesOwnerStats" style="display:none;gap:4px;align-items:center"></span>
+        </span>
+      </div>
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-arrow-back-up"></i> Returns &amp; Exchanges <span id="returnsCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
@@ -1968,6 +1980,23 @@ window.removeCO=async function(i,sh,dt){
 };
 async function renderCO(){
   const s=await getShift(curShift); const el=document.getElementById('coList');
+  const foot=document.getElementById('coTotalFoot'), footVal=document.getElementById('coTotalVal');
+  const envRow=document.getElementById('coEnvRow'), envVal=document.getElementById('coEnvVal');
+  const allExpRow=document.getElementById('coAllExpRow'), allExpVal=document.getElementById('coAllExpVal');
+  // Personal Stock Use is inventory cost, not a cash expense — excluded from all totals below.
+  const coAllActive=s.cashOuts.filter(c=>c.type!=='Personal Stock Use'&&!c.voided);
+  // Drawer cash: same filter as calcShift's coCash — money that actually left THIS shift's register.
+  const drawerCash=coAllActive.filter(c=>!c.nonDrawer).reduce((a,c)=>a+c.amount,0);
+  // Envelope-funded: payments made from a previous shift's Take-Home envelope (nonDrawer:true),
+  // still a real expense but doesn't touch today's drawer — see confirmPay's nonDrawer comment.
+  const envCash=coAllActive.filter(c=>c.nonDrawer).reduce((a,c)=>a+c.amount,0);
+  const allExp=drawerCash+envCash;
+  if(foot) foot.style.display=allExp?'flex':'none';
+  if(footVal) footVal.textContent='-'+fmt(drawerCash);
+  if(envRow) envRow.style.display=envCash?'flex':'none';
+  if(envVal) envVal.textContent='-'+fmt(envCash);
+  if(allExpRow) allExpRow.style.display=envCash?'flex':'none';   // only worth a combined line when both sources exist
+  if(allExpVal) allExpVal.textContent='-'+fmt(allExp);
   if(!s.cashOuts.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
   const canDel=session?.role==='owner';
   el.innerHTML=s.cashOuts.map((c,i)=>{
@@ -2071,6 +2100,20 @@ async function renderSales(){
   const sales=(s.sales||[]);
   const activeCount=sales.filter(t=>!t.voided).length, voidedCount=sales.length-activeCount;
   document.getElementById('salesCount').textContent = activeCount+(activeCount===1?' sale':' sales')+(voidedCount?` · ${voidedCount} voided`:'');
+  const foot=document.getElementById('salesTotalFoot'), footVal=document.getElementById('salesTotalVal');
+  const ownerStats=document.getElementById('salesOwnerStats');
+  const salesTotal=sales.filter(t=>!t.voided).reduce((a,t)=>a+(t.total||0),0);
+  if(foot) foot.style.display=salesTotal?'flex':'none';
+  if(footVal) footVal.textContent=fmt(salesTotal)+` (${activeCount} txn)`;
+  if(ownerStats){
+    if(session?.role==='owner' && salesTotal){
+      const m=shiftSalesMetrics(s);
+      ownerStats.style.display='inline-flex';
+      ownerStats.innerHTML=`<span style="padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;background:var(--amber-dim);color:var(--amber)">Discounts -${fmtShort(m.discounts)}</span><span style="padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;background:var(--red-dim);color:var(--red)">Item Costs -${fmtShort(m.cogs)}</span>`;
+    } else {
+      ownerStats.style.display='none'; ownerStats.innerHTML='';
+    }
+  }
   if(!sales.length){ el.innerHTML='<div class="empty"><i class="ti ti-receipt"></i>No sales yet this shift</div>'; return; }
   const canVoid=hasPerm('void');
   // One row per item (instead of a single run-on comma string) so transactions with many
@@ -2395,7 +2438,11 @@ function calcShift(s){
   const msCash=s.manualSales.filter(m=>(m.mode||'cash')==='cash'&&!m.voided).reduce((a,m)=>a+m.amount,0);  // only cash manual sales hit the drawer
   const grossSales=(s.posTot||0)+msTotal;
   const cashPOS=s.pbCash||0;
-  const expected=(s.startCash||0)+ciTot+cashPOS+msCash-coCash-(s.takehome||0);
+  // "Actual Drawer" (s.drawer) is the FULL count taken at close, before Take-Home is pulled
+  // out — Take-Home + Next Shift Starting Cash is just how that counted total gets split
+  // afterward, not cash that was already missing. Don't subtract it here or it gets
+  // double-counted against the drawer count that still includes it.
+  const expected=(s.startCash||0)+ciTot+cashPOS+msCash-coCash;
   const variance=(s.drawer||0)-expected;
   return {ciTot,coCash,coCashExp,coStock,msTotal,msCash,grossSales,cashPOS,expected,variance};
 }
@@ -3552,6 +3599,7 @@ window.renderDaily=async function(){
       <tr class="tr-total"><td>Gross Sales</td><td class="c-tel">${fmt(c.grossSales)}</td></tr>
       <tr><td style="color:var(--text2)">Expected Drawer</td><td>${fmt(c.expected)}</td></tr>
       <tr><td style="color:var(--text2)">Actual Drawer</td><td>${fmt(s.drawer)}</td></tr>
+      <tr><td style="color:var(--text2)">Next Shift Starting Cash</td><td>${fmt(s.nextCash)}</td></tr>
     </table><div class="rec ${vc}">${vi}</div></div>`;
   };
   const c1=s1?calcShift(s1):{ciTot:0,coCash:0,coCashExp:0,coStock:0,msTotal:0,grossSales:0};
@@ -4108,8 +4156,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.76';
+const APP_VERSION='v4.77';
 const CHANGELOG=[
+  {v:'v4.77', date:'2026-07-20', notes:[
+    'Fixed a drawer-reconciliation bug that could flag a shift as falsely "Over" by roughly the Take-Home amount — the Expected Drawer calc was subtracting Take-Home a second time against a drawer count that was taken before Take-Home was pulled out',
+    'Cash Outs / Expenses card now shows a running total, plus a separate line for expenses paid from a previous shift\'s Take-Home envelope and a combined "All Expenses" total',
+    'POS Transactions card now shows a running total (owner view also sees total discounts given and total item costs alongside it)',
+    'Reports → Daily now shows each shift\'s "Next Shift Starting Cash" so a handover amount can be checked against the following shift\'s Starting Cash']},
   {v:'v4.76', date:'2026-07-20', notes:[
     'App-wide: lightened the dark theme\'s background/border/text colors for better contrast and readability, while keeping the same dark navy look and feel']},
   {v:'v4.75', date:'2026-07-20', notes:[
