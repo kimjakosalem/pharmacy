@@ -4156,8 +4156,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.78';
+const APP_VERSION='v4.79';
 const CHANGELOG=[
+  {v:'v4.79', date:'2026-07-24', notes:[
+    'Settings → Version & Changelog: now shows only the 5 most recent versions by default, with a "Show older versions" toggle to expand the full history — the list had grown to 50+ entries']},
   {v:'v4.78', date:'2026-07-24', notes:[
     'Products tab: tapping a product row now opens Edit (it used to highlight but do nothing)',
     'Products tab: Edit/Delete icon buttons are bigger and further apart so they\'re harder to mix up on a tablet',
@@ -4354,12 +4356,32 @@ const CHANGELOG=[
   {v:'v3.6', date:'2026-06-27', notes:['POS: quantity input in Add-to-Cart and editable cart quantity (tablet numpad)','POS: cash-tendered entry with automatic change calculation','Products: category dropdown (existing categories + free type)','Orders: clearable search box and per-item supplier selection','Receive Delivery: cleaner layout + delivery-fee spread across received stock']},
   {v:'v3.5', date:'2026-06-27', notes:['Offline persistence (persistentLocalCache), role-based login, shift lifecycle','Delivery intake updating inventory; Daily summaries merged into Reports']}
 ];
+const CHANGELOG_RECENT_COUNT=5;
+function changelogEntryHtml(c){
+  return `<div style="margin-bottom:8px"><div style="color:var(--teal);font-weight:600">${c.v} <span style="color:var(--text3);font-weight:400">· ${c.date}</span></div><ul style="margin:2px 0 0 16px;padding:0">${c.notes.map(n=>`<li>${n}</li>`).join('')}</ul></div>`;
+}
 function renderVersion(){
   const b=document.getElementById('verBadge'); if(b)b.textContent=APP_VERSION;
   const lbl=document.getElementById('verLabel'); if(lbl)lbl.textContent=APP_VERSION+' · '+(CHANGELOG[0]?.date||'');
   const el=document.getElementById('changelogList');
-  if(el)el.innerHTML=CHANGELOG.map(c=>`<div style="margin-bottom:8px"><div style="color:var(--teal);font-weight:600">${c.v} <span style="color:var(--text3);font-weight:400">· ${c.date}</span></div><ul style="margin:2px 0 0 16px;padding:0">${c.notes.map(n=>`<li>${n}</li>`).join('')}</ul></div>`).join('');
+  if(!el)return;
+  const recent=CHANGELOG.slice(0,CHANGELOG_RECENT_COUNT);
+  const older=CHANGELOG.slice(CHANGELOG_RECENT_COUNT);
+  let html=recent.map(changelogEntryHtml).join('');
+  if(older.length){
+    html+=`<div id="changelogOlder" style="display:none">${older.map(changelogEntryHtml).join('')}</div>`
+        +`<button type="button" class="btn btn-ghost btn-xs" id="changelogToggleBtn" onclick="toggleChangelogOlder()" style="margin-top:2px"><i class="ti ti-chevron-down"></i> Show ${older.length} older version${older.length===1?'':'s'}</button>`;
+  }
+  el.innerHTML=html;
 }
+window.toggleChangelogOlder=function(){
+  const el=document.getElementById('changelogOlder'), btn=document.getElementById('changelogToggleBtn');
+  if(!el||!btn)return;
+  const olderCount=CHANGELOG.length-CHANGELOG_RECENT_COUNT;
+  const nowShowing=el.style.display==='none';
+  el.style.display=nowShowing?'block':'none';
+  btn.innerHTML=nowShowing?`<i class="ti ti-chevron-up"></i> Hide older versions`:`<i class="ti ti-chevron-down"></i> Show ${olderCount} older version${olderCount===1?'':'s'}`;
+};
 
 async function init(){
   renderVersion();
