@@ -1090,7 +1090,7 @@ select option{background:var(--bg3)}
         <input type="text" id="prodFilterBox" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;flex:1;min-width:160px;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
         <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" id="mrpWatchToggle" onchange="toggleMrpWatch()"> <i class="ti ti-shield-check" style="font-size:13px"></i> MRP-regulated only</label>
       </div>
-      <div class="scroll-pan-x" style="overflow-x:auto">
+      <div class="scroll-pan-x" style="overflow-x:auto;touch-action:pan-x pan-y">
         <table class="prod-table" id="prodTable">
           <thead><tr>
             <th>SKU</th><th>Name</th><th>Category</th>
@@ -2493,7 +2493,7 @@ function salesProfitCard(m){
 // ═══════════════════════════════════════
 // ── PRODUCTS ──
 // ═══════════════════════════════════════
-let allProducts=[], allProductsFull={}, editingProdId=null, productPageIndex=0, pageSize=50, productView=[];
+let allProducts=[], allProductsFull={}, editingProdId=null, productPageIndex=0, pageSize=20, productView=[];
 
 // Shelf addresses were originally baked into the product name as a trailing "-D9" style
 // suffix (column letter + row number, from the old paper shelf map). Detect that suffix so it
@@ -2792,7 +2792,7 @@ function renderProductTable(prods){
     const invTitle=(full&&hasVariantInventory(full))?full.variants.map(v=>`${[v.size,v.packaging].filter(Boolean).join(' ')}: ${v.inventory||0}`).join(', '):'';
     const mrpOver=p.mrpCap&&p.price>p.mrpCap;
     const mrpBadge=p.mrpCap?` <span class="chip" style="background:${mrpOver?'var(--red-dim)':'var(--teal-dim)'};color:${mrpOver?'var(--red)':'var(--teal)'};border:1px solid ${mrpOver?'var(--red)':'var(--teal)'}" title="${full&&full.mrpRef?full.mrpRef:'DOH MRP cap'}">MRP ${fmtShort(p.mrpCap)}${mrpOver?' ⚠':''}</span>`:'';
-    return `<tr>
+    return `<tr onclick="editProduct('${p.id}')" style="cursor:pointer">
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${p.sku||'-'}</td>
       <td><div style="font-weight:500">${p.name}${mrpBadge}</div>${p.category?`<div style="font-size:10px;color:var(--text3)">${p.category}</div>`:''}</td>
       <td style="font-size:11px;color:var(--text3)">${p.category||'-'}</td>
@@ -2802,9 +2802,9 @@ function renderProductTable(prods){
       <td style="font-family:var(--mono);font-size:12px;color:var(--blue)">${markup}</td>
       <td class="${invClass}" style="font-family:var(--mono);font-size:12px"${invTitle?` title="${invTitle}"`:''}>${inv}${inv<=low&&inv>0?' ⚠':''}${inv<=0?' ✗':''}</td>
       <td>
-        <div style="display:flex;gap:5px;justify-content:flex-end">
-          <button class="btn btn-ghost btn-xs" onclick="editProduct('${p.id}')"><i class="ti ti-edit"></i></button>
-          <button class="btn btn-xs" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red)" onclick="deleteProduct('${p.id}')"><i class="ti ti-trash"></i></button>
+        <div style="display:flex;gap:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" style="padding:8px 12px;font-size:15px" title="Edit" onclick="event.stopPropagation();editProduct('${p.id}')"><i class="ti ti-edit"></i></button>
+          <button class="btn" style="padding:8px 12px;font-size:15px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)" title="Delete" onclick="event.stopPropagation();deleteProduct('${p.id}')"><i class="ti ti-trash"></i></button>
         </div>
       </td>
     </tr>`;
@@ -4105,7 +4105,7 @@ window.renderReorder=async function(){
     reorderGroups.map(([sup,items],gi)=>`
     <div class="card">
       <div class="card-title"><i class="ti ti-building-store"></i> ${sup} <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">${items.length} item${items.length===1?'':'s'}</span></div>
-      <div class="scroll-pan-x" style="overflow-x:auto">
+      <div class="scroll-pan-x" style="overflow-x:auto;touch-action:pan-x pan-y">
         <table class="prod-table">
           <thead><tr><th>Product</th><th style="text-align:right">Stock</th><th style="text-align:right">Avg/day</th><th style="text-align:right">Days Left</th><th style="text-align:right">Suggest Qty</th><th style="text-align:right">Action</th></tr></thead>
           <tbody>${items.map(r=>`<tr>
@@ -4156,8 +4156,14 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.77';
+const APP_VERSION='v4.78';
 const CHANGELOG=[
+  {v:'v4.78', date:'2026-07-24', notes:[
+    'Products tab: tapping a product row now opens Edit (it used to highlight but do nothing)',
+    'Products tab: Edit/Delete icon buttons are bigger and further apart so they\'re harder to mix up on a tablet',
+    'Products tab: fixed a bug where the product table blocked vertical finger-drag scrolling on touch devices, forcing you to grab the scrollbar instead',
+    'Products tab: reduced items per page from 50 to 20 to cut down on scrolling',
+    'Orders → Reorder Suggestions: fixed the same vertical-scroll-blocking bug on that table']},
   {v:'v4.77', date:'2026-07-20', notes:[
     'Fixed a drawer-reconciliation bug that could flag a shift as falsely "Over" by roughly the Take-Home amount — the Expected Drawer calc was subtracting Take-Home a second time against a drawer count that was taken before Take-Home was pulled out',
     'Cash Outs / Expenses card now shows a running total, plus a separate line for expenses paid from a previous shift\'s Take-Home envelope and a combined "All Expenses" total',
