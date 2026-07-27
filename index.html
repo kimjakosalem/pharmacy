@@ -4156,8 +4156,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.79';
+const APP_VERSION='v4.80';
 const CHANGELOG=[
+  {v:'v4.80', date:'2026-07-27', notes:[
+    'Orders → Receive delivery: now warns if a unit cost looks like a data-entry error (at/above the item\'s selling price, or several times its current on-file cost) and asks you to confirm before updating inventory — this is how one bad "total delivery cost typed as per-unit cost" entry can blow up a day\'s Item Costs total on the Shift report']},
   {v:'v4.79', date:'2026-07-24', notes:[
     'Settings → Version & Changelog: now shows only the 5 most recent versions by default, with a "Show older versions" toggle to expand the full history — the list had grown to 50+ entries']},
   {v:'v4.78', date:'2026-07-24', notes:[
@@ -5626,6 +5628,7 @@ window.openIntake=function(id){
       </div>
       <div class="field"><label>Recv Qty</label><input type="number" class="po-qty" id="iq_${i}" value="${it.recvQty}" min="0" step="1" oninput="updateIntakeSummary()"></div>
       <div class="field"><label>Unit Cost</label><input type="number" class="po-qty" id="ic_${i}" value="${it.recvCost}" min="0" step="0.01" oninput="updateIntakeSummary()"></div>
+      <div id="iw_${i}" style="display:none;flex-basis:100%;font-size:11px;font-weight:600;color:var(--red);margin-top:4px"></div>
     </div>`).join('');
   updateIntakeSummary();
   document.getElementById('intakeModal').classList.add('show');
@@ -5663,6 +5666,18 @@ function intakeTotals(){
   const feePerUnit = units>0 ? fee/units : 0;
   return {units, goods, discPct, discAmt, goodsAfterDisc, fee, feePerUnit, grand:goodsAfterDisc+fee, discMode, discRaw};
 }
+// Flags a received line whose landed cost looks like a data-entry error: at or above the item's
+// own selling price (would sell at a loss), or many times its current on-file cost (e.g. someone
+// typed the delivery's total cost into the per-unit field instead of the per-unit cost).
+function intakeRowWarning(it, landed){
+  const prod=allProductsFull[it.prodId]; if(!prod) return '';
+  const v=hasVariantInventory(prod)?findVariantByLabel(prod,it.size,it.packaging):null;
+  const price=(v&&v.price!=null)?v.price:prod.price;
+  const onFileCost=(v&&v.cost!=null&&v.cost!=='')?v.cost:(prod.cost||0);
+  if(price>0 && landed>=price) return `Landed cost ${fmt(landed)} is at or above the selling price ${fmt(price)} — this item would sell at a loss. Check for a data-entry error.`;
+  if(onFileCost>0 && landed>=onFileCost*5) return `Landed cost ${fmt(landed)} is ${(landed/onFileCost).toFixed(1)}x the current on-file cost ${fmt(onFileCost)} — double-check the unit cost.`;
+  return '';
+}
 window.updateIntakeSummary=function(){
   const t=intakeTotals(); if(!t) return;
   const discLabel=t.discMode==='php'?`₱${t.discRaw.toFixed(2)}`:`${t.discPct}%`;
@@ -5671,6 +5686,15 @@ window.updateIntakeSummary=function(){
     (t.discAmt>0?` · Discount (${discLabel}): <strong style="color:var(--teal)">-${fmt(t.discAmt)}</strong>`:'')+
     (t.fee>0?` · Fee/unit: <strong style="color:var(--amber)">+${fmt(t.feePerUnit)}</strong>`:'')+
     `<br>Total landed cost: <strong style="color:var(--teal)">${fmt(t.grand)}</strong>`;
+  const po=savedPOs.find(p=>p.id===intakePOId);
+  (po?.items||[]).forEach((it,i)=>{
+    const c=parseFloat(document.getElementById('ic_'+i)?.value); const baseCost=isNaN(c)?it.orderedCost:c;
+    const landed=baseCost*(1-(t.discPct||0)/100)+(t.feePerUnit||0);
+    const warn=intakeRowWarning(it,landed);
+    const el=document.getElementById('iw_'+i); if(!el) return;
+    el.innerHTML=warn?`<i class="ti ti-alert-triangle"></i> ${warn}`:'';
+    el.style.display=warn?'block':'none';
+  });
 };
 
 window.confirmDelivery=async function(){
@@ -5678,6 +5702,15 @@ window.confirmDelivery=async function(){
   const drNo=document.getElementById('intakeDR').value.trim();
   if(!drNo){ toast('Enter the Delivery Receipt / Sales Invoice no.','err'); document.getElementById('intakeDR').focus(); return; }
   const t=intakeTotals();
+  const flagged=[];
+  for(let i=0;i<po.items.length;i++){
+    const it=po.items[i];
+    const rcBase=parseFloat(document.getElementById('ic_'+i).value); const baseCost=isNaN(rcBase)?it.orderedCost:rcBase;
+    const landed = baseCost*(1-(t?.discPct||0)/100) + (t?.feePerUnit||0);
+    const warn=intakeRowWarning(it,landed);
+    if(warn) flagged.push(`${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}: ${warn}`);
+  }
+  if(flagged.length && !confirm(`Possible unit cost error on ${flagged.length} item(s):\n\n${flagged.join('\n')}\n\nReceive anyway?`)) return;
   let updated=0, priceChanges=0;
   for(let i=0;i<po.items.length;i++){
     const it=po.items[i];
