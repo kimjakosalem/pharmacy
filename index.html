@@ -563,6 +563,13 @@ select option{background:var(--bg3)}
   <div class="modal" style="width:460px;max-width:94vw;text-align:left">
     <h3 style="color:var(--teal)" id="intakeTitle"><i class="ti ti-truck-delivery" style="margin-right:6px"></i>Receive Delivery</h3>
     <div class="modal-sub" style="margin-bottom:10px">Confirm the quantity received and the actual cost per item. Inventory and product cost update on confirm.</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+      <div><div style="font-size:11px;color:var(--text);font-weight:500">The DR/SI lists cost as</div><div style="font-size:9px;color:var(--text3)">Matches whatever the delivery receipt shows — the other column fills in automatically</div></div>
+      <div class="seg-grid" id="intakeCostModeGroup" style="width:190px;margin-top:0">
+        <button type="button" class="disc-btn active" data-val="unit" onclick="setIntakeCostMode(this)" style="padding:6px 4px;font-size:10px">Unit Cost</button>
+        <button type="button" class="disc-btn" data-val="total" onclick="setIntakeCostMode(this)" style="padding:6px 4px;font-size:10px">Total Amount</button>
+      </div>
+    </div>
     <div id="intakeBody" class="scroll-pan-y" style="max-height:42vh;overflow-y:auto"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
       <div><div style="font-size:11px;color:var(--text);font-weight:500">Delivery Receipt / Sales Invoice No. <span style="color:var(--red)">*</span></div><div style="font-size:9px;color:var(--text3)">Required — the supplier's DR or SI reference</div></div>
@@ -4172,8 +4179,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.81';
+const APP_VERSION='v4.82';
 const CHANGELOG=[
+  {v:'v4.82', date:'2026-07-27', notes:[
+    'Orders → Receive (from a saved PO): new "The DR/SI lists cost as" pill — Unit Cost or Total Amount. Some delivery receipts only show the line total, not the per-piece cost; pick whichever the paper shows and the other column fills in automatically (Total = Qty × Unit Cost, or Unit Cost = Total ÷ Qty), instead of staff doing that division by hand and occasionally typing the total straight into the unit-cost field']},
   {v:'v4.81', date:'2026-07-27', notes:[
     'Orders → Receive delivery: unit cost at/above the item\'s selling price now blocks receiving outright (fix it before you can save) instead of just warning — this is the "total delivery cost typed into the per-unit field" mistake that inflated a day\'s Item Costs by 23x',
     'Products → Add/Edit Product: same hard block — cost above selling price (base product or any variant) now stops the save with an inline message instead of silently saving a loss-making item']},
@@ -5638,6 +5647,7 @@ window.openIntake=function(id){
   document.getElementById('intakeFee').value=0;
   document.getElementById('intakeDiscVal').value=0;
   setIntakeDiscMode(document.querySelector('#intakeDiscModeGroup [data-val="pct"]'));
+  setIntakeCostMode(document.querySelector('#intakeCostModeGroup [data-val="unit"]'));
   document.getElementById('intakeDR').value=po.drNo||'';
   document.getElementById('intakeBody').innerHTML=po.items.map((it,i)=>`
     <div class="intake-item">
@@ -5645,14 +5655,44 @@ window.openIntake=function(id){
         <div class="po-name">${it.name}${poItemLabel(it)?` <span style="color:var(--text3);font-weight:400">(${poItemLabel(it)})</span>`:''}</div>
         <div class="po-meta">${it.sku||'No SKU'} · ${it.supplier||'No supplier'} · Ordered ${it.orderedQty} @ ${fmt(it.orderedCost)}</div>
       </div>
-      <div class="field"><label>Recv Qty</label><input type="number" class="po-qty" id="iq_${i}" value="${it.recvQty}" min="0" step="1" oninput="updateIntakeSummary()"></div>
-      <div class="field"><label>Unit Cost</label><input type="number" class="po-qty" id="ic_${i}" value="${it.recvCost}" min="0" step="0.01" oninput="updateIntakeSummary()"></div>
+      <div class="field"><label>Recv Qty</label><input type="number" class="po-qty" id="iq_${i}" value="${it.recvQty}" min="0" step="1" oninput="onIntakeQtyInput(${i})"></div>
+      <div class="field"><label>Unit Cost</label><input type="number" class="po-qty" id="ic_${i}" value="${it.recvCost}" min="0" step="0.01" oninput="onIntakeUnitCostInput(${i})"></div>
+      <div class="field"><label>Total Amount</label><input type="number" class="po-qty" id="it_${i}" value="${((it.recvCost||0)*(it.recvQty||0)).toFixed(2)}" min="0" step="0.01" oninput="onIntakeTotalAmountInput(${i})"></div>
       <div id="iw_${i}" style="display:none;flex-basis:100%;font-size:11px;font-weight:600;color:var(--red);margin-top:4px"></div>
     </div>`).join('');
+  applyIntakeCostMode();
   updateIntakeSummary();
   document.getElementById('intakeModal').classList.add('show');
 };
 window.closeIntake=function(){ document.getElementById('intakeModal').classList.remove('show'); intakePOId=null; };
+// Whichever column the DR/SI actually shows (unit cost, or total amount for the line) is the one
+// staff type into — the other column is derived, so nobody has to do the division by hand (that
+// manual step is exactly where the "total cost typed as unit cost" mistake keeps happening).
+let intakeCostMode='unit';
+window.setIntakeCostMode=function(btn){
+  if(!btn) return;
+  document.getElementById('intakeCostModeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  intakeCostMode=btn.dataset.val;
+  applyIntakeCostMode();
+};
+function applyIntakeCostMode(){
+  const unitMode=intakeCostMode==='unit';
+  document.querySelectorAll('[id^="ic_"]').forEach(el=>{ el.disabled=!unitMode; el.style.opacity=unitMode?'1':'.55'; });
+  document.querySelectorAll('[id^="it_"]').forEach(el=>{ el.disabled=unitMode; el.style.opacity=unitMode?'.55':'1'; });
+}
+window.onIntakeQtyInput=function(i){ (intakeCostMode==='unit'?onIntakeUnitCostInput:onIntakeTotalAmountInput)(i); };
+window.onIntakeUnitCostInput=function(i){
+  const q=parseFloat(document.getElementById('iq_'+i)?.value)||0;
+  const c=parseFloat(document.getElementById('ic_'+i)?.value)||0;
+  const totalEl=document.getElementById('it_'+i); if(totalEl) totalEl.value=(q*c).toFixed(2);
+  updateIntakeSummary();
+};
+window.onIntakeTotalAmountInput=function(i){
+  const q=parseFloat(document.getElementById('iq_'+i)?.value)||0;
+  const t=parseFloat(document.getElementById('it_'+i)?.value)||0;
+  const costEl=document.getElementById('ic_'+i); if(costEl) costEl.value=q>0?(t/q).toFixed(4):'';
+  updateIntakeSummary();
+};
 // Supplier discount can be entered as a % of the goods total or as a flat peso amount — same
 // toggle pattern as the quick-receive flow's discount field (see setQrDiscMode).
 window.setIntakeDiscMode=function(btn){
