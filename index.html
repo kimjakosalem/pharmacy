@@ -1174,6 +1174,13 @@ select option{background:var(--bg3)}
       <div id="orderSearchResults" style="margin-top:8px;max-height:420px;overflow-y:auto"></div>
       <div class="sep"></div>
       <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center"><i class="ti ti-shopping-bag" style="font-size:11px;margin-right:4px"></i> ORDER LIST <span id="orderItemCount" style="margin-left:auto;font-weight:400;color:var(--text3)"></span></div>
+      <div id="qrCostModeRow" style="display:none;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px">
+        <div><div style="font-size:11px;color:var(--text);font-weight:500">The DR/SI lists cost as</div><div style="font-size:9px;color:var(--text3)">Matches whatever the delivery receipt shows — the other field per line fills in automatically</div></div>
+        <div class="seg-grid" id="qrCostModeGroup" style="width:190px;margin-top:0">
+          <button type="button" class="disc-btn active" data-val="unit" onclick="setQrCostMode(this)" style="padding:6px 4px;font-size:10px">Unit Cost</button>
+          <button type="button" class="disc-btn" data-val="total" onclick="setQrCostMode(this)" style="padding:6px 4px;font-size:10px">Total Amount</button>
+        </div>
+      </div>
       <div id="orderList"></div>
       <div id="orderEmpty" class="empty" style="display:none"><i class="ti ti-clipboard-list"></i>No items in order yet</div>
       <div class="card card-accent-blue" id="poPreviewCard" style="display:none;margin-top:12px">
@@ -4179,8 +4186,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.82';
+const APP_VERSION='v4.83';
 const CHANGELOG=[
+  {v:'v4.83', date:'2026-07-27', notes:[
+    'Orders → New Order → Receive Delivery (the quick on-the-spot receive) gets the same "The DR/SI lists cost as" Unit Cost / Total Amount pill as Receive-from-saved-PO — each line now has both fields, editing one auto-fills the other, and changing quantity in Total mode keeps the line total fixed and re-derives the unit cost. Create PO is unaffected — it stays unit-cost-only since that\'s planning, not a real receipt']},
   {v:'v4.82', date:'2026-07-27', notes:[
     'Orders → Receive (from a saved PO): new "The DR/SI lists cost as" pill — Unit Cost or Total Amount. Some delivery receipts only show the line total, not the per-piece cost; pick whichever the paper shows and the other column fills in automatically (Total = Qty × Unit Cost, or Unit Cost = Total ÷ Qty), instead of staff doing that division by hand and occasionally typing the total straight into the unit-cost field']},
   {v:'v4.81', date:'2026-07-27', notes:[
@@ -4685,6 +4694,7 @@ window.openNewOrderModal=function(mode){
   setQrPayMode(document.querySelector('#qrPayModeGroup [data-val="cash"]'));
   setQrCashSource(document.querySelector('#qrCashSourceGroup [data-val="Drawer Cash"]'));
   setQrDiscMode(document.querySelector('#qrDiscModeGroup [data-val="pct"]'));
+  setQrCostMode(document.querySelector('#qrCostModeGroup [data-val="unit"]'));
   setOrderModalMode(mode||'create');
   populateSupplierList();
   renderOrderList();
@@ -4699,6 +4709,8 @@ window.setOrderModalMode=function(mode){
   document.getElementById('qrDRField').style.display=mode==='receive'?'':'none';
   document.getElementById('createPoFooter').style.display=mode==='create'?'':'none';
   document.getElementById('receiveDeliveryFooter').style.display=mode==='receive'?'':'none';
+  document.getElementById('qrCostModeRow').style.display=mode==='receive'?'flex':'none';
+  renderOrderList();   // re-render so the per-line Total field appears/disappears with the mode
   if(mode==='receive'){ onQrPayModeChange(); }
 };
 window.setQrPayMode=function(btn){
@@ -5118,6 +5130,9 @@ function renderOrderList() {
   // One supplier per order list (SS3): all items grouped under the order-level supplier.
   const supplier=orderSupplierOf();
   const bySupplier={[supplier]:items};
+  // The per-line Total field only makes sense in Receive mode (matching a real DR/SI) — Create PO
+  // is just planning, so it stays as unit-cost-only, unchanged from before.
+  const isReceive=document.getElementById('orderModalMode')?.value==='receive';
 
   el.innerHTML=`
     <div class="supplier-section">
@@ -5130,7 +5145,9 @@ function renderOrderList() {
           </div>
           <div class="po-qty-wrap">
             <label style="font-size:10px;color:var(--text3)">Cost:</label>
-            <input type="number" class="po-qty" style="width:70px" step="0.01" min="0" value="${oiCost(oi)}" oninput="updateOrderCost('${oi.id}',this.value)" title="Editable unit cost">
+            <input type="number" class="po-qty" style="width:70px" id="oc-${oi.id}" step="0.01" min="0" value="${oiCost(oi)}" oninput="updateOrderCost('${oi.id}',this.value)" title="Editable unit cost">
+            ${isReceive?`<label style="font-size:10px;color:var(--text3);margin-left:6px">Total:</label>
+            <input type="number" class="po-qty" style="width:80px" id="ot-${oi.id}" step="0.01" min="0" value="${(oiCost(oi)*qty).toFixed(2)}" oninput="updateOrderTotal('${oi.id}',this.value)" title="Editable line total">`:''}
             <label style="font-size:10px;color:var(--text3);margin-left:6px">Qty:</label>
             <input type="number" class="po-qty" value="${qty}" min="1" oninput="updateOrderQty('${oi.id}',this.value)">
           </div>
@@ -5142,6 +5159,7 @@ function renderOrderList() {
       </div>
     </div>`;
 
+  if(isReceive) applyQrCostMode();
   renderPOPreview(bySupplier);
   if(typeof updateQrSummary==='function') updateQrSummary();
   saveOrderDraft();
@@ -5150,8 +5168,17 @@ function renderOrderList() {
 // Live qty edit: update the line price, the order subtotal, and the PO preview in place —
 // without re-rendering the list (which would blur the number input mid-typing).
 window.updateOrderQty=function(id,val){
-  if(!orderItems[id]) return;
-  orderItems[id].qty=Math.max(1,parseInt(val)||1);
+  const oi=orderItems[id]; if(!oi) return;
+  const newQty=Math.max(1,parseInt(val)||1);
+  // In Total-Amount mode the line total is what the DR/SI actually shows — keep it fixed across a
+  // qty edit and re-derive the unit cost, instead of silently changing the total.
+  if(qrCostMode==='total' && document.getElementById('orderModalMode')?.value==='receive'){
+    const total=oiCost(oi)*oi.qty;
+    oi.qty=newQty;
+    oi.cost=newQty>0?total/newQty:0;
+  } else {
+    oi.qty=newQty;
+  }
   refreshOrderLine(id);
 };
 window.updateOrderCost=function(id,val){
@@ -5159,14 +5186,39 @@ window.updateOrderCost=function(id,val){
   orderItems[id].cost=Math.max(0,parseFloat(val)||0);
   refreshOrderLine(id);
 };
+window.updateOrderTotal=function(id,val){
+  const oi=orderItems[id]; if(!oi) return;
+  const total=Math.max(0,parseFloat(val)||0);
+  oi.cost=oi.qty>0?total/oi.qty:0;
+  refreshOrderLine(id);
+};
 function refreshOrderLine(id){
   const oi=orderItems[id]; if(!oi) return;
-  const pe=document.getElementById('opx-'+id); if(pe) pe.textContent=fmt(oiCost(oi)*oi.qty);
+  const cost=oiCost(oi), total=cost*oi.qty;
+  const pe=document.getElementById('opx-'+id); if(pe) pe.textContent=fmt(total);
+  // Sync the sibling Cost/Total field, but never the one the user is actively typing in —
+  // overwriting it mid-keystroke would jump the cursor and fight their input.
+  const ocEl=document.getElementById('oc-'+id); if(ocEl && document.activeElement!==ocEl) ocEl.value=cost;
+  const otEl=document.getElementById('ot-'+id); if(otEl && document.activeElement!==otEl) otEl.value=total.toFixed(2);
   const sub=Object.values(orderItems).reduce((a,o)=>a+oiCost(o)*o.qty,0);
   const se=document.getElementById('orderSubtotal'); if(se) se.textContent=fmt(sub);
   renderPOPreview({[orderSupplierOf()]:Object.values(orderItems)});
   if(typeof updateQrSummary==='function') updateQrSummary();
   saveOrderDraft();
+}
+// Same idea as the saved-PO Receive intake's cost-mode pill: whichever column the DR/SI actually
+// shows is what staff type, the other is derived — see intakeCostMode above for the fuller why.
+let qrCostMode='unit';
+window.setQrCostMode=function(btn){
+  if(!btn) return;
+  document.getElementById('qrCostModeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  qrCostMode=btn.dataset.val;
+  applyQrCostMode();
+};
+function applyQrCostMode(){
+  const unitMode=qrCostMode==='unit';
+  document.querySelectorAll('[id^="oc-"]').forEach(el=>{ el.disabled=!unitMode; el.style.opacity=unitMode?'1':'.55'; });
+  document.querySelectorAll('[id^="ot-"]').forEach(el=>{ el.disabled=unitMode; el.style.opacity=unitMode?'.55':'1'; });
 }
 
 function renderPOPreview(bySupplier) {
