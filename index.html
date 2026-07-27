@@ -3149,6 +3149,22 @@ window.saveProduct=async function(){
   const mrpCap=parseFloat(document.getElementById('pMrpCap').value)||null;
   const mrpRef=document.getElementById('pMrpRef').value.trim();
   const priceVal=parseFloat(document.getElementById('pPrice').value)||0;
+  const costVal=parseFloat(document.getElementById('pCost').value)||0;
+  // Cost above selling price is virtually always a data-entry error (e.g. the total case/delivery
+  // cost typed into the per-unit field) — block the save outright rather than just warning, since
+  // this is exactly what quietly inflated a day's Item Costs total in the past.
+  if(priceVal>0 && costVal>priceVal){
+    msg.style.color='var(--red)';
+    msg.textContent=`Cost (${fmt(costVal)}) is higher than the selling price (${fmt(priceVal)}) — this item would sell at a loss. Fix the cost or price before saving.`;
+    return;
+  }
+  for(const v of variants){
+    if(v.price>0 && v.cost>v.price){
+      msg.style.color='var(--red)';
+      msg.textContent=`Variant "${[v.size,v.packaging].filter(Boolean).join(' ')}" cost (${fmt(v.cost)}) is higher than its price (${fmt(v.price)}) — fix before saving.`;
+      return;
+    }
+  }
   // A price above a known DOH cap should never be a reflexive save (e.g. blindly passing through
   // a cost increase) — force an explicit confirmation so it's a deliberate call, not a drift.
   if(mrpCap && priceVal>mrpCap && !confirm(`This price (${fmt(priceVal)}) is ${fmt(priceVal-mrpCap)} OVER the DOH MRP cap of ${fmt(mrpCap)} for this product.\n\nSave anyway?`)){
@@ -3162,7 +3178,7 @@ window.saveProduct=async function(){
     name,
     category:document.getElementById('pCategory').value.trim(),
     address,
-    cost:parseFloat(document.getElementById('pCost').value)||0,
+    cost:costVal,
     price:priceVal,
     inventory: variants.length ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(document.getElementById('pInventory').value)||0),
     lowStock:parseInt(document.getElementById('pLowStock').value)||10,
@@ -4156,8 +4172,11 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.80';
+const APP_VERSION='v4.81';
 const CHANGELOG=[
+  {v:'v4.81', date:'2026-07-27', notes:[
+    'Orders → Receive delivery: unit cost at/above the item\'s selling price now blocks receiving outright (fix it before you can save) instead of just warning — this is the "total delivery cost typed into the per-unit field" mistake that inflated a day\'s Item Costs by 23x',
+    'Products → Add/Edit Product: same hard block — cost above selling price (base product or any variant) now stops the save with an inline message instead of silently saving a loss-making item']},
   {v:'v4.80', date:'2026-07-27', notes:[
     'Orders → Receive delivery: now warns if a unit cost looks like a data-entry error (at/above the item\'s selling price, or several times its current on-file cost) and asks you to confirm before updating inventory — this is how one bad "total delivery cost typed as per-unit cost" entry can blow up a day\'s Item Costs total on the Shift report']},
   {v:'v4.79', date:'2026-07-24', notes:[
@@ -5666,17 +5685,18 @@ function intakeTotals(){
   const feePerUnit = units>0 ? fee/units : 0;
   return {units, goods, discPct, discAmt, goodsAfterDisc, fee, feePerUnit, grand:goodsAfterDisc+fee, discMode, discRaw};
 }
-// Flags a received line whose landed cost looks like a data-entry error: at or above the item's
-// own selling price (would sell at a loss), or many times its current on-file cost (e.g. someone
-// typed the delivery's total cost into the per-unit field instead of the per-unit cost).
-function intakeRowWarning(it, landed){
-  const prod=allProductsFull[it.prodId]; if(!prod) return '';
+// Flags a received line whose landed cost looks like a data-entry error — most commonly a staff
+// member typing the delivery's TOTAL cost into the per-unit cost field instead of dividing it out.
+// 'block' (cost at/above selling price — would sell at a loss) hard-stops the receive; 'warn'
+// (cost jumped 5x+ vs the on-file cost, but still under price) just needs a confirm to proceed.
+function intakeRowIssue(it, landed){
+  const prod=allProductsFull[it.prodId]; if(!prod) return null;
   const v=hasVariantInventory(prod)?findVariantByLabel(prod,it.size,it.packaging):null;
   const price=(v&&v.price!=null)?v.price:prod.price;
   const onFileCost=(v&&v.cost!=null&&v.cost!=='')?v.cost:(prod.cost||0);
-  if(price>0 && landed>=price) return `Landed cost ${fmt(landed)} is at or above the selling price ${fmt(price)} — this item would sell at a loss. Check for a data-entry error.`;
-  if(onFileCost>0 && landed>=onFileCost*5) return `Landed cost ${fmt(landed)} is ${(landed/onFileCost).toFixed(1)}x the current on-file cost ${fmt(onFileCost)} — double-check the unit cost.`;
-  return '';
+  if(price>0 && landed>=price) return {type:'block', message:`Landed cost ${fmt(landed)} is at or above the selling price ${fmt(price)} — this item would sell at a loss. Check for a data-entry error (e.g. total cost typed instead of per-unit cost).`};
+  if(onFileCost>0 && landed>=onFileCost*5) return {type:'warn', message:`Landed cost ${fmt(landed)} is ${(landed/onFileCost).toFixed(1)}x the current on-file cost ${fmt(onFileCost)} — double-check the unit cost.`};
+  return null;
 }
 window.updateIntakeSummary=function(){
   const t=intakeTotals(); if(!t) return;
@@ -5690,10 +5710,11 @@ window.updateIntakeSummary=function(){
   (po?.items||[]).forEach((it,i)=>{
     const c=parseFloat(document.getElementById('ic_'+i)?.value); const baseCost=isNaN(c)?it.orderedCost:c;
     const landed=baseCost*(1-(t.discPct||0)/100)+(t.feePerUnit||0);
-    const warn=intakeRowWarning(it,landed);
+    const issue=intakeRowIssue(it,landed);
     const el=document.getElementById('iw_'+i); if(!el) return;
-    el.innerHTML=warn?`<i class="ti ti-alert-triangle"></i> ${warn}`:'';
-    el.style.display=warn?'block':'none';
+    el.innerHTML=issue?`<i class="ti ti-alert-triangle"></i> ${issue.message}`:'';
+    el.style.display=issue?'block':'none';
+    el.style.color=issue?.type==='block'?'var(--red)':'var(--amber)';
   });
 };
 
@@ -5702,15 +5723,19 @@ window.confirmDelivery=async function(){
   const drNo=document.getElementById('intakeDR').value.trim();
   if(!drNo){ toast('Enter the Delivery Receipt / Sales Invoice no.','err'); document.getElementById('intakeDR').focus(); return; }
   const t=intakeTotals();
-  const flagged=[];
+  const blocked=[], warned=[];
   for(let i=0;i<po.items.length;i++){
     const it=po.items[i];
     const rcBase=parseFloat(document.getElementById('ic_'+i).value); const baseCost=isNaN(rcBase)?it.orderedCost:rcBase;
     const landed = baseCost*(1-(t?.discPct||0)/100) + (t?.feePerUnit||0);
-    const warn=intakeRowWarning(it,landed);
-    if(warn) flagged.push(`${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}: ${warn}`);
+    const issue=intakeRowIssue(it,landed);
+    if(issue?.type==='block') blocked.push(`${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}: ${issue.message}`);
+    else if(issue?.type==='warn') warned.push(`${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}: ${issue.message}`);
   }
-  if(flagged.length && !confirm(`Possible unit cost error on ${flagged.length} item(s):\n\n${flagged.join('\n')}\n\nReceive anyway?`)) return;
+  // Cost ≥ selling price can't be received as-is — this is exactly the "total cost typed as
+  // per-unit cost" mistake that inflated a day's Item Costs total in the past. No override.
+  if(blocked.length){ toast(`Fix unit cost on ${blocked.length} item(s) before receiving — cost would meet/exceed selling price`,'err'); return; }
+  if(warned.length && !confirm(`Possible unit cost error on ${warned.length} item(s):\n\n${warned.join('\n')}\n\nReceive anyway?`)) return;
   let updated=0, priceChanges=0;
   for(let i=0;i<po.items.length;i++){
     const it=po.items[i];
