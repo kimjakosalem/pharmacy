@@ -764,7 +764,7 @@ select option{background:var(--bg3)}
       <div class="field"><label>SKU / ID</label><input type="text" id="pSku" placeholder="e.g. MED-001"></div>
       <div class="field fc" style="grid-column:2/-1"><label>Product Name</label><input type="text" id="pName" placeholder="e.g. Amoxicillin 500mg" oninput="checkMrpCap()"></div>
       <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off" onchange="applyCategoryMarkup()"><datalist id="catList"></datalist><div id="catMarkupHint" style="font-size:10px;color:var(--teal);margin-top:3px"></div></div>
-      <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
+      <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="onCostInput()"></div>
       <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
       <div class="field"><label>Margin %</label><input type="text" id="pMarginPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field"><label>Markup %</label><input type="text" id="pMarkupPct" placeholder="auto" readonly style="color:var(--teal)"></div>
@@ -2799,8 +2799,12 @@ async function ensureSuppliersRegistered(names){
   return added;
 }
 
-// Apply a category's recommended markup to suggest a selling price from cost.
-window.applyCategoryMarkup=function(){
+// Apply a category's recommended markup to suggest a selling price from cost. Shared by the
+// Category field's onchange, the Cost field's oninput (form order is Category → Cost → Price, so
+// selecting category before typing cost used to never actually fill the price — the hint said
+// "auto-set from cost" but nothing re-ran once cost showed up), and editProduct (population only,
+// never overwrites a price the product already has).
+function refreshCatMarkupHint(overwritePrice){
   const name=document.getElementById('pCategory').value;
   const cat=categories.find(c=>c.name.toLowerCase()===name.toLowerCase());
   const hint=document.getElementById('catMarkupHint');
@@ -2809,8 +2813,16 @@ window.applyCategoryMarkup=function(){
     if(hint) hint.textContent=`Recommended ${label} ${cat.value}% — price auto-set from cost`;
     const cost=parseFloat(document.getElementById('pCost').value)||0;
     const np=priceFromCat(cat,cost);
-    if(cost>0 && np!=null){ document.getElementById('pPrice').value=np.toFixed(2); calcMargin(); }
+    if(overwritePrice && cost>0 && np!=null){ document.getElementById('pPrice').value=np.toFixed(2); calcMargin(); }
   } else if(hint){ hint.textContent=''; }
+}
+window.applyCategoryMarkup=function(){ refreshCatMarkupHint(true); };
+// Cost changed: fill price from the category recommendation too, but only while price is still
+// blank — once a price exists (auto-filled or typed), further cost edits must never silently
+// overwrite it.
+window.onCostInput=function(){
+  if(!document.getElementById('pPrice').value){ refreshCatMarkupHint(true); }
+  calcMargin();
 };
 
 // Category dropdown: categories DB first, falling back to distinct product categories.
@@ -3267,6 +3279,7 @@ window.editProduct=async function(id){
   document.getElementById('pMrpCap').value=p.mrpCap||'';
   document.getElementById('pMrpRef').value=p.mrpRef||'';
   checkMrpCap();
+  refreshCatMarkupHint(!p.price);
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   variantMigrationTarget=p.inventory||0;
   (p.variants||[]).forEach(v=>addVariantRow(v));
@@ -3280,6 +3293,7 @@ window.cancelEditProduct=function(){
   editingProdId=null;
   document.getElementById('prodFormTitle').textContent='Add New Product';
   ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pAddress','pMrpCap','pMrpRef','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('catMarkupHint').textContent='';
   document.getElementById('mrpCapBanner').style.display='none';
   selectedSuppliers=[]; selectedSupplierCosts={}; renderSupChips(); document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('variantList').innerHTML=''; variantRows=[]; variantMigrationTarget=0;
@@ -4270,9 +4284,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.85';
+const APP_VERSION='v4.86';
 const CHANGELOG=[
-  {v:'v4.85', date:'2026-07-31', notes:[
+  {v:'v4.86', date:'2026-07-31', notes:[
+    'Products → Add/Edit Product: fixed Selling Price never actually auto-filling from a category\'s recommended margin/markup. Form order is Category → Cost → Price, but the auto-fill only ran on the Category field changing — since cost is normally still 0 at that point, price stayed blank forever even though the hint said "price auto-set from cost". Typing Cost now triggers the same auto-fill (only while Price is still blank — never overwrites a price you\'ve typed in)',
+    'Products → Edit Product: opening an existing product that\'s missing a Selling Price (but has a Cost and a category with a margin/markup rule) now fills in the recommended price instead of leaving it blank with a misleading hint; also fixed the recommendation hint text getting stuck on-screen from a previously-edited product',
+    'Orders → New Order: removed the redundant Search button (search already runs as you type) and the "create new product" link in the no-results state',
+    'Orders → New Order: fixed "Can\'t find it? Create new product" doing nothing — the Add Product form was opening behind the order modal, not actually failing to open',
     'Orders → New Order: removed the redundant Search button (search already runs as you type) and the "create new product" link in the no-results state',
     'Orders → New Order: fixed "Can\'t find it? Create new product" doing nothing — the Add Product form was opening behind the order modal, not actually failing to open',
     'Orders → New Order: order line Qty is now tap-to-open numpad, matching the POS cart quantity input, instead of a raw number field']},
