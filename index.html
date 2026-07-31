@@ -1096,7 +1096,10 @@ select option{background:var(--bg3)}
         <button class="btn btn-teal" onclick="openAddProduct()"><i class="ti ti-plus"></i> Add New Product</button>
       </div>
       <div style="margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="prodFilterBox" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;border-radius:7px;outline:none;flex:1;min-width:160px;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
+        <div class="search-wrap" style="flex:1;min-width:160px">
+          <input type="text" id="prodFilterBox" placeholder="Filter products..." oninput="filterProducts(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 30px 7px 10px;border-radius:7px;outline:none;width:100%;transition:border-color .2s" onfocus="this.style.borderColor='var(--teal)'" onblur="this.style.borderColor='var(--border)'">
+          <button class="search-clear" id="prodFilterClear" onclick="clearProductFilter()" title="Clear">&#x2715;</button>
+        </div>
         <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox" id="mrpWatchToggle" onchange="toggleMrpWatch()"> <i class="ti ti-shield-check" style="font-size:13px"></i> MRP-regulated only</label>
       </div>
       <div class="scroll-pan-x" style="overflow-x:auto;touch-action:pan-x pan-y">
@@ -2891,6 +2894,12 @@ window.filterProducts=function(q){
   const base=document.getElementById('mrpWatchToggle')?.checked ? allProducts.filter(p=>p.mrpCap) : allProducts;
   productView=!s?base:base.filter(p=>(p.name||'').toLowerCase().includes(s)||(p.sku||'').toLowerCase().includes(s)||(p.category||'').toLowerCase().includes(s));
   productPageIndex=0; renderProducts();
+  document.getElementById('prodFilterClear')?.classList.toggle('show', !!q);
+};
+window.clearProductFilter=function(){
+  document.getElementById('prodFilterBox').value='';
+  filterProducts('');
+  document.getElementById('prodFilterBox').focus();
 };
 
 // Quick audit view: show only products with a known DOH MRP cap set, so the owner can review
@@ -4296,8 +4305,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.87';
+const APP_VERSION='v4.88';
 const CHANGELOG=[
+  {v:'v4.88', date:'2026-07-31', notes:[
+    'Products → Product Inventory: filter box now has a clear (×) button, matching the same pattern already used in POS and Orders search']},
   {v:'v4.87', date:'2026-07-31', notes:[
     'Products → Add/Edit Product: SKU / ID now auto-suggests the next free "MED-###" number when adding a new product, and when editing an existing product that\'s missing one — still a normal editable field, so typing your own SKU/barcode over it (or clearing it) always wins']},
   {v:'v4.86', date:'2026-07-31', notes:[
