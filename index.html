@@ -1691,13 +1691,21 @@ function applyRole(){
 // Grey out + disable Cash In/Out for whoever doesn't have the 'cashio' permission. Defense
 // in depth — addCI/addCO/removeCI/removeCO also re-check hasPerm() before writing.
 function applyPermUI(){
-  // Reviewing a past day is read-mostly: no new cash in/out entries against a closed day.
-  const can=hasPerm('cashio') && !isReviewing();
+  // Cash In/Out can be locked for two unrelated reasons — missing privilege, or reviewing a past
+  // day — and they need different explanations. Telling an owner they "don't have the privilege"
+  // because they opened a past day is just wrong, so the note text is picked per reason.
+  const hasCashio=hasPerm('cashio'), reviewing=isReviewing();
+  const can=hasCashio && !reviewing;
   ['ciAmt','ciNote','coAmt','coNote','ciAddBtn','coAddBtn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=!can; });
   document.querySelectorAll('#coTypeGroup .disc-btn').forEach(b=>b.disabled=!can);
-  ['cashInCard','cashOutCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.opacity=can?'1':'.55'; });
-  ['ciPermNote','coPermNote'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=can?'none':'block'; });
-  const newRetBtn=document.getElementById('newReturnBtn'); if(newRetBtn) newRetBtn.style.display=(hasPerm('returns')&&!isReviewing())?'inline-flex':'none';
+  // Only dim for a real privilege lockout — while reviewing, these lists ARE the content you came
+  // to read, so keep them at full contrast.
+  ['cashInCard','cashOutCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.opacity=hasCashio?'1':'.55'; });
+  const noteHtml = reviewing
+    ? '<i class="ti ti-history"></i> Viewing a past day — new entries are disabled here. <strong>Close Review</strong> to log against today\'s shift.'
+    : '<i class="ti ti-lock"></i> You don\'t have the <strong>Cash In/Out</strong> privilege — ask the owner to grant it in Settings.';
+  ['ciPermNote','coPermNote'].forEach(id=>{ const el=document.getElementById(id); if(el){ el.innerHTML=noteHtml; el.style.display=can?'none':'block'; } });
+  const newRetBtn=document.getElementById('newReturnBtn'); if(newRetBtn) newRetBtn.style.display=(hasPerm('returns')&&!reviewing)?'inline-flex':'none';
 }
 // Logout = switch account mid-shift. The shift stays OPEN (data is in Firestore); the next
 // person logs in and — because starting cash is already set — won't be asked for it again.
@@ -4330,8 +4338,11 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.89';
+const APP_VERSION='v4.90';
 const CHANGELOG=[
+  {v:'v4.90', date:'2026-07-31', notes:[
+    'Fixed the Cash Ins / Cash Outs cards claiming "You don\'t have the Cash In/Out privilege" while reviewing a past day — even for the owner, who does have it. The controls are still disabled there (you can\'t log new entries against a closed day), but they now say so for the real reason: "Viewing a past day — Close Review to log against today\'s shift"',
+    'Those two cards also no longer grey out while reviewing — the past day\'s cash ins/outs are the whole point of opening it, so they stay at full contrast. Greying out is now reserved for an actual missing privilege']},
   {v:'v4.89', date:'2026-07-31', notes:[
     'Shift → Review Past Day now opens the chosen day inside the normal shift view instead of stacking a second "Review Past Day" card above it. Picking a date swaps the whole tab — Morning/Evening pills, Shift Setup, Cash Ins/Outs, POS Transactions, Manual Sales — over to that day, so a past day reads exactly like today does, with the Morning/Evening pills switching that day\'s two shifts',
     'Today\'s figures are never changed or copied by this — they\'re simply not the day on screen. Close Review brings today straight back, exactly as it was',
