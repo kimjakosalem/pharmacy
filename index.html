@@ -311,8 +311,10 @@ select option{background:var(--bg3)}
 .modal-overlay{position:fixed;inset:0;background:rgba(7,10,20,.88);z-index:150;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:max(14px,env(safe-area-inset-top)) 12px max(14px,env(safe-area-inset-bottom))}
 .modal-overlay.show{display:flex}
 /* Variant picker must stack above other modals it's opened on top of (PO/Receive), and the
-   numpad (used for its own qty field) must stack above the variant picker in turn. */
+   numpad (used for its own qty field) must stack above the variant picker in turn. Product modal
+   must also stack above Orders when opened via "Create new product" from inside that modal. */
 #variantModal{z-index:160}
+#productModal{z-index:161}
 #numpadModal{z-index:170}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);padding:22px;width:380px;max-width:95vw;margin:auto;max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow-y:auto;-webkit-overflow-scrolling:touch}
 .modal h3{font-size:15px;font-weight:600;margin-bottom:4px}
@@ -1166,9 +1168,8 @@ select option{background:var(--bg3)}
       </div>
       <div class="sep"></div>
       <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin-bottom:7px"><i class="ti ti-plus" style="font-size:11px"></i> ADD PRODUCT TO ORDER</div>
-      <div class="fg fg2">
+      <div class="fg">
         <div class="field"><label>Search Product</label><div class="search-wrap"><input type="text" id="orderSearch" placeholder="Type name or SKU..." oninput="renderOrderSearch()"><button class="search-clear" id="orderSearchClear" onclick="clearOrderSearch()" title="Clear">&#x2715;</button></div></div><datalist id="supplierList"></datalist>
-        <div class="field" style="justify-content:flex-end;align-items:flex-end"><button class="btn btn-ghost btn-sm" onclick="renderOrderSearch()"><i class="ti ti-search"></i> Search</button></div>
       </div>
       <button class="btn btn-ghost btn-xs" style="margin-bottom:8px" onclick="quickAddProductFromOrder()"><i class="ti ti-plus"></i> Can't find it? Create new product</button>
       <div id="orderSearchResults" style="margin-top:8px;max-height:420px;overflow-y:auto"></div>
@@ -3529,12 +3530,17 @@ window.npKey=function(k){
 window.closeNumpad=function(){ document.getElementById('numpadModal').classList.remove('show'); npCtx=null; };
 window.openQtyPad=function(target){
   if(target==='modal'){ openNumpad('qty',{target:'modal',initial:parseInt(document.getElementById('modalQty').value)||1},'Enter Quantity','Set'); }
+  else if(typeof target==='string' && target.startsWith('order:')){
+    const oi=orderItems[target.slice(6)]; if(!oi) return;
+    openNumpad('qty',{target:target,initial:oi.qty},'Quantity — '+oi.prod.name,'Set');
+  }
   else { openNumpad('qty',{target:target,initial:cart[target].qty},'Quantity — '+cart[target].name,'Set'); }
 };
 window.npConfirm=function(){
   if(npMode==='qty'){
     const q=parseInt(npBuf)||0;
     if(npCtx.target==='modal'){ document.getElementById('modalQty').value=Math.max(1,q||1); }
+    else if(typeof npCtx.target==='string' && npCtx.target.startsWith('order:')){ updateOrderQty(npCtx.target.slice(6),q); }
     else { if(q<=0) cart.splice(npCtx.target,1); else cart[npCtx.target].qty=q; renderCart(); }
     closeNumpad();
   } else if(npMode==='disc'){
@@ -4264,8 +4270,12 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.84';
+const APP_VERSION='v4.85';
 const CHANGELOG=[
+  {v:'v4.85', date:'2026-07-31', notes:[
+    'Orders → New Order: removed the redundant Search button (search already runs as you type) and the "create new product" link in the no-results state',
+    'Orders → New Order: fixed "Can\'t find it? Create new product" doing nothing — the Add Product form was opening behind the order modal, not actually failing to open',
+    'Orders → New Order: order line Qty is now tap-to-open numpad, matching the POS cart quantity input, instead of a raw number field']},
   {v:'v4.84', date:'2026-07-28', notes:[
     'New Reports → Attendance view (owner only): logs every staff time-in (PIN login) and time-out (manual logout, 10-min idle auto-logout, or shift close), with a per-staff daily first-in/last-out summary plus the full event log',
     'Shift can no longer be closed before its scheduled end time — Morning before 3:00 PM or Evening before 11:00 PM now shows an error instead of letting the shift close early (applies to everyone, no override)']},
@@ -5110,8 +5120,7 @@ window.renderOrderSearch = function() {
   const matches=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q));
   const results=matches.slice(0,ORDER_SEARCH_CAP);
   if(!results.length){
-    el.innerHTML=`<div class="empty" style="padding:10px">No products found</div>
-      <button class="btn btn-ghost btn-sm" onclick="quickAddProductFromOrder()"><i class="ti ti-plus"></i> Create "${document.getElementById('orderSearch').value.trim()}" as a new product</button>`;
+    el.innerHTML=`<div class="empty" style="padding:10px">No products found</div>`;
     return;
   }
   el.innerHTML=results.map(p=>{
@@ -5230,7 +5239,7 @@ function renderOrderList() {
             ${isReceive?`<label style="font-size:10px;color:var(--text3);margin-left:6px">Total:</label>
             <input type="number" class="po-qty" style="width:80px" id="ot-${oi.id}" step="0.01" min="0" value="${(oiCost(oi)*qty).toFixed(2)}" oninput="updateOrderTotal('${oi.id}',this.value)" title="Editable line total">`:''}
             <label style="font-size:10px;color:var(--text3);margin-left:6px">Qty:</label>
-            <input type="number" class="po-qty" value="${qty}" min="1" oninput="updateOrderQty('${oi.id}',this.value)">
+            <input class="po-qty qty-input" id="oq-${oi.id}" value="${qty}" inputmode="numeric" readonly onclick="openQtyPad('order:${oi.id}')" title="Tap to edit quantity">
           </div>
           <div class="po-price" id="opx-${oi.id}">${fmt(oiCost(oi)*qty)}</div>
           <button class="del-btn" onclick="removeFromOrder('${oi.id}')"><i class="ti ti-x"></i></button>
@@ -5281,6 +5290,7 @@ function refreshOrderLine(id){
   // overwriting it mid-keystroke would jump the cursor and fight their input.
   const ocEl=document.getElementById('oc-'+id); if(ocEl && document.activeElement!==ocEl) ocEl.value=cost;
   const otEl=document.getElementById('ot-'+id); if(otEl && document.activeElement!==otEl) otEl.value=total.toFixed(2);
+  const oqEl=document.getElementById('oq-'+id); if(oqEl) oqEl.value=oi.qty;
   const sub=Object.values(orderItems).reduce((a,o)=>a+oiCost(o)*o.qty,0);
   const se=document.getElementById('orderSubtotal'); if(se) se.textContent=fmt(sub);
   renderPOPreview({[orderSupplierOf()]:Object.values(orderItems)});
