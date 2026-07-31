@@ -3256,8 +3256,20 @@ window.saveProduct=async function(){
   if(document.getElementById('orderSearch')?.value.trim()) renderOrderSearch();
 };
 
+// Next free MED-### SKU, scanned off whatever's already in use so it stays unique without a
+// separate counter to maintain. Only a suggestion — the field stays a normal editable text input,
+// so staff can type their own SKU/barcode over it or clear it entirely.
+function nextAutoSku(){
+  let max=0;
+  allProducts.forEach(p=>{
+    const m=/^MED-(\d+)$/i.exec((p.sku||'').trim());
+    if(m){ const n=parseInt(m[1],10); if(n>max) max=n; }
+  });
+  return 'MED-'+String(max+1).padStart(3,'0');
+}
 window.openAddProduct=function(){
   cancelEditProduct();
+  document.getElementById('pSku').value=nextAutoSku();
   document.getElementById('productModal').classList.add('show');
   setTimeout(()=>document.getElementById('pName').focus({preventScroll:true}),50);
 };
@@ -3266,7 +3278,7 @@ window.editProduct=async function(id){
   const p=allProductsFull[id]; if(!p)return;
   editingProdId=id;
   document.getElementById('prodFormTitle').textContent='Edit Product';
-  document.getElementById('pSku').value=p.sku||'';
+  document.getElementById('pSku').value=p.sku||nextAutoSku();
   setSuppliersFromString(p.suppliers,p.supplierCosts);
   document.getElementById('supSearch').value=''; document.getElementById('supSearchResults').innerHTML='';
   document.getElementById('pName').value=p.name||'';
@@ -4284,8 +4296,10 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.86';
+const APP_VERSION='v4.87';
 const CHANGELOG=[
+  {v:'v4.87', date:'2026-07-31', notes:[
+    'Products → Add/Edit Product: SKU / ID now auto-suggests the next free "MED-###" number when adding a new product, and when editing an existing product that\'s missing one — still a normal editable field, so typing your own SKU/barcode over it (or clearing it) always wins']},
   {v:'v4.86', date:'2026-07-31', notes:[
     'Products → Add/Edit Product: fixed Selling Price never actually auto-filling from a category\'s recommended margin/markup. Form order is Category → Cost → Price, but the auto-fill only ran on the Category field changing — since cost is normally still 0 at that point, price stayed blank forever even though the hint said "price auto-set from cost". Typing Cost now triggers the same auto-fill (only while Price is still blank — never overwrites a price you\'ve typed in)',
     'Products → Edit Product: opening an existing product that\'s missing a Selling Price (but has a Cost and a category with a margin/markup rule) now fills in the recommended price instead of leaving it blank with a misleading hint; also fixed the recommendation hint text getting stuck on-screen from a previously-edited product',
