@@ -100,6 +100,9 @@ button,.tab,.btn,.pin-key,.pay-mode-btn,.qty-btn,.shift-btn,.del-btn{touch-actio
 .shift-btn{padding:11px 14px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-family:var(--sans);font-size:12px;font-weight:500;border-radius:var(--r2);cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:7px}
 .shift-btn.active{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
 .shift-btn:hover:not(.active){border-color:var(--border2);color:var(--text)}
+/* Reviewing a past day: the shift pills below are showing history, not today. Tint them amber
+   (matching the review banner) so scrolling past the banner still reads as "this isn't today". */
+#panel-shift.reviewing .shift-btn.active{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
 /* CARDS */
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:10px;width:100%;box-sizing:border-box}
 .card.flash{animation:cardflash 1.2s ease-out}
@@ -827,19 +830,25 @@ select option{background:var(--bg3)}
 
   <!-- ═══ SHIFT ═══ -->
   <div class="panel active" id="panel-shift">
-    <div class="card" id="reviewDayCard" style="display:none">
-      <div class="card-title"><i class="ti ti-history"></i> Review Past Day <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)">owner only</span></div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:9px">Pick a past date to see that day's Morning &amp; Evening transactions. You can void a sale, cash-in, or cash-out from here — it stays on record marked VOIDED. To add a sale for that date, use "Add Backdated Sale" (opens the POS tab).</div>
-      <div class="fg fg2">
-        <div class="field"><label>Date</label><input type="date" id="reviewDate" onchange="loadReviewDay()"></div>
-        <div class="field" style="justify-content:flex-end"><label>&nbsp;</label>
-          <div class="btn-row" style="margin:0">
-            <button class="btn btn-amber btn-sm" id="reviewBackdateBtn" style="display:none" onclick="startBackdateSale()"><i class="ti ti-shopping-cart-plus"></i> Add Backdated Sale</button>
-            <button class="btn btn-ghost btn-sm" id="reviewCloseBtn" style="display:none" onclick="closeReviewDay()"><i class="ti ti-x"></i> Close Review</button>
-          </div>
+    <!-- Review Past Day is a slim control, NOT a second copy of the day's data: picking a date
+         re-points the whole Shift tab below at that day (see viewDate/curDate) instead of
+         rendering its transactions into a duplicate card up here. -->
+    <div class="card" id="reviewDayCard" style="display:none;padding:11px 13px">
+      <div id="reviewIdleRow" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <span style="display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;letter-spacing:.06em;color:var(--text2)"><i class="ti ti-history" style="font-size:13px"></i> REVIEW PAST DAY</span>
+        <input type="date" id="reviewDate" onchange="loadReviewDay()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:6px;outline:none">
+        <span style="font-size:10px;color:var(--text3)">Opens that day's Morning &amp; Evening shifts below, in place of today's.</span>
+        <span style="margin-left:auto;font-size:10px;color:var(--text3)">owner only</span>
+      </div>
+      <div id="reviewActiveRow" style="display:none;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="ptag" style="background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber)"><i class="ti ti-history"></i> REVIEWING</span>
+        <span id="reviewActiveDate" style="font-size:13px;font-weight:600;color:var(--amber)"></span>
+        <span style="font-size:10px;color:var(--text3);flex:1;min-width:180px">Today's shift is hidden, not changed — Close Review brings it straight back. Voids &amp; corrections here apply to this past day.</span>
+        <div class="btn-row" style="margin:0">
+          <button class="btn btn-amber btn-sm" onclick="startBackdateSale()"><i class="ti ti-shopping-cart-plus"></i> Add Backdated Sale</button>
+          <button class="btn btn-ghost btn-sm" onclick="closeReviewDay()"><i class="ti ti-x"></i> Close Review</button>
         </div>
       </div>
-      <div id="reviewDayBody"></div>
     </div>
     <div class="shift-row">
       <button class="shift-btn active" id="s1btn" onclick="selShift(1)"><i class="ti ti-sun"></i> Morning <span style="font-size:10px;opacity:.6">7AM-3PM</span></button>
@@ -919,7 +928,7 @@ select option{background:var(--bg3)}
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-receipt"></i> POS Transactions <span id="salesCount" style="margin-left:auto;font-size:10px;font-weight:400;color:var(--text3)"></span>
-        <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="openPosResetModal()" title="Owner: clear this shift's sales log"><i class="ti ti-refresh"></i> Reset</button>
+        <button class="btn btn-ghost btn-xs" id="posResetBtn" style="margin-left:8px" onclick="openPosResetModal()" title="Owner: clear this shift's sales log"><i class="ti ti-refresh"></i> Reset</button>
       </div>
       <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Each POS checkout is logged here for this shift. Tap ✕ to <strong style="color:var(--text2)">void</strong> a sale (reverses the totals &amp; returns stock). <strong style="color:var(--text2)">Reset</strong> permanently clears this shift's entire sales log (owner) — use only to clear old/test data, not as a daily action.</div>
       <div class="elist" style="max-height:280px" id="salesList"></div>
@@ -954,7 +963,7 @@ select option{background:var(--bg3)}
         </div>
         <div class="field"><label>Qty</label><input type="number" id="msQty" placeholder="1" step="1" value="1"></div>
       </div>
-      <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="addMS()"><i class="ti ti-plus"></i> Add</button></div>
+      <div class="btn-row"><button class="btn btn-ghost btn-sm" id="msAddBtn" onclick="addMS()"><i class="ti ti-plus"></i> Add</button></div>
       <div class="elist" id="msList"></div>
     </div>
     <div class="card">
@@ -966,7 +975,7 @@ select option{background:var(--bg3)}
       </div>
     </div>
     <div class="btn-row">
-      <button class="btn btn-teal" onclick="saveShift()"><i class="ti ti-device-floppy"></i> Save Shift</button>
+      <button class="btn btn-teal" id="saveShiftBtn" onclick="saveShift()"><i class="ti ti-device-floppy"></i> Save Shift</button>
       <button class="btn btn-ghost" id="clearShiftBtn" style="display:none" onclick="openClearShiftModal()"><i class="ti ti-trash"></i> Clear</button>
       <span class="saving-ind" id="savingInd"><i class="ti ti-loader-2 spin"></i> Saving...</span>
     </div>
@@ -1668,7 +1677,7 @@ function applyRole(){
   document.getElementById('tab-reports').style.display = owner?'':'none';
   document.getElementById('tab-settings').style.display = owner?'':'none';
   document.getElementById('reviewDayCard').style.display = owner?'block':'none';
-  document.getElementById('clearShiftBtn').style.display = owner?'inline-flex':'none';
+  document.getElementById('clearShiftBtn').style.display = (owner&&!isReviewing())?'inline-flex':'none';
   const coOtherBtn=document.getElementById('coTypeOtherBtn'); if(coOtherBtn) coOtherBtn.style.display = owner?'':'none';
   // Products tab is open to all roles, but bulk import/export and the category/supplier
   // databases are owner-only management tools.
@@ -1682,18 +1691,21 @@ function applyRole(){
 // Grey out + disable Cash In/Out for whoever doesn't have the 'cashio' permission. Defense
 // in depth — addCI/addCO/removeCI/removeCO also re-check hasPerm() before writing.
 function applyPermUI(){
-  const can=hasPerm('cashio');
+  // Reviewing a past day is read-mostly: no new cash in/out entries against a closed day.
+  const can=hasPerm('cashio') && !isReviewing();
   ['ciAmt','ciNote','coAmt','coNote','ciAddBtn','coAddBtn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=!can; });
   document.querySelectorAll('#coTypeGroup .disc-btn').forEach(b=>b.disabled=!can);
   ['cashInCard','cashOutCard'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.opacity=can?'1':'.55'; });
   ['ciPermNote','coPermNote'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=can?'none':'block'; });
-  const newRetBtn=document.getElementById('newReturnBtn'); if(newRetBtn) newRetBtn.style.display=hasPerm('returns')?'inline-flex':'none';
+  const newRetBtn=document.getElementById('newReturnBtn'); if(newRetBtn) newRetBtn.style.display=(hasPerm('returns')&&!isReviewing())?'inline-flex':'none';
 }
 // Logout = switch account mid-shift. The shift stays OPEN (data is in Firestore); the next
 // person logs in and — because starting cash is already set — won't be asked for it again.
 window.logout=function(reason){
   if(session) logAttendance(reason==='idle'?'auto-logout':'logout',session.name,session.role,curShift);
   session=null; pendingUser=null;
+  // Never hand the next person a Shift tab still parked on someone else's review date.
+  viewDate=null; document.getElementById('reviewDate').value=''; applyReviewUI();
   applyRole();
   backToPin();                                   // reset login overlay to the PIN step
   document.getElementById('loginOverlay').classList.add('show');
@@ -1707,6 +1719,9 @@ const SHIFT_END_HOUR={1:15,2:23};   // 3PM, 11PM (24h)
 const SHIFT_END_LABEL={1:'3:00 PM',2:'11:00 PM'};
 window.openCloseShift=async function(){
   if(!session) return;
+  // Closing is an action on the LIVE shift — reviewing a past day must not be able to close it
+  // (or log the reviewer out against that date). Make them exit review first.
+  if(isReviewing()){ toast('Close Review first — you\'re viewing a past day, not today\'s shift','err'); return; }
   const endHour=SHIFT_END_HOUR[curShift];
   if(endHour!=null && new Date().getHours()<endHour){
     toast(`${curShift===1?'Morning':'Evening'} shift can't be closed before ${SHIFT_END_LABEL[curShift]}`,'err');
@@ -1805,6 +1820,14 @@ window.switchTab=function(tab){
 
 // ── SHIFT ──
 let curShift=1, shiftCache={};
+// Review Past Day: when set to a 'YYYY-MM-DD', the entire Shift tab reads/writes that date
+// instead of today. Today's data is never touched or cleared — shiftCache and Firestore are both
+// keyed by date, so it's simply not the date being read, and clearing viewDate brings it back
+// verbatim. Everything shift-scoped goes through curDate(); anything that must always hit the
+// LIVE shift regardless (payable settlements, delivery payments, login) keeps passing today().
+let viewDate=null;
+function curDate(){ return viewDate||today(); }
+function isReviewing(){ return !!viewDate; }
 function emptyShift(sh){ return {cashier:'',startCash:0,nextCash:0,cashIns:[],cashOuts:[],posTot:0,pbCash:0,pbGcash:0,pbMaya:0,pbMcredit:0,posTxn:0,sales:[],returns:[],manualSales:[],drawer:0,takehome:0,saved:false,date:today(),shift:sh}; }
 async function getShift(sh,dt){
   const k=shiftKey(sh,dt);
@@ -1812,7 +1835,7 @@ async function getShift(sh,dt){
     shiftCache[k]=await fsGet('shifts',k,fresh=>{
       // Another device updated this shift — adopt it and refresh the screen if we're viewing it.
       shiftCache[k]=fresh;
-      if(k===shiftKey(curShift)){ try{ loadShiftFields(); renderSales(); }catch(_){} }
+      if(k===shiftKey(curShift,curDate())){ try{ loadShiftFields(); renderSales(); }catch(_){} }
     })||emptyShift(sh);
   }
   return shiftCache[k];
@@ -1822,7 +1845,7 @@ async function persistShift(sh,dt){ const k=shiftKey(sh,dt); await fsSet('shifts
 window.selShift=function(n){ curShift=n; document.getElementById('s1btn').classList.toggle('active',n===1); document.getElementById('s2btn').classList.toggle('active',n===2); loadShiftFields(); };
 
 async function loadShiftFields(){
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   ['cashierName','startCash','posTot','pbCash','pbGcash','pbMaya','pbMcredit','posTxn','drawer','takehome','nextCash'].forEach(id=>{
     const map={cashierName:'cashier',startCash:'startCash',posTot:'posTot',pbCash:'pbCash',pbGcash:'pbGcash',pbMaya:'pbMaya',pbMcredit:'pbMcredit',posTxn:'posTxn',drawer:'drawer',takehome:'takehome',nextCash:'nextCash'};
     document.getElementById(id).value=s[map[id]]||'';
@@ -1833,10 +1856,10 @@ async function loadShiftFields(){
 let saveTimer=null;
 window.queueSave=function(){
   document.getElementById('savingInd').classList.add('show'); document.getElementById('syncTxt').textContent='Saving...'; document.getElementById('syncDot').className='dot dot-a';
-  clearTimeout(saveTimer); saveTimer=setTimeout(async()=>{ await flushFields(); await persistShift(curShift); document.getElementById('savingInd').classList.remove('show'); },1200);
+  clearTimeout(saveTimer); saveTimer=setTimeout(async()=>{ await flushFields(); await persistShift(curShift,curDate()); document.getElementById('savingInd').classList.remove('show'); },1200);
 };
 async function flushFields(){
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   s.cashier=document.getElementById('cashierName').value;
   s.startCash=parseFloat(document.getElementById('startCash').value)||0;
   s.posTot=parseFloat(document.getElementById('posTot').value)||0;
@@ -1848,15 +1871,15 @@ async function flushFields(){
   s.drawer=parseFloat(document.getElementById('drawer').value)||0;
   s.takehome=parseFloat(document.getElementById('takehome').value)||0;
   s.nextCash=parseFloat(document.getElementById('nextCash').value)||0;
-  await upsertEnvelope(s.date||today(), curShift, s.takehome);
+  await upsertEnvelope(s.date||curDate(), curShift, s.takehome);
 }
-window.saveShift=async function(){ await flushFields(); const s=await getShift(curShift); s.saved=true; s.savedAt=tnow(); await persistShift(curShift); document.getElementById('savingInd').classList.remove('show'); toast(`${curShift===1?'Morning':'Evening'} shift saved OK`,'ok'); };
+window.saveShift=async function(){ await flushFields(); const s=await getShift(curShift,curDate()); s.saved=true; s.savedAt=tnow(); await persistShift(curShift,curDate()); document.getElementById('savingInd').classList.remove('show'); toast(`${curShift===1?'Morning':'Evening'} shift saved OK`,'ok'); };
 // Clearing a shift wipes its entire doc (cashier, cash ins/outs, POS sales log, manual sales,
 // returns, drawer/take-home) — too destructive for a plain confirm(). Owner-only (gated in
 // applyRole + here) with the same typed-CLEAR pattern as the POS Sales Reset.
 window.openClearShiftModal=async function(){
   if(session?.role!=='owner'){ toast('Owner only','err'); return; }
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   document.getElementById('clearShiftSales').textContent=(s.sales||[]).length+' sale'+((s.sales||[]).length===1?'':'s');
   document.getElementById('clearShiftConfirm').value='';
   document.getElementById('clearShiftModal').classList.add('show');
@@ -1865,7 +1888,7 @@ window.closeClearShiftModal=function(){ document.getElementById('clearShiftModal
 window.doClearShift=async function(){
   if(session?.role!=='owner'){ toast('Owner only','err'); return; }
   if(document.getElementById('clearShiftConfirm').value!=='CLEAR'){ toast('Type CLEAR to confirm','err'); return; }
-  const k=shiftKey(curShift); shiftCache[k]=emptyShift(curShift); await fsDel('shifts',k); loadShiftFields();
+  const k=shiftKey(curShift,curDate()); shiftCache[k]=emptyShift(curShift); await fsDel('shifts',k); loadShiftFields();
   closeClearShiftModal();
   toast('Shift cleared','info');
 };
@@ -1942,18 +1965,17 @@ window.updatePaySum=function(){
 window.addCI=async function(){
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
   const amt=parseFloat(document.getElementById('ciAmt').value); if(!amt){toast('Enter amount','err');return;}
-  const s=await getShift(curShift); s.cashIns.push({amount:amt,note:document.getElementById('ciNote').value,time:tnow()});
-  document.getElementById('ciAmt').value=''; document.getElementById('ciNote').value=''; await persistShift(curShift); renderCI();
+  const s=await getShift(curShift,curDate()); s.cashIns.push({amount:amt,note:document.getElementById('ciNote').value,time:tnow()});
+  document.getElementById('ciAmt').value=''; document.getElementById('ciNote').value=''; await persistShift(curShift,curDate()); renderCI();
 };
 window.removeCI=async function(i,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
   const s=await getShift(sh,dt); const c=s.cashIns[i]; if(!c||c.voided) return;
   if(!confirm(`Void this ${fmt(c.amount)} cash-in?`)) return;
   c.voided=true; c.voidedBy=session?.name||''; c.voidedAt=tnow();
   await persistShift(sh,dt);
-  if(sh===curShift&&dt===today()) renderCI();
-  if(typeof refreshHistView==='function') refreshHistView(dt);
+  if(sh===curShift&&dt===curDate()) renderCI();
 };
 function voidTag(x){ return x.voided?`<div class="ed" style="color:var(--red)"><i class="ti ti-ban"></i> VOIDED by ${x.voidedBy||'?'} · ${x.voidedAt||''}</div>`:''; }
 // Cash-outs sometimes get logged at the wrong amount (e.g. a delivery total that priced out
@@ -1966,7 +1988,7 @@ function coCorrectionTag(c){
   return `<div class="ed" style="color:var(--amber)"><i class="ti ti-edit"></i> Corrected from ${fmt(last.from)} by ${last.by||'?'} · ${last.at||''}</div>`;
 }
 window.fixCOAmount=async function(i,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   if(session?.role!=='owner'){ toast('Only the owner can correct a cash-out amount','err'); return; }
   const s=await getShift(sh,dt); const c=s.cashOuts[i]; if(!c||c.voided) return;
   const input=prompt(`Correct amount for this cash-out (currently ${fmt(c.amount)})`, c.amount);
@@ -1977,19 +1999,18 @@ window.fixCOAmount=async function(i,sh,dt){
   (c.correctionLog=c.correctionLog||[]).push({from:c.amount,to:newAmt,by:session?.name||'',at:tnow()});
   c.amount=newAmt;
   await persistShift(sh,dt);
-  if(sh===curShift&&dt===today()) renderCO();
-  if(typeof refreshHistView==='function') refreshHistView(dt);
+  if(sh===curShift&&dt===curDate()) renderCO();
   toast('Cash-out amount corrected','ok');
 };
 async function renderCI(){
-  const s=await getShift(curShift); const el=document.getElementById('ciList');
+  const s=await getShift(curShift,curDate()); const el=document.getElementById('ciList');
   if(!s.cashIns.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
   el.innerHTML=s.cashIns.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span>${c.voided?'':`<button class="del-btn" onclick="removeCI(${i})"><i class="ti ti-x"></i></button>`}</div></div>`).join('');
 }
 window.addCO=async function(){
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
   const type=document.getElementById('coType').value;
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   if(type==='Personal Stock Use'){
     // Stock use: must reference a product; cost is auto, and the qty is deducted from inventory.
     if(!stockUseProd){ toast('Search and pick the item taken','err'); return; }
@@ -1999,16 +2020,16 @@ window.addCO=async function(){
     const fp=allProductsFull[stockUseProd.id];
     if(fp){ adjustVariantInventory(fp, stockUseProd.size, stockUseProd.packaging, -qty); fp.updatedAt=tnow(); await fsSet('products',stockUseProd.id,fp); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
     document.getElementById('coNote').value=''; resetStockUse();
-    await persistShift(curShift); renderCO();
+    await persistShift(curShift,curDate()); renderCO();
     toast(`${qty} ${stockUseProd?stockUseProd.name:'item'} taken from stock`,'ok');
     return;
   }
   const amt=parseFloat(document.getElementById('coAmt').value); if(!amt){toast('Enter amount','err');return;}
   s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow(),cashier:session?.name||''});
-  document.getElementById('coAmt').value=''; document.getElementById('coNote').value=''; await persistShift(curShift); renderCO();
+  document.getElementById('coAmt').value=''; document.getElementById('coNote').value=''; await persistShift(curShift,curDate()); renderCO();
 };
 window.removeCO=async function(i,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   if(session?.role!=='owner'){ toast('Only the owner can void a cash-out','err'); return; }
   const s=await getShift(sh,dt); const c=s.cashOuts[i]; if(!c||c.voided) return;
   if(!confirm(`Void this ${fmt(c.amount)} cash-out?`)) return;
@@ -2019,11 +2040,10 @@ window.removeCO=async function(i,sh,dt){
   }
   c.voided=true; c.voidedBy=session?.name||''; c.voidedAt=tnow();
   await persistShift(sh,dt);
-  if(sh===curShift&&dt===today()) renderCO();
-  if(typeof refreshHistView==='function') refreshHistView(dt);
+  if(sh===curShift&&dt===curDate()) renderCO();
 };
 async function renderCO(){
-  const s=await getShift(curShift); const el=document.getElementById('coList');
+  const s=await getShift(curShift,curDate()); const el=document.getElementById('coList');
   const foot=document.getElementById('coTotalFoot'), footVal=document.getElementById('coTotalVal');
   const envRow=document.getElementById('coEnvRow'), envVal=document.getElementById('coEnvVal');
   const allExpRow=document.getElementById('coAllExpRow'), allExpVal=document.getElementById('coAllExpVal');
@@ -2056,18 +2076,17 @@ async function renderCO(){
 const MODE_LABEL={cash:'CASH',gcash:'GCASH',maya:'MAYA',mcredit:'M-CREDIT'};
 window.addMS=async function(){
   const amt=parseFloat(document.getElementById('msAmt').value); if(!amt){toast('Enter amount','err');return;}
-  const s=await getShift(curShift); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,mode:document.getElementById('msMode').value||'cash',qty:parseInt(document.getElementById('msQty').value)||1,time:tnow(),cashier:session?.name||''});
-  document.getElementById('msAmt').value=''; document.getElementById('msDesc').value=''; document.getElementById('msQty').value='1'; await persistShift(curShift); renderMS();
+  const s=await getShift(curShift,curDate()); s.manualSales.push({amount:amt,desc:document.getElementById('msDesc').value,mode:document.getElementById('msMode').value||'cash',qty:parseInt(document.getElementById('msQty').value)||1,time:tnow(),cashier:session?.name||''});
+  document.getElementById('msAmt').value=''; document.getElementById('msDesc').value=''; document.getElementById('msQty').value='1'; await persistShift(curShift,curDate()); renderMS();
 };
 window.removeMS=async function(i,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   if(!hasPerm('voidms')){ toast('No permission to void manual sales','err'); return; }
   const s=await getShift(sh,dt); const m=s.manualSales[i]; if(!m||m.voided) return;
   if(!confirm(`Void this ${fmt(m.amount)} manual sale?`)) return;
   m.voided=true; m.voidedBy=session?.name||''; m.voidedAt=tnow();
   await persistShift(sh,dt);
-  if(sh===curShift&&dt===today()) renderMS();
-  if(typeof refreshHistView==='function') refreshHistView(dt);
+  if(sh===curShift&&dt===curDate()) renderMS();
 };
 function modeTag(mode,editFn,editArgs,voided){
   const m=mode||'cash';
@@ -2077,19 +2096,18 @@ function modeTag(mode,editFn,editArgs,voided){
   return `<span class="ptag pt-${m}">${MODE_LABEL[m]}</span>`;
 }
 async function renderMS(){
-  const s=await getShift(curShift); const el=document.getElementById('msList');
+  const s=await getShift(curShift,curDate()); const el=document.getElementById('msList');
   if(!s.manualSales.length){el.innerHTML='<div class="empty"><i class="ti ti-notebook"></i>None</div>';return;}
   const canVoidMS=hasPerm('voidms');
   el.innerHTML=s.manualSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} ${modeTag(m.mode,'editMsMode',`${i}`,m.voided)}</div><div class="ed">Qty:${m.qty||1} · ${m.time||''}${m.cashier?' · '+m.cashier:''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoidMS&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i})"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('');
 }
 window.editMsMode=async function(newMode,i,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   if(session?.role!=='owner'){ toast('Only the owner can change payment mode','err'); return; }
   const s=await getShift(sh,dt); const m=s.manualSales[i]; if(!m||m.voided) return;
   m.mode=newMode; m.modeEditedBy=session?.name||''; m.modeEditedAt=tnow();
   await persistShift(sh,dt);
-  if(sh===curShift&&dt===today()) renderMS();
-  if(typeof refreshHistView==='function') refreshHistView(dt);
+  if(sh===curShift&&dt===curDate()) renderMS();
   toast('Payment mode updated','ok');
 };
 
@@ -2116,7 +2134,7 @@ function saleRowHtml(t,canVoid,voidArgs){
 // Tap a sale row to open a read-only detail modal (line items, discount, payment, cashier) —
 // reuses the same voidArgs the row already carries so it can look the sale back up.
 window.openSaleDetail=async function(id,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   const s=await getShift(sh,dt);
   const t=(s.sales||[]).find(t=>t.id===id); if(!t) return;
   const itemsHtml=(t.items||[]).map(it=>`<div class="receipt-row"><span>${it.name}${it.size?' ('+it.size+')':''} x${it.qty}</span><span>${fmtShort(it.price*it.qty)}</span></div>`).join('')||`<div class="receipt-row"><span>Sale</span><span></span></div>`;
@@ -2140,7 +2158,7 @@ window.openSaleDetail=async function(id,sh,dt){
 window.closeSaleDetail=function(){ document.getElementById('saleDetailModal').classList.remove('show'); };
 async function renderSales(){
   const el=document.getElementById('salesList'); if(!el) return;
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   const sales=(s.sales||[]);
   const activeCount=sales.filter(t=>!t.voided).length, voidedCount=sales.length-activeCount;
   document.getElementById('salesCount').textContent = activeCount+(activeCount===1?' sale':' sales')+(voidedCount?` · ${voidedCount} voided`:'');
@@ -2165,56 +2183,61 @@ async function renderSales(){
   el.innerHTML=[...sales].reverse().map(t=>saleRowHtml(t,canVoid,`'${t.id}'`)).join('');
 }
 
-// ── Owner: Review Past Day — view any past date's Morning/Evening transactions and void them ──
-let reviewDate=null;
+// ── Owner: Review Past Day ──
+// Rather than rendering the day into a separate card, this re-points the whole Shift tab at that
+// date (viewDate) and re-runs the normal renderers, so a past day is read through exactly the same
+// Morning/Evening pills and cards as today. Today's data isn't cleared or copied anywhere — it's
+// just a different key in shiftCache/Firestore, so Close Review restores it as-is.
 window.loadReviewDay=async function(){
   const dt=document.getElementById('reviewDate').value;
   if(!dt){ closeReviewDay(); return; }
-  if(dt>=today()){ toast("Pick a date before today — today's shift is already live above",'err'); document.getElementById('reviewDate').value=reviewDate||''; return; }
-  reviewDate=dt;
-  document.getElementById('reviewBackdateBtn').style.display='inline-flex';
-  document.getElementById('reviewCloseBtn').style.display='inline-flex';
-  await refreshHistView(dt);
+  if(dt>=today()){ toast("Pick a date before today — today's shift is the live one",'err'); document.getElementById('reviewDate').value=viewDate||''; return; }
+  viewDate=dt;
+  applyReviewUI();
+  await loadShiftFields();
 };
-window.closeReviewDay=function(){
-  reviewDate=null;
+window.closeReviewDay=async function(){
+  viewDate=null;
   document.getElementById('reviewDate').value='';
-  document.getElementById('reviewDayBody').innerHTML='';
-  document.getElementById('reviewBackdateBtn').style.display='none';
-  document.getElementById('reviewCloseBtn').style.display='none';
+  applyReviewUI();
+  await loadShiftFields();
 };
-window.startBackdateSale=function(){
-  if(!reviewDate){ toast('Pick a date first','err'); return; }
-  posBackdate={date:reviewDate, shift:curShift};
-  switchTab('pos');
-  toast(`Adding a sale for ${reviewDate} (${curShift===1?'Morning':'Evening'})`,'info');
-};
-async function refreshHistView(dt){
-  if(!reviewDate || dt!==reviewDate) return;
-  const body=document.getElementById('reviewDayBody'); if(!body) return;
-  const shifts=await Promise.all([getShift(1,reviewDate),getShift(2,reviewDate)]);
-  const canVoid=hasPerm('void'), canDelCO=session?.role==='owner';
-  body.innerHTML=shifts.map((s,idx)=>{
-    const n=idx+1, label=n===1?'Morning':'Evening';
-    const sales=s.sales||[], cashIns=s.cashIns||[], cashOuts=s.cashOuts||[], mSales=s.manualSales||[];
-    if(!sales.length && !cashIns.length && !cashOuts.length && !mSales.length){
-      return `<div class="sep"></div><div style="font-size:11px;color:var(--text3);font-weight:600;margin:8px 0 4px">${label.toUpperCase()}</div><div class="empty" style="padding:10px"><i class="ti ti-mood-empty"></i>No transactions</div>`;
-    }
-    const salesHtml=sales.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">SALES</div><div class="elist">${sales.map(t=>saleRowHtml(t,canVoid,`'${t.id}',${n},'${reviewDate}'`)).join('')}</div>`:'';
-    const ciHtml=cashIns.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">CASH INS</div><div class="elist">${cashIns.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span>${(canVoid&&!c.voided)?`<button class="del-btn" onclick="removeCI(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
-    const coHtml=cashOuts.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">CASH OUTS</div><div class="elist">${cashOuts.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}"><span class="tag-red">${c.type}</span>${c.note||''}</div><div class="ed">${c.time||''}${c.cashier?' · '+c.cashier:''}</div>${coCorrectionTag(c)}${voidTag(c)}</div><div style="display:flex;align-items:center;gap:4px"><span class="eval c-neg">-${fmt(c.amount)}</span>${(canDelCO&&!c.voided)?`<button class="del-btn" title="Correct amount" onclick="fixCOAmount(${i},${n},'${reviewDate}')"><i class="ti ti-edit"></i></button>`:''}${(canDelCO&&!c.voided)?`<button class="del-btn" onclick="removeCO(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
-    const msHtml=mSales.length?`<div style="font-size:10px;color:var(--text2);font-weight:600;margin:8px 0 4px">MANUAL SALES</div><div class="elist">${mSales.map((m,i)=>`<div class="eitem" style="${m.voided?'opacity:.55':''}"><div><div class="el" style="${m.voided?'text-decoration:line-through':''}">${m.desc||'Item'} ${modeTag(m.mode,'editMsMode',`${i},${n},'${reviewDate}'`,m.voided)}</div><div class="ed">Qty:${m.qty||1} · ${m.time||''}${m.cashier?' · '+m.cashier:''}</div>${voidTag(m)}</div><div style="display:flex;align-items:center"><span class="eval c-blu">${fmt(m.amount)}</span>${(canVoid&&!m.voided)?`<button class="del-btn" onclick="removeMS(${i},${n},'${reviewDate}')"><i class="ti ti-x"></i></button>`:''}</div></div>`).join('')}</div>`:'';
-    return `<div class="sep"></div><div style="font-size:11px;color:var(--teal);font-weight:600;margin:8px 0 4px">${label.toUpperCase()} · ${s.cashier||'unassigned'}</div>${salesHtml}${ciHtml}${coHtml}${msHtml}`;
-  }).join('');
+// Swaps the review bar between its idle (date picker) and active (amber banner) rows, tints the
+// shift pills, and locks the write-side controls — a past day stays correctable (voids, cash-out
+// amount fixes, payment-mode changes are all still live on the rows) but can't take NEW entries,
+// which is the same capability set the old review card had.
+function applyReviewUI(){
+  const on=isReviewing();
+  const idle=document.getElementById('reviewIdleRow'), active=document.getElementById('reviewActiveRow');
+  if(idle) idle.style.display=on?'none':'flex';
+  if(active) active.style.display=on?'flex':'none';
+  if(on){
+    const d=new Date(viewDate+'T00:00:00');
+    const lbl=isNaN(d)?viewDate:d.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric',year:'numeric'});
+    const el=document.getElementById('reviewActiveDate'); if(el) el.textContent=lbl;
+  }
+  document.getElementById('panel-shift')?.classList.toggle('reviewing',on);
+  // Setup + closing figures are the live shift's bookkeeping — read-only while reviewing.
+  ['cashierName','startCash','drawer','takehome','nextCash','msAmt','msDesc','msQty'].forEach(id=>{ const e=document.getElementById(id); if(e){ e.readOnly=on; e.style.opacity=on?'.6':'1'; } });
+  document.querySelectorAll('#msModeGroup .pay-mode-btn').forEach(b=>b.disabled=on);
+  ['msAddBtn','saveShiftBtn','posResetBtn'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display=on?'none':''; });
+  // clearShiftBtn + newReturnBtn are role/permission-driven, so let applyRole/applyPermUI own them
+  // (both already fold isReviewing() in) rather than fighting over style.display here.
+  if(session) applyRole();
 }
-
+window.startBackdateSale=function(){
+  if(!isReviewing()){ toast('Pick a date first','err'); return; }
+  posBackdate={date:viewDate, shift:curShift};
+  switchTab('pos');
+  toast(`Adding a sale for ${viewDate} (${curShift===1?'Morning':'Evening'})`,'info');
+};
 // Resetting the sales log is destructive and irreversible (no undo, inventory deductions
 // are NOT reversed) — a plain confirm() was too easy to tap by accident mid-shift and wipe
 // real transactions. Now requires typing CLEAR, same pattern as Master Reset, and shows
 // exactly how many sales / how much will be lost before the owner commits.
 window.openPosResetModal=async function(){
   if(session?.role!=='owner'){ toast('Owner only','err'); return; }
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   const sales=s.sales||[];
   const total=sales.reduce((a,t)=>a+(t.total||0),0);
   document.getElementById('posResetCount').textContent=sales.length;
@@ -2227,16 +2250,16 @@ window.closePosResetModal=function(){ document.getElementById('posResetModal').c
 window.doResetPosSales=async function(){
   if(session?.role!=='owner'){ toast('Owner only','err'); return; }
   if(document.getElementById('posResetConfirm').value!=='CLEAR'){ toast('Type CLEAR to confirm','err'); return; }
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   s.posTot=0; s.posTxn=0; s.pbCash=0; s.pbGcash=0; s.pbMaya=0; s.pbMcredit=0; s.sales=[];
-  await persistShift(curShift);
+  await persistShift(curShift,curDate());
   ['posTot','posTxn','pbCash','pbGcash','pbMaya','pbMcredit'].forEach(id=>document.getElementById(id).value='');
   updatePaySum(); renderSales();
   closePosResetModal();
   toast('POS sales log cleared for this shift','ok');
 };
 window.voidSale=async function(id,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   if(!hasPerm('void')){ toast('No permission to void sales','err'); return; }
   const s=await getShift(sh,dt);
   const t=(s.sales||[]).find(t=>t.id===id); if(!t||t.voided) return;
@@ -2252,14 +2275,13 @@ window.voidSale=async function(id,sh,dt){
   }
   t.voided=true; t.voidedBy=session?.name||''; t.voidedAt=tnow();
   await persistShift(sh,dt);
-  if(sh===curShift&&dt===today()){
+  if(sh===curShift&&dt===curDate()){
     // refresh the shift fields + lists
     document.getElementById('posTot').value=s.posTot||''; document.getElementById('posTxn').value=s.posTxn||'';
     document.getElementById('pbCash').value=s.pbCash||''; document.getElementById('pbGcash').value=s.pbGcash||'';
     document.getElementById('pbMaya').value=s.pbMaya||''; document.getElementById('pbMcredit').value=s.pbMcredit||'';
     updatePaySum(); renderSales();
   }
-  if(typeof refreshHistView==='function') refreshHistView(dt);
   toast('Sale voided — stock returned','ok');
 };
 
@@ -2267,7 +2289,7 @@ window.voidSale=async function(id,sh,dt){
 // customer actually paid GCash). Moves the sale's total between the shift's payment-mode
 // buckets (pbCash/pbGcash/pbMaya/pbMcredit) so the breakdown + drawer reconciliation stay correct.
 window.editSaleMode=async function(newMode,id,sh,dt){
-  sh=sh||curShift; dt=dt||today();
+  sh=sh||curShift; dt=dt||curDate();
   if(session?.role!=='owner'){ toast('Only the owner can change payment mode','err'); return; }
   const s=await getShift(sh,dt);
   const t=(s.sales||[]).find(t=>t.id===id); if(!t||t.voided||t.mode===newMode) return;
@@ -2277,12 +2299,11 @@ window.editSaleMode=async function(newMode,id,sh,dt){
   if(newKey) s[newKey]=(s[newKey]||0)+t.total;
   t.mode=newMode; t.modeEditedBy=session?.name||''; t.modeEditedAt=tnow();
   await persistShift(sh,dt);
-  if(sh===curShift&&dt===today()){
+  if(sh===curShift&&dt===curDate()){
     document.getElementById('pbCash').value=s.pbCash||''; document.getElementById('pbGcash').value=s.pbGcash||'';
     document.getElementById('pbMaya').value=s.pbMaya||''; document.getElementById('pbMcredit').value=s.pbMcredit||'';
     updatePaySum(); renderSales();
   }
-  if(typeof refreshHistView==='function') refreshHistView(dt);
   toast('Payment mode updated','ok');
 };
 
@@ -2294,7 +2315,7 @@ function canRefund(){ return hasPerm('returns'); }
 
 async function renderReturns(){
   const el=document.getElementById('returnsList'); if(!el) return;
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   const rets=(s.returns||[]);
   const cnt=document.getElementById('returnsCount'); if(cnt) cnt.textContent=rets.length?rets.length+(rets.length===1?' record':' records'):'';
   if(!rets.length){ el.innerHTML='<div class="empty"><i class="ti ti-arrow-back-up"></i>No returns this shift</div>'; return; }
@@ -2311,7 +2332,7 @@ async function renderReturns(){
 window.openReturn=async function(){
   if(!canRefund()){ toast('No permission for Returns/Exchange','err'); return; }
   retState={ sale:null, returnItems:[], newItems:[] };
-  const s=await getShift(curShift);
+  const s=await getShift(curShift,curDate());
   const sel=document.getElementById('retSaleSel');
   const opts=['<option value="manual">No receipt — pick items manually</option>'];
   (s.sales||[]).slice().reverse().forEach(sale=>{
@@ -2337,7 +2358,7 @@ window.onRetSaleChange=async function(){
     retState.sale=null; retState.returnItems=[];
     manualWrap.style.display='block';
   } else {
-    const s=await getShift(curShift);
+    const s=await getShift(curShift,curDate());
     const sale=(s.sales||[]).find(x=>x.id===v);
     retState.sale=sale||null;
     retState.returnItems=(sale?.items||[]).map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:0,max:it.qty}));
@@ -2438,7 +2459,7 @@ window.confirmReturn=async function(){
   const mode=document.getElementById('retMode').value;
   const verb=net<0?`refund ${fmt(-net)} to the customer`:net>0?`collect ${fmt(net)} from the customer`:'process this even exchange';
   if(!confirm(`Confirm: return ${retItems.reduce((a,i)=>a+i.qty,0)} item(s)${exchange?` and give ${newItems.reduce((a,i)=>a+i.qty,0)} replacement(s)`:''}, and ${verb}? Stock will be adjusted.`)) return;
-  const now=tnow(), dt=today();
+  const now=tnow(), dt=curDate();
   const s=await getShift(curShift,dt);
   // Return items → back into stock
   for(const it of retItems){
@@ -3634,7 +3655,9 @@ async function finalizeSale(total, cashInfo){
       await fsSet('products',item.prodId,fullProd);
     }
   }
-  if(!posBackdate){
+  // Refresh the Shift tab only if it's currently showing the day this sale landed on — that's
+  // today for a normal sale, or the reviewed day when backdating into the day being reviewed.
+  if(dt===curDate() && shNum===curShift){
     document.getElementById('posTot').value=s.posTot||'';
     document.getElementById('posTxn').value=s.posTxn||'';
     document.getElementById('pbCash').value=s.pbCash||'';
@@ -3642,7 +3665,7 @@ async function finalizeSale(total, cashInfo){
     document.getElementById('pbMaya').value=s.pbMaya||'';
     document.getElementById('pbMcredit').value=s.pbMcredit||'';
     updatePaySum(); renderSales();
-  } else if(typeof refreshHistView==='function'){ refreshHistView(dt); }
+  }
   const receiptHtml=`<div class="receipt">
     <div class="receipt-header">
       <div style="font-weight:600;font-size:13px">DR. KIM PHARMACY</div>
@@ -4027,13 +4050,15 @@ window.confirmPay=async function(){
   if(envResult) p.envelopeIds=envResult.envelopes.map(e=>e.id);
   await fsSet('payables', p.id, p);
   // Cash payments (Take Home or Drawer) log a settlement cash-out in the current shift — the usual way.
+  // Explicitly today(): this is real cash leaving the drawer NOW, so it belongs to the live shift
+  // even if the owner happens to be reviewing a past day on the Shift tab.
   if(isCash){
-    const s=await getShift(curShift);
+    const s=await getShift(curShift,today());
     // Take-Home cash isn't register cash → flag nonDrawer so it's still listed as an expense
     // but doesn't reduce the expected drawer. Drawer Cash does reduce it.
     const envNote=envResult?` · envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)} (remaining ${fmt(e.balance)})`).join(', ')}`:'';
     s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})${envNote}`, time:tnow(), cashier:session?.name||'', settlement:true, nonDrawer:(sub==='Take Home'), payableId:p.id, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
-    await persistShift(curShift);
+    await persistShift(curShift,today());
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
     if(document.getElementById('panel-payables')?.classList.contains('active')) renderEnvelopes();
   }
@@ -4305,8 +4330,12 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.88';
+const APP_VERSION='v4.89';
 const CHANGELOG=[
+  {v:'v4.89', date:'2026-07-31', notes:[
+    'Shift → Review Past Day now opens the chosen day inside the normal shift view instead of stacking a second "Review Past Day" card above it. Picking a date swaps the whole tab — Morning/Evening pills, Shift Setup, Cash Ins/Outs, POS Transactions, Manual Sales — over to that day, so a past day reads exactly like today does, with the Morning/Evening pills switching that day\'s two shifts',
+    'Today\'s figures are never changed or copied by this — they\'re simply not the day on screen. Close Review brings today straight back, exactly as it was',
+    'While reviewing, the tab is clearly marked (amber banner + amber shift pills) and new entries are locked — no adding cash ins/outs or manual sales, no Save Shift, Clear, POS Reset, or Returns against a past day, and Close Shift refuses until you exit review. Voiding a sale, correcting a cash-out amount, changing a payment mode, and "Add Backdated Sale" all still work, same as before']},
   {v:'v4.88', date:'2026-07-31', notes:[
     'Products → Product Inventory: filter box now has a clear (×) button, matching the same pattern already used in POS and Orders search']},
   {v:'v4.87', date:'2026-07-31', notes:[
@@ -5002,11 +5031,13 @@ window.confirmReceiveDelivery=async function(){
       if(!cur.some(x=>x.toLowerCase()===supplier.toLowerCase())){ cur.push(supplier); fp.suppliers=cur.join(', '); fp.updatedAt=now; await fsSet('products', oi.prod.id, fp); }
     }
   }
+  // Explicitly today(): the delivery is being paid out of the live drawer right now, regardless of
+  // whether the Shift tab is currently parked on a past day for review.
   if(payMode==='cash'){
-    const s=await getShift(curShift);
+    const s=await getShift(curShift,today());
     const envNote=envResult?` · envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)} (remaining ${fmt(e.balance)})`).join(', ')}`:'';
     s.cashOuts.push({type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})${envNote}`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
-    await persistShift(curShift);
+    await persistShift(curShift,today());
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
   }
   if(document.getElementById('panel-payables')?.classList.contains('active')) renderEnvelopes();
