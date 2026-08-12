@@ -1,0 +1,22 @@
+# This repo is PUBLIC (github.com/kimjakosalem/pharmacy -> GitHub Pages).
+# Nothing here may contain credentials, costs, margins, or staff data.
+
+# Credentials
+*serviceAccount*.json
+*service-account*.json
+*firebase-adminsdk*.json
+.secrets/
+.env
+.env.*
+
+# Business data. The product CSV exports carry a `cost` column, so publishing these would put
+# supplier costs and margins on the public internet. Database snapshots belong in the separate
+# PRIVATE pharmacy-backups repo, never here.
+data/
+*.csv
+pharmacy_products_backup_*.json
+
+# Local scratch / editor duplicates ("index - Copy.html" is a stale 348K clone of the whole app —
+# shipping it would serve an out-of-date copy alongside the real one).
+* - Copy.*
+*.zip

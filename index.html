@@ -571,8 +571,8 @@ select option{background:var(--bg3)}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
       <div><div style="font-size:11px;color:var(--text);font-weight:500">The DR/SI lists cost as</div><div style="font-size:9px;color:var(--text3)">Matches whatever the delivery receipt shows — the other column fills in automatically</div></div>
       <div class="seg-grid" id="intakeCostModeGroup" style="width:190px;margin-top:0">
-        <button type="button" class="disc-btn active" data-val="unit" onclick="setIntakeCostMode(this)" style="padding:6px 4px;font-size:10px">Unit Cost</button>
-        <button type="button" class="disc-btn" data-val="total" onclick="setIntakeCostMode(this)" style="padding:6px 4px;font-size:10px">Total Amount</button>
+        <button type="button" class="disc-btn" data-val="unit" onclick="setIntakeCostMode(this)" style="padding:6px 4px;font-size:10px">Unit Cost</button>
+        <button type="button" class="disc-btn active" data-val="total" onclick="setIntakeCostMode(this)" style="padding:6px 4px;font-size:10px">Total Cost</button>
       </div>
     </div>
     <div id="intakeBody" class="scroll-pan-y" style="max-height:42vh;overflow-y:auto"></div>
@@ -1046,6 +1046,7 @@ select option{background:var(--bg3)}
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('csvFileInput').click()"><i class="ti ti-upload"></i> Import CSV</button>
         <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importCSV(this)">
         <button class="btn btn-ghost btn-sm" onclick="exportCSV()"><i class="ti ti-file-spreadsheet"></i> Export to CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="downloadProductBackup()" title="Complete JSON copy of every product — the file to keep before making bulk changes"><i class="ti ti-shield-check"></i> Backup Products</button>
         <span id="importMsg" style="font-size:11px;margin-left:4px"></span>
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.7">
@@ -1190,8 +1191,8 @@ select option{background:var(--bg3)}
       <div id="qrCostModeRow" style="display:none;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px">
         <div><div style="font-size:11px;color:var(--text);font-weight:500">The DR/SI lists cost as</div><div style="font-size:9px;color:var(--text3)">Matches whatever the delivery receipt shows — the other field per line fills in automatically</div></div>
         <div class="seg-grid" id="qrCostModeGroup" style="width:190px;margin-top:0">
-          <button type="button" class="disc-btn active" data-val="unit" onclick="setQrCostMode(this)" style="padding:6px 4px;font-size:10px">Unit Cost</button>
-          <button type="button" class="disc-btn" data-val="total" onclick="setQrCostMode(this)" style="padding:6px 4px;font-size:10px">Total Amount</button>
+          <button type="button" class="disc-btn" data-val="unit" onclick="setQrCostMode(this)" style="padding:6px 4px;font-size:10px">Unit Cost</button>
+          <button type="button" class="disc-btn active" data-val="total" onclick="setQrCostMode(this)" style="padding:6px 4px;font-size:10px">Total Cost</button>
         </div>
       </div>
       <div id="orderList"></div>
@@ -1311,6 +1312,7 @@ select option{background:var(--bg3)}
       <button class="pb" id="yrBtn" onclick="setReportView('year')">Yearly</button>
       <button class="pb" id="roBtn" onclick="setReportView('reorder')">Reorder</button>
       <button class="pb" id="atBtn" onclick="setReportView('attendance')">Attendance</button>
+      <button class="pb" id="dhBtn" onclick="setReportView('health')">Data Health</button>
     </div>
     <!-- Daily date picker (Daily view) -->
     <div class="fg fg2" id="dailyDateRow" style="margin-bottom:12px">
@@ -1338,6 +1340,7 @@ select option{background:var(--bg3)}
     <div id="reportContent" style="display:none"></div>
     <div id="reorderContent" style="display:none"></div>
     <div id="attendanceContent" style="display:none"></div>
+    <div id="healthContent" style="display:none"></div>
   </div>
 
   <!-- ═══ SETTINGS ═══ -->
@@ -2604,6 +2607,32 @@ function adjustVariantInventory(prod, size, packaging, delta){
   }
   prod.inventory=Math.max(0,(prod.inventory||0)+delta);
 }
+// Append-only log of every cost change, in its own `audit` collection. Cost is the field that keeps
+// getting silently corrupted (a case total typed as a unit cost, a 0 left in an undelivered line),
+// and until now nothing recorded who changed it, when, or via which screen — a zeroed cost could
+// only be dated by guessing from a shared `updatedAt` time. Fire-and-forget: fsSet is non-blocking
+// and an audit failure must never stop a real save.
+function logCostChange(prodId, name, oldCost, newCost, source, extra){
+  try{
+    const o=Number(oldCost)||0, n=Number(newCost)||0;
+    if(Math.abs(o-n)<0.005) return;                      // nothing actually moved
+    const id='aud_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    fsSet('audit', id, Object.assign({
+      type:'cost', prodId, name:name||'', oldCost:o, newCost:n, source,
+      by:session?.name||'', byRole:session?.role||'',
+      date:today(), time:tnow(), ts:Date.now()
+    }, extra||{}));
+  }catch(_){ /* never let auditing break a save */ }
+}
+// Reads the cost currently on file for a product/variant — the "before" value for logCostChange.
+function currentCostOf(prod, size, packaging){
+  if(!prod) return 0;
+  if(hasVariantInventory(prod)){
+    const v=findVariantByLabel(prod, size, packaging);
+    if(v) return v.cost||0;
+  }
+  return prod.cost||0;
+}
 // Sets cost on the matching variant when migrated, else on the parent product (today's fallback).
 function adjustVariantCost(prod, size, packaging, cost){
   if(hasVariantInventory(prod)){
@@ -2616,6 +2645,14 @@ function adjustVariantCost(prod, size, packaging, cost){
 // OPTIMIZED: Load lightweight index only (name, SKU, price, ID)
 async function loadProducts(){
   const rawProducts=await fsGetAll('products');
+  // fsGetAll returns [] on ANY failure (it swallows the error), and the most likely failure on the
+  // free tier is a read-quota 429 mid-shift. Overwriting a good catalogue with [] would blank POS
+  // search and make every product un-sellable until reload — so if we already had products and the
+  // fetch came back empty, keep what we have and say so rather than wiping the tills mid-trade.
+  if(!rawProducts.length && allProducts.length){
+    toast('Could not refresh products — keeping the last loaded copy','err');
+    return;
+  }
   // One-time migration: strip any leftover "-D9" shelf-address suffix out of the name and
   // into its own `address` field. Only runs for products that don't have `address` yet, so it
   // won't re-fire once a product has been migrated.
@@ -3249,6 +3286,14 @@ window.saveProduct=async function(){
     msg.textContent=`Cost (${fmt(costVal)}) is higher than the selling price (${fmt(priceVal)}) — this item would sell at a loss. Fix the cost or price before saving.`;
     return;
   }
+  // Zeroing the cost of an item that HAS a cost silently turns every future sale of it into 100%
+  // reported margin. It's never a deliberate edit, so make it an explicit confirmation rather than a
+  // silent save. (A genuinely free/consignment item is the one real case, hence confirm not block.)
+  const prevCostForSave=editingProdId ? (allProductsFull[editingProdId]?.cost||0) : 0;
+  if(costVal<=0 && prevCostForSave>0 &&
+     !confirm(`This will clear the cost on "${name}" (currently ${fmt(prevCostForSave)}).\n\nWith no cost on file, every sale of it reports 100% profit and its margin figures become meaningless.\n\nClear the cost anyway?`)){
+    return;
+  }
   for(const v of variants){
     if(v.price>0 && v.cost>v.price){
       msg.style.color='var(--red)';
@@ -3286,9 +3331,19 @@ window.saveProduct=async function(){
   } else {
     allProducts.push({id,sku:data.sku,name:data.name,price:data.price,inventory:data.inventory,cost:data.cost,category:data.category,address:data.address,lowStock:data.lowStock,mrpCap:data.mrpCap});
   }
+  logCostChange(id, data.name, prevCostForSave, data.cost, editingProdId?'edit-product':'new-product');
   msg.style.color='var(--teal)'; msg.textContent='Saved!';
   setTimeout(()=>msg.textContent='',2000);
-  cancelEditProduct(); loadProducts(); toast('Product saved','ok');
+  cancelEditProduct();
+  // Repaint from the caches just updated above instead of calling loadProducts(), which would
+  // re-read all ~2,500 product docs from the server to learn what we already know. Same reason the
+  // post-sale reload was removed — fsGetAll is billed for the whole collection every time.
+  productPageIndex=0; productView=allProducts;
+  const _fb=document.getElementById('prodFilterBox');
+  if(_fb && _fb.value.trim()){ filterProducts(_fb.value); } else { renderProducts(); }
+  document.getElementById('prodCount').textContent=allProducts.length+' products';
+  populateCategoryList();
+  toast('Product saved','ok');
   // If this was created/edited from Create Order's quick-add or edit shortcut, refresh that
   // search so the new item / added variant shows up immediately instead of needing a re-search.
   if(document.getElementById('orderSearch')?.value.trim()) renderOrderSearch();
@@ -3689,7 +3744,13 @@ async function finalizeSale(total, cashInfo){
   </div>`;
   document.getElementById('receiptContent').innerHTML=receiptHtml;
   document.getElementById('receiptModal').classList.add('show');
-  cart=[]; cartDiscount=null; renderCart(); loadProducts();
+  // NO loadProducts() here. The loop above already decremented both caches (allProductsFull and the
+  // light allProducts entry) for every item sold, so a reload fetches nothing new — but fsGetAll()
+  // is a server query billed for the WHOLE collection, so this line cost ~2,474 reads per sale.
+  // At 82 sales that is ~203k reads against a 50k/day free quota, i.e. the quota was being blown
+  // several times over every trading day purely to re-read data the client had just written.
+  cart=[]; cartDiscount=null; renderCart();
+  if(document.getElementById('panel-products')?.classList.contains('active')) renderProducts();   // repaint from the already-updated cache if visible
 }
 
 window.newSale=function(){   // close receipt and prep the search box for the next customer
@@ -4084,10 +4145,10 @@ let rChart=null, curPeriod='week', reportView='daily';
 // Reports tab hosts the Daily summaries inline with Weekly/Monthly/Yearly.
 window.setReportView=function(v){
   reportView=v;
-  const map={daily:'dy',week:'wk',month:'mo',year:'yr',reorder:'ro',attendance:'at'};
+  const map={daily:'dy',week:'wk',month:'mo',year:'yr',reorder:'ro',attendance:'at',health:'dh'};
   Object.entries(map).forEach(([k,id])=>document.getElementById(id+'Btn')?.classList.toggle('active',k===v));
-  const daily=v==='daily', reorder=v==='reorder', attendance=v==='attendance';
-  const period=!daily&&!reorder&&!attendance;
+  const daily=v==='daily', reorder=v==='reorder', attendance=v==='attendance', health=v==='health';
+  const period=!daily&&!reorder&&!attendance&&!health;
   document.getElementById('dailyDateRow').style.display=daily?'':'none';
   document.getElementById('rangeRow').style.display=period?'':'none';
   document.getElementById('reorderRow').style.display=reorder?'':'none';
@@ -4096,6 +4157,8 @@ window.setReportView=function(v){
   document.getElementById('reportContent').style.display=period?'':'none';
   document.getElementById('reorderContent').style.display=reorder?'':'none';
   document.getElementById('attendanceContent').style.display=attendance?'':'none';
+  document.getElementById('healthContent').style.display=health?'':'none';
+  if(health){ renderDataHealth(); return; }
   if(daily){ if(!document.getElementById('sumDate').value)document.getElementById('sumDate').value=today(); renderDaily(); }
   else if(reorder){ renderReorder(); }
   else if(attendance){
@@ -4107,6 +4170,40 @@ window.setReportView=function(v){
     renderAttendance();
   }
   else setPeriod(v);
+};
+// Owner-only catalogue health check. Everything here reads the already-loaded product cache, so it
+// costs no Firestore reads. It exists because these faults are invisible in normal use: an item with
+// no cost quietly reports 100% margin, and one priced below cost quietly reports a loss — both only
+// surfaced before by auditing a bad day after the money was gone.
+window.renderDataHealth=async function(){
+  const el=document.getElementById('healthContent');
+  el.innerHTML='<div class="card"><div class="empty"><i class="ti ti-loader-2 spin" style="font-size:22px"></i>Checking...</div></div>';
+  if(!Object.keys(allProductsFull).length) await loadProducts();
+  const all=Object.values(allProductsFull);
+  const priced=all.filter(p=>(p.price||0)>0);
+  const belowCost=priced.filter(p=>(p.cost||0)>0 && p.cost>p.price).sort((a,b)=>(b.cost-b.price)-(a.cost-a.price));
+  const noCost=priced.filter(p=>!(p.cost>0)).sort((a,b)=>(b.inventory||0)-(a.inventory||0));
+  const zeroMargin=priced.filter(p=>(p.cost||0)>0 && p.cost===p.price);
+  const stockAtRisk=noCost.reduce((a,p)=>a+(p.inventory||0),0);
+  const row=(p,right)=>`<div class="eitem"><div><div class="el">${p.name||p.id}</div><div class="ed">${p.category||'No category'}${p.inventory?` · ${p.inventory} in stock`:''}</div></div><span class="eval ${right.cls}">${right.txt}</span></div>`;
+  const card=(title,icon,tone,count,blurb,items,rightFn)=>`<div class="card"><div class="card-title"><i class="ti ti-${icon}"></i> ${title}<span class="badge ${tone}" style="margin-left:auto">${count}</span></div>
+    <div style="font-size:10px;color:var(--text3);margin:-2px 0 8px;line-height:1.6">${blurb}</div>
+    ${count?`<div class="elist" style="max-height:320px">${items.slice(0,60).map(p=>row(p,rightFn(p))).join('')}</div>${count>60?`<div style="font-size:10px;color:var(--text3);margin-top:6px">…and ${count-60} more</div>`:''}`:'<div class="empty" style="padding:14px"><i class="ti ti-circle-check"></i>Nothing to fix here</div>'}</div>`;
+  el.innerHTML=`<div class="mrow m4">
+      <div class="metric"><div class="ml">Products</div><div class="mv">${all.length}</div></div>
+      <div class="metric"><div class="ml">Selling below cost</div><div class="mv" style="color:${belowCost.length?'var(--red)':'var(--green)'}">${belowCost.length}</div></div>
+      <div class="metric"><div class="ml">No cost on file</div><div class="mv" style="color:${noCost.length?'var(--amber)':'var(--green)'}">${noCost.length}</div></div>
+      <div class="metric"><div class="ml">Units affected</div><div class="mv" style="color:${stockAtRisk?'var(--amber)':'var(--green)'}">${stockAtRisk}</div></div>
+    </div>
+    ${card('Selling below cost','alert-triangle','b-draft',belowCost.length,
+      'Every sale of these loses money. Either the cost is a data-entry error (a whole case total typed as the per-piece cost), or the supplier raised their price and yours never followed.',
+      belowCost,p=>({cls:'c-neg',txt:`${fmt(p.price)} / cost ${fmt(p.cost)}`}))}
+    ${card('No cost on file','help-circle','b-draft',noCost.length,
+      'These report 100% profit on every sale, which inflates your margin and hides real performance. Highest stock first — those distort the figures most.',
+      noCost,p=>({cls:'c-amb',txt:`${fmt(p.price)} / no cost`}))}
+    ${card('Zero margin (cost = price)','equal','b-saved',zeroMargin.length,
+      'Cost exactly equals price, so these break even on paper. Usually means the cost was copied from the price rather than taken from a real receipt.',
+      zeroMargin,p=>({cls:'c-amb',txt:fmt(p.price)}))}`;
 };
 window.setPeriod=function(p){
   curPeriod=p; ['wk','mo','yr'].forEach((id,i)=>document.getElementById(id+'Btn').classList.toggle('active',['week','month','year'][i]===p));
@@ -4338,8 +4435,26 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.90';
+const APP_VERSION='v4.93';
 const CHANGELOG=[
+  {v:'v4.93', date:'2026-08-12', notes:[
+    'Big speed and reliability fix: the app was re-downloading the entire product list (about 2,500 items) after every single sale, and again after every product edit. On a normal day that is far more data than the free Firebase plan allows, which could make the product list come back empty in the middle of a shift. Sales and edits now update the list already in memory instead — no re-download at all',
+    'If a product refresh ever does fail, the app now keeps the last good list and warns you, instead of silently emptying the catalogue so nothing can be sold',
+    'New owner-only Reports → Data Health tab: every product selling below cost, every product with no cost on file (these quietly report 100% profit), and every product whose cost exactly equals its price. This is the check that would have caught the Load costing error in a day instead of three weeks',
+    'Every change to a product cost is now recorded — old value, new value, who did it, when, and whether it came from a delivery, a product edit, or a CSV import. Nothing tracked this before, so a wrong cost could not be traced or undone',
+    'Importing a CSV now automatically saves a full backup of your products to Downloads first, and asks you to confirm before overwriting anything. There is also a new Backup Products button next to Export to CSV',
+    'Clearing a product cost to 0 in Add/Edit Product now asks you to confirm, since an item with no cost makes its profit figures meaningless',
+    'Receiving a delivery now asks you to confirm when a cost moves more than 30% either way, showing the old and new figures. A cost that drops sharply is just as wrong as one that jumps, and used to go through silently']},
+  {v:'v4.92', date:'2026-08-11', notes:[
+    'Receiving a delivery now defaults to Total Cost instead of Unit Cost, in both Orders → Receive and the quick on-the-spot receive. Most DR/SIs print the line total, so this matches the paper by default and the per-piece cost is worked out for you — the division staff were doing by hand is where the wrong number kept coming from. The pill is also renamed from "Total Amount" to "Total Cost" so it clearly refers to what you paid, not what the customer pays',
+    'A cost of 0 is now refused when receiving. Zero cost wipes the item\'s cost on file and quietly makes every future sale of it look like pure profit',
+    'Lines with quantity 0 no longer touch the item\'s cost at all. Quantity 0 means "this did not arrive", so there is nothing to learn about its cost — previously a not-delivered line still overwrote the cost on file, which is how a Majesty delivery reset five items (PH Care wash, Rogin-E, Eye Mo, Galvusmet, Allerta) to ₱0 cost',
+    'The quick on-the-spot receive now runs the same cost checks as Orders → Receive. It had none at all, so a cost that Orders would have rejected went straight through',
+    'Restored the five zeroed costs where the old value could be proven from records: PH Care wash ₱6.50, Eye Mo red ₱98.00, Allerta ₱21.96. Rogin-E and Galvusmet have never been sold and had no supplier cost on file, so they still need their cost typed in from the delivery receipt']},
+  {v:'v4.91', date:'2026-08-11', notes:[
+    'Products → Import CSV now refuses any row whose cost is above its selling price — the same hard block Add/Edit Product and Receive Delivery have had since v4.81. Import was the one path that skipped the check entirely, and since a row matching an existing SKU/name UPDATES that product, one bad spreadsheet could silently undo costs you had already corrected',
+    'A rejected row no longer sinks the whole import — the good rows still go in, and the rejected ones are listed by name on screen (with their cost and price) so you know exactly which cells to fix before re-importing',
+    'Found while auditing 8/10/2026, which showed a ₱21,404 "loss": phone Load was priced at ₱1 per unit with its cost set to ₱500 (the wallet top-up amount typed into the per-unit field), so two ₱25 load sales alone booked ₱25,000 of cost that never existed. The day was actually about ₱6,840 profit at a 35% margin']},
   {v:'v4.90', date:'2026-07-31', notes:[
     'Fixed the Cash Ins / Cash Outs cards claiming "You don\'t have the Cash In/Out privilege" while reviewing a past day — even for the owner, who does have it. The controls are still disabled there (you can\'t log new entries against a closed day), but they now say so for the real reason: "Viewing a past day — Close Review to log against today\'s shift"',
     'Those two cards also no longer grey out while reviewing — the past day\'s cash ins/outs are the whole point of opening it, so they stay at full contrast. Greying out is now reserved for an actual missing privilege']},
@@ -4656,9 +4771,33 @@ window.exportCSV = function() {
   toast(`Exported ${allProducts.length} products`,'ok');
 };
 
+// Full snapshot of the product catalogue as JSON, straight from the in-memory cache — costs zero
+// Firestore reads and is instant. This is the "undo" for a bad import: it captures every field,
+// unlike the CSV export which flattens variants and drops anything without a column.
+window.downloadProductBackup = function(silent){
+  const dump = allProducts.map(p=>allProductsFull[p.id]||p);
+  const blob = new Blob([JSON.stringify(dump,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `pharmacy_products_backup_${today()}_${tnow().replace(/[: ]/g,'')}.json`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 10000);
+  if(!silent) toast(`Backed up ${dump.length} products`,'ok');
+  return dump.length;
+};
+
 window.importCSV = async function(input) {
   const file = input.files[0]; if(!file)return;
   const msg = document.getElementById('importMsg');
+  // Import rewrites thousands of products in one go and is what caused the August 2026 costing
+  // incident, so the backup is taken automatically rather than relying on anyone remembering. It's
+  // free (in-memory) and lands in Downloads before a single document is written.
+  if(allProducts.length){
+    const n=window.downloadProductBackup(true);
+    if(!confirm(`A backup of all ${n} products was just saved to your Downloads folder.\n\nImporting "${file.name}" will overwrite products that match by SKU or name.\n\nContinue with the import?`)){
+      input.value=''; msg.textContent=''; return;
+    }
+  }
   msg.style.color='var(--amber)'; msg.textContent='Importing...';
   const text = await file.text();
   const lines = text.trim().split('\n');
@@ -4671,7 +4810,7 @@ window.importCSV = async function(input) {
     if(p.sku) bySku[p.sku.trim().toLowerCase()]=p.id;
     byName[(p.name||'').trim().toLowerCase()]=p.id;
   });
-  let created=0, updated=0, skipped=0;
+  let created=0, updated=0, skipped=0; const blocked=[];
   for(let i=1;i<lines.length;i++){
     const line = lines[i].trim(); if(!line)continue;
     const cols = parseCSVLine(line);
@@ -4683,6 +4822,21 @@ window.importCSV = async function(input) {
       return {size:parts[0]||'',packaging:parts[1]||'',cost:parseFloat(parts[2])||0,price:parseFloat(parts[3])||0,
               inventory:(rawInv===undefined||rawInv==='')?null:Math.max(0,parseInt(rawInv)||0)};
     }).filter(v=>v.size||v.packaging) : [];
+    // Same hard block as saveProduct(): a cost above the selling price is virtually always the
+    // "total case/delivery cost typed into the per-unit field" mistake. Import was the ONE path that
+    // skipped this check — and because a matched row UPDATES an existing product (see below), a
+    // single bad spreadsheet could silently re-poison costs that had already been corrected in the
+    // UI, which is exactly how a ₱1 item ended up with a ₱500 unit cost. Skip the row, keep going,
+    // and name the offenders at the end so a 500-row import isn't lost to one bad cell.
+    const rowCost=parseFloat(row.cost)||0, rowPrice=parseFloat(row.price)||0;
+    if(rowPrice>0 && rowCost>rowPrice){
+      blocked.push(`${row.name} — cost ${fmt(rowCost)} > price ${fmt(rowPrice)}`); skipped++; continue;
+    }
+    const badVar=variants.find(v=>v.price>0 && v.cost>v.price);
+    if(badVar){
+      blocked.push(`${row.name} (variant "${[badVar.size,badVar.packaging].filter(Boolean).join(' ')}") — cost ${fmt(badVar.cost)} > price ${fmt(badVar.price)}`);
+      skipped++; continue;
+    }
     const skuKey=(row.sku||'').trim().toLowerCase();
     const nameKey=row.name.trim().toLowerCase();
     const matchId=(skuKey && bySku[skuKey]) || byName[nameKey];
@@ -4693,7 +4847,7 @@ window.importCSV = async function(input) {
       address:(row.address||'').toUpperCase(),
       suppliers:row.suppliers||'',
       supplierCosts: (existing&&existing.supplierCosts) || {},   // no CSV column for this — preserve on update
-      cost:parseFloat(row.cost)||0, price:parseFloat(row.price)||0,
+      cost:rowCost, price:rowPrice,
       inventory: (variants.length && hasVariantInventory({variants})) ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(row.inventory)||0),
       lowStock:parseInt(row.lowstock)||10,
       variants,
@@ -4704,6 +4858,9 @@ window.importCSV = async function(input) {
       updatedAt:tnow()
     };
     await fsSet('products', id, fullData);
+    // Import is the highest-volume cost writer and the one that caused the August 2026 incident,
+    // so every cost it moves is logged with the file it came from.
+    if(existing) logCostChange(id, fullData.name, existing.cost||0, rowCost, 'csv-import', {file:file.name||''});
     // Update caches
     allProductsFull[id]=fullData;
     const cacheEntry={id,sku:fullData.sku,name:fullData.name,price:fullData.price,inventory:fullData.inventory,cost:fullData.cost,category:fullData.category,address:fullData.address,lowStock:fullData.lowStock,mrpCap:fullData.mrpCap};
@@ -4716,8 +4873,19 @@ window.importCSV = async function(input) {
       created++;
     }
   }
-  msg.style.color='var(--teal)'; msg.textContent=`Imported ${created} new, updated ${updated}${skipped?' ('+skipped+' skipped)':''}`;
-  setTimeout(()=>msg.textContent='',4000);
+  // A blocked row is a data-entry error the user has to go fix in the spreadsheet, so it gets a
+  // persistent red list (naming the items) rather than the transient 4s "all good" toast.
+  if(blocked.length){
+    msg.style.color='var(--red)';
+    msg.innerHTML=`Imported ${created} new, updated ${updated} — <b>${blocked.length} row(s) REJECTED: cost above selling price</b>`
+      +`<div style="margin-top:5px;font-size:10px;line-height:1.5;color:var(--text2)">`
+      +blocked.slice(0,15).map(b=>`• ${b}`).join('<br>')
+      +(blocked.length>15?`<br>…and ${blocked.length-15} more`:'')
+      +`<br><br>Fix the cost column for these (it looks like a total case cost, not a per-unit cost) and re-import.</div>`;
+  } else {
+    msg.style.color='var(--teal)'; msg.textContent=`Imported ${created} new, updated ${updated}${skipped?' ('+skipped+' skipped)':''}`;
+    setTimeout(()=>msg.textContent='',4000);
+  }
   input.value='';
   // Reset pagination and refresh
   productPageIndex=0; productView=allProducts; renderProducts();
@@ -4868,7 +5036,7 @@ window.openNewOrderModal=function(mode){
   setQrPayMode(document.querySelector('#qrPayModeGroup [data-val="cash"]'));
   setQrCashSource(document.querySelector('#qrCashSourceGroup [data-val="Drawer Cash"]'));
   setQrDiscMode(document.querySelector('#qrDiscModeGroup [data-val="pct"]'));
-  setQrCostMode(document.querySelector('#qrCostModeGroup [data-val="unit"]'));
+  setQrCostMode(document.querySelector('#qrCostModeGroup [data-val="total"]'));
   setOrderModalMode(mode||'create');
   populateSupplierList();
   renderOrderList();
@@ -4976,6 +5144,18 @@ window.confirmReceiveDelivery=async function(){
   const goods=items.reduce((a,oi)=>a+oiCost(oi)*oi.qty,0);
   const discPct=qrDiscPctResolved(goods);
   const grand=Math.round((goods*(1-discPct/100)+fee)*100)/100;
+  // This quick-receive path used to write product costs with NO validation at all — the saved-PO
+  // intake had the cost>=price / zero-cost guards, this one didn't, so the same bad entry that gets
+  // blocked in Orders → Receive sailed straight through here. Run the identical checks.
+  const qrBlocked=[], qrWarned=[];
+  for(const oi of items){
+    const landed=oiCost(oi)*(1-discPct/100)+feePerUnit;
+    const issue=intakeRowIssue({prodId:oi.prod.id, size:oi.size||'', packaging:oi.packaging||''}, landed, oi.qty);
+    if(issue?.type==='block') qrBlocked.push(`${oi.prod.name}: ${issue.message}`);
+    else if(issue?.type==='warn') qrWarned.push(`${oi.prod.name}: ${issue.message}`);
+  }
+  if(qrBlocked.length){ toast(`Fix the cost on ${qrBlocked.length} item(s) before receiving`,'err'); alert(`Cannot receive:\n\n${qrBlocked.join('\n\n')}`); return; }
+  if(qrWarned.length && !confirm(`Possible unit cost error on ${qrWarned.length} item(s):\n\n${qrWarned.join('\n')}\n\nReceive anyway?`)) return;
   let envAllocations=null;
   if(payMode==='cash' && cashSource==='Take Home'){
     envAllocations=qrEnvRows.filter(r=>r.id && r.amount>0).map(r=>({id:r.id, amount:r.amount}));
@@ -5005,7 +5185,11 @@ window.confirmReceiveDelivery=async function(){
     const prod=oi.prod, fp=allProductsFull[prod.id]; if(!fp) continue;
     const c=oiCost(oi), landed=Math.round((c*(1-discPct/100)+feePerUnit)*100)/100;
     adjustVariantInventory(fp, oi.size||'', oi.packaging||'', oi.qty);
-    adjustVariantCost(fp, oi.size||'', oi.packaging||'', landed);
+    if(oi.qty>0){                                   // see confirmDelivery: qty 0 = not delivered = no cost info
+      const before=currentCostOf(fp, oi.size||'', oi.packaging||'');
+      adjustVariantCost(fp, oi.size||'', oi.packaging||'', landed);
+      logCostChange(prod.id, prod.name, before, landed, 'quick-receive', {poNumber:poNum, drNo});
+    }
     fp.updatedAt=now;
     await fsSet('products', prod.id, fp);
     const lp=allProducts.find(p=>p.id===prod.id); if(lp){ lp.inventory=fp.inventory; lp.cost=fp.cost; }
@@ -5319,9 +5503,9 @@ function renderOrderList() {
             <div class="po-meta">${prod.sku||'No SKU'} · Stock: ${prod.inventory||0}</div>
           </div>
           <div class="po-qty-wrap">
-            <label style="font-size:10px;color:var(--text3)">Cost:</label>
+            <label style="font-size:10px;color:var(--text3)">Unit:</label>
             <input type="number" class="po-qty" style="width:70px" id="oc-${oi.id}" step="0.01" min="0" value="${oiCost(oi)}" oninput="updateOrderCost('${oi.id}',this.value)" title="Editable unit cost">
-            ${isReceive?`<label style="font-size:10px;color:var(--text3);margin-left:6px">Total:</label>
+            ${isReceive?`<label style="font-size:10px;color:var(--text3);margin-left:6px">Total Cost:</label>
             <input type="number" class="po-qty" style="width:80px" id="ot-${oi.id}" step="0.01" min="0" value="${(oiCost(oi)*qty).toFixed(2)}" oninput="updateOrderTotal('${oi.id}',this.value)" title="Editable line total">`:''}
             <label style="font-size:10px;color:var(--text3);margin-left:6px">Qty:</label>
             <input class="po-qty qty-input" id="oq-${oi.id}" value="${qty}" inputmode="numeric" readonly onclick="openQtyPad('order:${oi.id}')" title="Tap to edit quantity">
@@ -5384,7 +5568,7 @@ function refreshOrderLine(id){
 }
 // Same idea as the saved-PO Receive intake's cost-mode pill: whichever column the DR/SI actually
 // shows is what staff type, the other is derived — see intakeCostMode above for the fuller why.
-let qrCostMode='unit';
+let qrCostMode='total';
 window.setQrCostMode=function(btn){
   if(!btn) return;
   document.getElementById('qrCostModeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
@@ -5875,7 +6059,7 @@ window.openIntake=function(id){
   document.getElementById('intakeFee').value=0;
   document.getElementById('intakeDiscVal').value=0;
   setIntakeDiscMode(document.querySelector('#intakeDiscModeGroup [data-val="pct"]'));
-  setIntakeCostMode(document.querySelector('#intakeCostModeGroup [data-val="unit"]'));
+  setIntakeCostMode(document.querySelector('#intakeCostModeGroup [data-val="total"]'));
   document.getElementById('intakeDR').value=po.drNo||'';
   document.getElementById('intakeBody').innerHTML=po.items.map((it,i)=>`
     <div class="intake-item">
@@ -5885,7 +6069,7 @@ window.openIntake=function(id){
       </div>
       <div class="field"><label>Recv Qty</label><input type="number" class="po-qty" id="iq_${i}" value="${it.recvQty}" min="0" step="1" oninput="onIntakeQtyInput(${i})"></div>
       <div class="field"><label>Unit Cost</label><input type="number" class="po-qty" id="ic_${i}" value="${it.recvCost}" min="0" step="0.01" oninput="onIntakeUnitCostInput(${i})"></div>
-      <div class="field"><label>Total Amount</label><input type="number" class="po-qty" id="it_${i}" value="${((it.recvCost||0)*(it.recvQty||0)).toFixed(2)}" min="0" step="0.01" oninput="onIntakeTotalAmountInput(${i})"></div>
+      <div class="field"><label>Total Cost</label><input type="number" class="po-qty" id="it_${i}" value="${((it.recvCost||0)*(it.recvQty||0)).toFixed(2)}" min="0" step="0.01" oninput="onIntakeTotalAmountInput(${i})"></div>
       <div id="iw_${i}" style="display:none;flex-basis:100%;font-size:11px;font-weight:600;color:var(--red);margin-top:4px"></div>
     </div>`).join('');
   applyIntakeCostMode();
@@ -5896,7 +6080,7 @@ window.closeIntake=function(){ document.getElementById('intakeModal').classList.
 // Whichever column the DR/SI actually shows (unit cost, or total amount for the line) is the one
 // staff type into — the other column is derived, so nobody has to do the division by hand (that
 // manual step is exactly where the "total cost typed as unit cost" mistake keeps happening).
-let intakeCostMode='unit';
+let intakeCostMode='total';
 window.setIntakeCostMode=function(btn){
   if(!btn) return;
   document.getElementById('intakeCostModeGroup').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('active',b===btn));
@@ -5957,13 +6141,28 @@ function intakeTotals(){
 // member typing the delivery's TOTAL cost into the per-unit cost field instead of dividing it out.
 // 'block' (cost at/above selling price — would sell at a loss) hard-stops the receive; 'warn'
 // (cost jumped 5x+ vs the on-file cost, but still under price) just needs a confirm to proceed.
-function intakeRowIssue(it, landed){
+function intakeRowIssue(it, landed, qty){
   const prod=allProductsFull[it.prodId]; if(!prod) return null;
+  // Qty 0 = "this line wasn't delivered". Staff are told to zero the qty in that case, so there is
+  // no new cost information here at all — the line is skipped entirely (confirmDelivery also leaves
+  // the product's cost untouched). Validating it would only nag about a cost nobody is setting.
+  if(!(qty>0)) return null;
   const v=hasVariantInventory(prod)?findVariantByLabel(prod,it.size,it.packaging):null;
   const price=(v&&v.price!=null)?v.price:prod.price;
   const onFileCost=(v&&v.cost!=null&&v.cost!=='')?v.cost:(prod.cost||0);
+  // A zero/blank cost on a line that WAS delivered wipes the product's cost and silently makes every
+  // future sale of it look like 100% margin. Never accept it — this is how a real delivery zeroed out
+  // five products' costs when a staffer put 0 in both the qty and the cost column.
+  if(!(landed>0)) return {type:'block', message:`Cost is 0 — enter what this line actually cost. If it wasn't delivered, set its quantity to 0 instead and the cost on file will be left alone.`};
   if(price>0 && landed>=price) return {type:'block', message:`Landed cost ${fmt(landed)} is at or above the selling price ${fmt(price)} — this item would sell at a loss. Check for a data-entry error (e.g. total cost typed instead of per-unit cost).`};
-  if(onFileCost>0 && landed>=onFileCost*5) return {type:'warn', message:`Landed cost ${fmt(landed)} is ${(landed/onFileCost).toFixed(1)}x the current on-file cost ${fmt(onFileCost)} — double-check the unit cost.`};
+  if(onFileCost>0){
+    const ratio=landed/onFileCost;
+    if(ratio>=5) return {type:'warn', message:`Landed cost ${fmt(landed)} is ${ratio.toFixed(1)}x the current on-file cost ${fmt(onFileCost)} — double-check the unit cost.`};
+    // A cost that MOVES a lot in either direction deserves a look. A big drop is just as wrong as a
+    // big rise (it inflates reported margin instead of destroying it) and used to pass silently.
+    // Batched into one confirm listing every affected line, so this doesn't become click-through noise.
+    if(ratio>=1.3 || ratio<=0.7) return {type:'warn', message:`Cost ${fmt(onFileCost)} → ${fmt(landed)} (${ratio>=1?'+':''}${((ratio-1)*100).toFixed(0)}%) — confirm this is what the receipt says.`};
+  }
   return null;
 }
 window.updateIntakeSummary=function(){
@@ -5978,7 +6177,8 @@ window.updateIntakeSummary=function(){
   (po?.items||[]).forEach((it,i)=>{
     const c=parseFloat(document.getElementById('ic_'+i)?.value); const baseCost=isNaN(c)?it.orderedCost:c;
     const landed=baseCost*(1-(t.discPct||0)/100)+(t.feePerUnit||0);
-    const issue=intakeRowIssue(it,landed);
+    const rq=parseFloat(document.getElementById('iq_'+i)?.value)||0;
+    const issue=intakeRowIssue(it,landed,rq);
     const el=document.getElementById('iw_'+i); if(!el) return;
     el.innerHTML=issue?`<i class="ti ti-alert-triangle"></i> ${issue.message}`:'';
     el.style.display=issue?'block':'none';
@@ -5996,7 +6196,8 @@ window.confirmDelivery=async function(){
     const it=po.items[i];
     const rcBase=parseFloat(document.getElementById('ic_'+i).value); const baseCost=isNaN(rcBase)?it.orderedCost:rcBase;
     const landed = baseCost*(1-(t?.discPct||0)/100) + (t?.feePerUnit||0);
-    const issue=intakeRowIssue(it,landed);
+    const rqCheck=parseFloat(document.getElementById('iq_'+i).value)||0;
+    const issue=intakeRowIssue(it,landed,rqCheck);
     if(issue?.type==='block') blocked.push(`${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}: ${issue.message}`);
     else if(issue?.type==='warn') warned.push(`${it.name}${poItemLabel(it)?' ('+poItemLabel(it)+')':''}: ${issue.message}`);
   }
@@ -6017,8 +6218,15 @@ window.confirmDelivery=async function(){
       adjustVariantInventory(prod, it.size, it.packaging, it.recvQty);   // restock (variant if migrated, else parent)
       const rounded=Math.round(landed*100)/100;
       const v=hasVariantInventory(prod)?findVariantByLabel(prod,it.size,it.packaging):null;
-      if(rounded!==(v?v.cost:prod.cost)) priceChanges++;   // cost incl. fee
-      adjustVariantCost(prod, it.size, it.packaging, rounded);
+      // Only re-cost a line that actually arrived. A zero-qty line means "not delivered", which
+      // carries NO cost information — writing its cost anyway is what wiped five products' costs to
+      // ₱0 (staff zero the qty for undelivered items, and one also zeroed the cost column).
+      if(it.recvQty>0){
+        const before=currentCostOf(prod, it.size, it.packaging);
+        if(rounded!==(v?v.cost:prod.cost)) priceChanges++;   // cost incl. fee
+        adjustVariantCost(prod, it.size, it.packaging, rounded);
+        logCostChange(it.prodId, it.name, before, rounded, 'delivery', {poNumber:po.poNumber||'', drNo});
+      }
       prod.updatedAt=tnow();
       await fsSet('products', it.prodId, prod);
       const lp=allProducts.find(p=>p.id===it.prodId);       // keep search cache in sync
