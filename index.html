@@ -771,7 +771,7 @@ select option{background:var(--bg3)}
       <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
       <div class="field"><label>Margin %</label><input type="text" id="pMarginPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field"><label>Markup %</label><input type="text" id="pMarkupPct" placeholder="auto" readonly style="color:var(--teal)"></div>
-      <div class="field"><label id="pInventoryLabel">Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1"></div>
+      <div class="field"><label id="pInventoryLabel">Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1" min="0"></div>
       <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
       <div class="field"><label>Shelf Address <span style="color:var(--text3);font-weight:400">(e.g. D9)</span></label><input type="text" id="pAddress" placeholder="e.g. D9" style="text-transform:uppercase"></div>
       <div class="field"><label>DOH MRP Cap (PHP) <span style="color:var(--text3);font-weight:400">(optional)</span></label><input type="number" id="pMrpCap" placeholder="e.g. 44.20" step="0.01" oninput="checkMrpCap()"></div>
@@ -3289,6 +3289,15 @@ window.saveProduct=async function(){
   // Zeroing the cost of an item that HAS a cost silently turns every future sale of it into 100%
   // reported margin. It's never a deliberate edit, so make it an explicit confirmation rather than a
   // silent save. (A genuinely free/consignment item is the one real case, hence confirm not block.)
+  // Stock can never legitimately be below zero. Selling can't produce it (adjustVariantInventory
+  // clamps at 0), so any negative came from a typed entry or an import — and it silently corrupts
+  // reorder suggestions and every stock valuation. Refuse it at the source.
+  const invRaw=parseInt(document.getElementById('pInventory').value);
+  if(!isNaN(invRaw) && invRaw<0){
+    msg.style.color='var(--red)';
+    msg.textContent=`Inventory can't be negative (${invRaw}). Enter the real count on hand, or 0 if there is none.`;
+    return;
+  }
   const prevCostForSave=editingProdId ? (allProductsFull[editingProdId]?.cost||0) : 0;
   if(costVal<=0 && prevCostForSave>0 &&
      !confirm(`This will clear the cost on "${name}" (currently ${fmt(prevCostForSave)}).\n\nWith no cost on file, every sale of it reports 100% profit and its margin figures become meaningless.\n\nClear the cost anyway?`)){
@@ -4184,7 +4193,10 @@ window.renderDataHealth=async function(){
   const belowCost=priced.filter(p=>(p.cost||0)>0 && p.cost>p.price).sort((a,b)=>(b.cost-b.price)-(a.cost-a.price));
   const noCost=priced.filter(p=>!(p.cost>0)).sort((a,b)=>(b.inventory||0)-(a.inventory||0));
   const zeroMargin=priced.filter(p=>(p.cost||0)>0 && p.cost===p.price);
-  const stockAtRisk=noCost.reduce((a,p)=>a+(p.inventory||0),0);
+  // Selling clamps stock at 0, so a negative can only have come from a typed entry or an import.
+  // It needs a physical count to resolve, so it's surfaced here rather than auto-corrected.
+  const negStockItems=all.filter(p=>(p.inventory||0)<0).sort((a,b)=>(a.inventory||0)-(b.inventory||0));
+  const stockAtRisk=noCost.reduce((a,p)=>a+Math.max(0,p.inventory||0),0);
   const row=(p,right)=>`<div class="eitem"><div><div class="el">${p.name||p.id}</div><div class="ed">${p.category||'No category'}${p.inventory?` · ${p.inventory} in stock`:''}</div></div><span class="eval ${right.cls}">${right.txt}</span></div>`;
   const card=(title,icon,tone,count,blurb,items,rightFn)=>`<div class="card"><div class="card-title"><i class="ti ti-${icon}"></i> ${title}<span class="badge ${tone}" style="margin-left:auto">${count}</span></div>
     <div style="font-size:10px;color:var(--text3);margin:-2px 0 8px;line-height:1.6">${blurb}</div>
@@ -4193,7 +4205,7 @@ window.renderDataHealth=async function(){
       <div class="metric"><div class="ml">Products</div><div class="mv">${all.length}</div></div>
       <div class="metric"><div class="ml">Selling below cost</div><div class="mv" style="color:${belowCost.length?'var(--red)':'var(--green)'}">${belowCost.length}</div></div>
       <div class="metric"><div class="ml">No cost on file</div><div class="mv" style="color:${noCost.length?'var(--amber)':'var(--green)'}">${noCost.length}</div></div>
-      <div class="metric"><div class="ml">Units affected</div><div class="mv" style="color:${stockAtRisk?'var(--amber)':'var(--green)'}">${stockAtRisk}</div></div>
+      <div class="metric"><div class="ml">Negative stock</div><div class="mv" style="color:${negStockItems.length?'var(--red)':'var(--green)'}">${negStockItems.length}</div></div>
     </div>
     ${card('Selling below cost','alert-triangle','b-draft',belowCost.length,
       'Every sale of these loses money. Either the cost is a data-entry error (a whole case total typed as the per-piece cost), or the supplier raised their price and yours never followed.',
@@ -4201,6 +4213,9 @@ window.renderDataHealth=async function(){
     ${card('No cost on file','help-circle','b-draft',noCost.length,
       'These report 100% profit on every sale, which inflates your margin and hides real performance. Highest stock first — those distort the figures most.',
       noCost,p=>({cls:'c-amb',txt:`${fmt(p.price)} / no cost`}))}
+    ${card('Negative stock','arrow-down-circle','b-draft',negStockItems.length,
+      'Stock below zero is impossible — selling stops at 0 — so these came from a typed entry or a CSV import. They make reorder suggestions and stock valuations wrong. Each needs a physical count; entering the real number clears it. Most negative first.',
+      negStockItems,p=>({cls:'c-neg',txt:`${p.inventory} on file`}))}
     ${card('Zero margin (cost = price)','equal','b-saved',zeroMargin.length,
       'Cost exactly equals price, so these break even on paper. Usually means the cost was copied from the price rather than taken from a real receipt.',
       zeroMargin,p=>({cls:'c-amb',txt:fmt(p.price)}))}`;
@@ -4435,8 +4450,12 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.93';
+const APP_VERSION='v4.94';
 const CHANGELOG=[
+  {v:'v4.94', date:'2026-08-13', notes:[
+    'Stock can no longer be saved as a negative number. Add/Edit Product refuses it outright, and a CSV import sets any negative stock to 0 and tells you how many it corrected — so exporting, editing and re-importing your product list now cleans these up instead of carrying them along',
+    'Reports → Data Health gained a Negative stock section. 299 products currently show stock below zero, which is impossible (selling stops at 0), so those came from a typed entry or an earlier import. They make reorder suggestions and stock valuations wrong. Each one needs a physical count — entering the real number clears it',
+    'Why this matters: a product showing -257 in stock will never appear in reorder suggestions no matter how empty the shelf is']},
   {v:'v4.93', date:'2026-08-12', notes:[
     'Big speed and reliability fix: the app was re-downloading the entire product list (about 2,500 items) after every single sale, and again after every product edit. On a normal day that is far more data than the free Firebase plan allows, which could make the product list come back empty in the middle of a shift. Sales and edits now update the list already in memory instead — no re-download at all',
     'If a product refresh ever does fail, the app now keeps the last good list and warns you, instead of silently emptying the catalogue so nothing can be sold',
@@ -4810,7 +4829,7 @@ window.importCSV = async function(input) {
     if(p.sku) bySku[p.sku.trim().toLowerCase()]=p.id;
     byName[(p.name||'').trim().toLowerCase()]=p.id;
   });
-  let created=0, updated=0, skipped=0; const blocked=[];
+  let created=0, updated=0, skipped=0; const blocked=[]; let negStock=0;
   for(let i=1;i<lines.length;i++){
     const line = lines[i].trim(); if(!line)continue;
     const cols = parseCSVLine(line);
@@ -4837,6 +4856,13 @@ window.importCSV = async function(input) {
       blocked.push(`${row.name} (variant "${[badVar.size,badVar.packaging].filter(Boolean).join(' ')}") — cost ${fmt(badVar.cost)} > price ${fmt(badVar.price)}`);
       skipped++; continue;
     }
+    // Stock below zero is meaningless and breaks reorder suggestions and stock valuations. Clamped
+    // rather than rejected on purpose: the catalogue already contains negatives, so an export ->
+    // edit -> re-import round trip would otherwise fail on every one of them. Clamping means that
+    // ordinary workflow repairs them instead, and the count is reported so it isn't a silent change.
+    const rowInvRaw=parseInt(row.inventory);
+    const rowInv=isNaN(rowInvRaw)?0:Math.max(0,rowInvRaw);
+    if(!isNaN(rowInvRaw) && rowInvRaw<0) negStock++;
     const skuKey=(row.sku||'').trim().toLowerCase();
     const nameKey=row.name.trim().toLowerCase();
     const matchId=(skuKey && bySku[skuKey]) || byName[nameKey];
@@ -4848,7 +4874,7 @@ window.importCSV = async function(input) {
       suppliers:row.suppliers||'',
       supplierCosts: (existing&&existing.supplierCosts) || {},   // no CSV column for this — preserve on update
       cost:rowCost, price:rowPrice,
-      inventory: (variants.length && hasVariantInventory({variants})) ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(row.inventory)||0),
+      inventory: (variants.length && hasVariantInventory({variants})) ? variants.reduce((a,v)=>a+(v.inventory||0),0) : rowInv,
       lowStock:parseInt(row.lowstock)||10,
       variants,
       // Only touch mrpCap/mrpRef if the CSV actually has those columns — older exports (or a
@@ -4883,8 +4909,10 @@ window.importCSV = async function(input) {
       +(blocked.length>15?`<br>…and ${blocked.length-15} more`:'')
       +`<br><br>Fix the cost column for these (it looks like a total case cost, not a per-unit cost) and re-import.</div>`;
   } else {
-    msg.style.color='var(--teal)'; msg.textContent=`Imported ${created} new, updated ${updated}${skipped?' ('+skipped+' skipped)':''}`;
-    setTimeout(()=>msg.textContent='',4000);
+    msg.style.color='var(--teal)';
+    msg.textContent=`Imported ${created} new, updated ${updated}${skipped?' ('+skipped+' skipped)':''}`
+      +(negStock?` · ${negStock} item(s) had negative stock — set to 0`:'');
+    setTimeout(()=>msg.textContent='',negStock?9000:4000);
   }
   input.value='';
   // Reset pagination and refresh
