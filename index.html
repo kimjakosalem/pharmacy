@@ -1102,8 +1102,10 @@ select option{background:var(--bg3)}
       <div class="card-title"><i class="ti ti-package"></i> Product Inventory
         <span style="margin-left:auto;font-size:10px;color:var(--text3);font-weight:400" id="prodCount"></span>
       </div>
-      <div class="btn-row" style="margin-bottom:10px">
+      <div class="btn-row" style="margin-bottom:10px;align-items:center">
         <button class="btn btn-teal" onclick="openAddProduct()"><i class="ti ti-plus"></i> Add New Product</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadProducts(true)" title="Re-read the product list from the server — use this if another device has added or changed products"><i class="ti ti-refresh"></i> Refresh</button>
+        <span id="prodAsOf" style="font-size:10px;color:var(--text3)"></span>
       </div>
       <div style="margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <div class="search-wrap" style="flex:1;min-width:160px">
@@ -1826,7 +1828,7 @@ window.switchTab=function(tab){
   // Guard owner-only tabs against direct/programmatic access by non-owners.
   if((tab==='reports'||tab==='settings') && session?.role!=='owner'){ return; }
   TABS.forEach(t=>{ document.getElementById('tab-'+t)?.classList.toggle('active',t===tab); document.getElementById('panel-'+t)?.classList.toggle('active',t===tab); });
-  if(tab==='shift'){renderSales();renderReturns();} if(tab==='reports')setReportView(reportView); if(tab==='payables'){renderPayables();renderEnvelopes();} if(tab==='products'){loadProducts();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff(); if(tab==='pos')renderPosBackdateBanner();
+  if(tab==='shift'){renderSales();renderReturns();} if(tab==='reports')setReportView(reportView); if(tab==='payables'){renderPayables();renderEnvelopes();} if(tab==='products'){ensureProductsFresh();renderCatSup();} if(tab==='orders')initOrderTab(); if(tab==='settings')renderStaff(); if(tab==='pos')renderPosBackdateBanner();
 };
 
 // ── SHIFT ──
@@ -2643,7 +2645,46 @@ function adjustVariantCost(prod, size, packaging, cost){
 }
 
 // OPTIMIZED: Load lightweight index only (name, SKU, price, ID)
-async function loadProducts(){
+// fsGetAll('products') is a SERVER query billed for all ~2,500 documents, so when it last ran
+// matters. Opening the Products tab used to re-run it every single time.
+// The budget makes this decision for us. One full read is ~2,474 documents against a 50,000/day
+// free quota — about 20 full reads per DAY in total, shared with boot loads and the report views.
+// So there is no safe auto-refresh interval: even re-reading once every 10 minutes on tab entry
+// works out to ~237,000 reads/day if someone leaves the Products tab in use, ~5x the whole quota.
+// The cache is therefore authoritative for the session: loaded once at boot, refreshed only when
+// someone asks. The cost is that a product added on ANOTHER tablet won't appear here until a
+// refresh or reload — so the age is shown, and goes amber past 30 min to prompt one.
+let productsLoadedAt=0;
+const PRODUCTS_AGE_HINT_MS=30*60*1000;
+function renderProductsAsOf(){
+  const el=document.getElementById('prodAsOf'); if(!el) return;
+  if(!productsLoadedAt){ el.textContent=''; return; }
+  const age=Date.now()-productsLoadedAt;
+  el.textContent='as of '+new Date(productsLoadedAt).toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})
+    +(age>PRODUCTS_AGE_HINT_MS?' — tap Refresh if another device changed products':'');
+  el.style.color=age>PRODUCTS_AGE_HINT_MS?'var(--amber)':'var(--text3)';
+}
+// Repaints the Products tab purely from the in-memory caches. Every caller below has already
+// updated allProducts/allProductsFull itself, so re-fetching would spend ~2,500 reads to be told
+// what we just wrote.
+function repaintProducts(){
+  productPageIndex=0; productView=allProducts;
+  const fb=document.getElementById('prodFilterBox');
+  if(fb && fb.value.trim()){ filterProducts(fb.value); } else { renderProducts(); }
+  const pc=document.getElementById('prodCount'); if(pc) pc.textContent=allProducts.length+' products';
+  populateCategoryList();
+  renderProductsAsOf();
+}
+// Tab entry: repaint from cache. Only reads the server when there is genuinely nothing to show
+// (first visit of the session, or a previous read failed and left the cache empty).
+async function ensureProductsFresh(){
+  if(!allProducts.length) await loadProducts();
+  else repaintProducts();
+}
+// Exposed on window because the Refresh button uses an inline onclick and this file's script is a
+// module — module-scoped functions are not global, so an unexposed one makes the button silently dead.
+window.loadProducts=loadProducts;
+async function loadProducts(force){
   const rawProducts=await fsGetAll('products');
   // fsGetAll returns [] on ANY failure (it swallows the error), and the most likely failure on the
   // free tier is a read-quota 429 mid-shift. Overwriting a good catalogue with [] would blank POS
@@ -2695,12 +2736,9 @@ async function loadProducts(){
   }));
   // Store full versions in object for on-demand fetching
   rawProducts.forEach(p=>allProductsFull[p.id]=p);
-  productPageIndex=0; productView=allProducts;
-  // Preserve an active filter across reloads (e.g. after editing a product while filtering)
-  const fb=document.getElementById('prodFilterBox');
-  if(fb && fb.value.trim()){ filterProducts(fb.value); } else { renderProducts(); }
-  document.getElementById('prodCount').textContent=allProducts.length+' products';
-  populateCategoryList();
+  productsLoadedAt=Date.now();
+  repaintProducts();
+  if(force) toast(`Refreshed ${allProducts.length} products`,'ok');
 }
 // ── Categories & Suppliers databases (config/categories, config/suppliers) ──
 // Categories: [{name, markup}] (recommended markup %). Suppliers: [{name}].
@@ -3344,14 +3382,7 @@ window.saveProduct=async function(){
   msg.style.color='var(--teal)'; msg.textContent='Saved!';
   setTimeout(()=>msg.textContent='',2000);
   cancelEditProduct();
-  // Repaint from the caches just updated above instead of calling loadProducts(), which would
-  // re-read all ~2,500 product docs from the server to learn what we already know. Same reason the
-  // post-sale reload was removed — fsGetAll is billed for the whole collection every time.
-  productPageIndex=0; productView=allProducts;
-  const _fb=document.getElementById('prodFilterBox');
-  if(_fb && _fb.value.trim()){ filterProducts(_fb.value); } else { renderProducts(); }
-  document.getElementById('prodCount').textContent=allProducts.length+' products';
-  populateCategoryList();
+  repaintProducts();     // caches updated above — no server re-read needed
   toast('Product saved','ok');
   // If this was created/edited from Create Order's quick-add or edit shortcut, refresh that
   // search so the new item / added variant shows up immediately instead of needing a re-search.
@@ -3420,8 +3451,7 @@ window.deleteProduct=async function(id){
   await fsDel('products',id);
   delete allProductsFull[id];
   allProducts=allProducts.filter(p=>p.id!==id);
-  productPageIndex=0;
-  loadProducts(); 
+  repaintProducts();     // both caches already updated above — nothing to re-fetch
   toast('Product deleted','info');
 };
 
@@ -3759,7 +3789,7 @@ async function finalizeSale(total, cashInfo){
   // At 82 sales that is ~203k reads against a 50k/day free quota, i.e. the quota was being blown
   // several times over every trading day purely to re-read data the client had just written.
   cart=[]; cartDiscount=null; renderCart();
-  if(document.getElementById('panel-products')?.classList.contains('active')) renderProducts();   // repaint from the already-updated cache if visible
+  if(document.getElementById('panel-products')?.classList.contains('active')) repaintProducts();   // repaint from the already-updated cache if visible
 }
 
 window.newSale=function(){   // close receipt and prep the search box for the next customer
@@ -4450,8 +4480,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.94';
+const APP_VERSION='v4.95';
 const CHANGELOG=[
+  {v:'v4.95', date:'2026-08-14', notes:[
+    'Opening the Products tab no longer re-downloads the whole product list every time. It now shows the copy already loaded, which is instant. This was the last of the big repeated downloads — after the sale and product-edit ones fixed in v4.93',
+    'New Refresh button on the Products tab, with the time the list was last loaded shown beside it. That time turns amber after 30 minutes as a reminder to refresh if another tablet has been adding or editing products',
+    'Why it works this way: the free Firebase plan allows 50,000 record reads a day, and one full product list is about 2,500 of them — roughly 20 full loads a day for everything combined. There is no interval short enough to feel live that also fits in that budget, so the list is loaded once when the app starts and otherwise only when you ask for it',
+    'Deleting a product also stopped re-downloading the list']},
   {v:'v4.94', date:'2026-08-13', notes:[
     'Stock can no longer be saved as a negative number. Add/Edit Product refuses it outright, and a CSV import sets any negative stock to 0 and tells you how many it corrected — so exporting, editing and re-importing your product list now cleans these up instead of carrying them along',
     'Reports → Data Health gained a Negative stock section. 299 products currently show stock below zero, which is impossible (selling stops at 0), so those came from a typed entry or an earlier import. They make reorder suggestions and stock valuations wrong. Each one needs a physical count — entering the real number clears it',
