@@ -771,7 +771,7 @@ select option{background:var(--bg3)}
       <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
       <div class="field"><label>Margin %</label><input type="text" id="pMarginPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field"><label>Markup %</label><input type="text" id="pMarkupPct" placeholder="auto" readonly style="color:var(--teal)"></div>
-      <div class="field"><label id="pInventoryLabel">Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1" min="0"></div>
+      <div class="field" id="pInventoryField"><label id="pInventoryLabel">Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1" min="0"></div>
       <div class="field"><label>Low Stock Alert at</label><input type="number" id="pLowStock" placeholder="10" step="1"></div>
       <div class="field"><label>Shelf Address <span style="color:var(--text3);font-weight:400">(e.g. D9)</span></label><input type="text" id="pAddress" placeholder="e.g. D9" style="text-transform:uppercase"></div>
       <div class="field"><label>DOH MRP Cap (PHP) <span style="color:var(--text3);font-weight:400">(optional)</span></label><input type="number" id="pMrpCap" placeholder="e.g. 44.20" step="0.01" oninput="checkMrpCap()"></div>
@@ -1570,6 +1570,12 @@ function normStaff(s){
   }});
 }
 function hasPerm(key){ return session?.role==='owner' || !!(session?.perms && session.perms[key]); }
+// Stock QUANTITIES are owner-only. A staffer who can look up "20" during a physical count will
+// confirm 20 rather than count, which is exactly the anchoring a blind count exists to prevent.
+// In/out STATUS stays visible everywhere — they still have to answer "do we have this?" at the
+// counter. See canSeeStock() call sites: product table, POS search, order search, reorder list,
+// personal-stock picker, and the Edit Product inventory field.
+function canSeeStock(){ return session?.role==='owner'; }
 
 async function loadStaff(){
   const ref=doc(db,'config','staff');
@@ -1943,7 +1949,7 @@ window.renderStockSearch=function(){
   if(!q){ box.innerHTML=''; stockSearchList=[]; return; }
   stockSearchList=allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q)).slice(0,8);
   box.innerHTML=stockSearchList.length
-    ? stockSearchList.map((p,i)=>`<div class="sup-opt" onclick="pickStockItem(${i})"><span>${p.name}</span><span style="font-family:var(--mono);color:var(--text3)">stock ${p.inventory||0}</span></div>`).join('')
+    ? stockSearchList.map((p,i)=>`<div class="sup-opt" onclick="pickStockItem(${i})"><span>${p.name}</span><span style="font-family:var(--mono);color:var(--text3)">${canSeeStock()?`stock ${p.inventory||0}`:((p.inventory||0)<=0?'out':'in stock')}</span></div>`).join('')
     : '<div class="empty" style="padding:6px">No match</div>';
 };
 window.pickStockItem=function(i){
@@ -2949,7 +2955,10 @@ function renderProductTable(prods){
     const margin=p.cost&&p.price?((p.price-p.cost)/p.price*100).toFixed(1)+'%':'-';
     const markup=p.cost&&p.price?((p.price-p.cost)/p.cost*100).toFixed(1)+'%':'-';
     const full=allProductsFull[p.id];
-    const invTitle=(full&&hasVariantInventory(full))?full.variants.map(v=>`${[v.size,v.packaging].filter(Boolean).join(' ')}: ${v.inventory||0}`).join(', '):'';
+    const seeStock=canSeeStock();
+    const invTitle=(seeStock&&full&&hasVariantInventory(full))?full.variants.map(v=>`${[v.size,v.packaging].filter(Boolean).join(' ')}: ${v.inventory||0}`).join(', '):'';
+    const invCell=seeStock?`${inv}${inv<=low&&inv>0?' ⚠':''}${inv<=0?' ✗':''}`:(inv<=0?'Out':'In stock');
+    const invCellClass=seeStock?invClass:(inv<=0?'inv-out':'inv-ok');
     const mrpOver=p.mrpCap&&p.price>p.mrpCap;
     const mrpBadge=p.mrpCap?` <span class="chip" style="background:${mrpOver?'var(--red-dim)':'var(--teal-dim)'};color:${mrpOver?'var(--red)':'var(--teal)'};border:1px solid ${mrpOver?'var(--red)':'var(--teal)'}" title="${full&&full.mrpRef?full.mrpRef:'DOH MRP cap'}">MRP ${fmtShort(p.mrpCap)}${mrpOver?' ⚠':''}</span>`:'';
     return `<tr onclick="editProduct('${p.id}')" style="cursor:pointer">
@@ -2960,7 +2969,7 @@ function renderProductTable(prods){
       <td class="c-tel" style="font-family:var(--mono);font-size:12px">${fmtShort(p.price)}</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${margin}</td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--blue)">${markup}</td>
-      <td class="${invClass}" style="font-family:var(--mono);font-size:12px"${invTitle?` title="${invTitle}"`:''}>${inv}${inv<=low&&inv>0?' ⚠':''}${inv<=0?' ✗':''}</td>
+      <td class="${invCellClass}" style="font-family:var(--mono);font-size:12px"${invTitle?` title="${invTitle}"`:''}>${invCell}</td>
       <td>
         <div style="display:flex;gap:16px;justify-content:flex-end">
           <button class="btn btn-ghost" style="padding:8px 12px;font-size:15px" title="Edit" onclick="event.stopPropagation();editProduct('${p.id}')"><i class="ti ti-edit"></i></button>
@@ -3076,18 +3085,27 @@ window.addVariantRow=function(v=null){
     <button class="del-btn" onclick="removeVariantRow('${id}')"><i class="ti ti-x"></i></button>`;
   document.getElementById('variantList').appendChild(div);
   updateVariantInvBanner();
+  applyStockVisibility();
 };
 window.removeVariantRow=function(id){ document.getElementById(id)?.remove(); variantRows=variantRows.filter(r=>r!==id); updateVariantInvBanner(); };
 
 function getVariantsFromForm(){
+  // Staff can't see the .vInv boxes, so they read '' — which would null out every stored variant
+  // quantity on save. When stock is hidden, take the quantity from the record being edited,
+  // matched on size+packaging, and never from the form.
+  const see=canSeeStock();
+  const stored=(!see && editingProdId && allProductsFull[editingProdId]?.variants) || [];
   return [...document.getElementById('variantList').querySelectorAll('.variant-row')].map(row=>{
     const rawInv=row.querySelector('.vInv').value.trim();
+    const size=row.querySelector('.vSize').value.trim();
+    const packaging=row.querySelector('.vPkg').value.trim();
+    const prev=stored.find(v=>(v.size||'')===size&&(v.packaging||'')===packaging);
     return {
-      size:row.querySelector('.vSize').value.trim(),
-      packaging:row.querySelector('.vPkg').value.trim(),
+      size, packaging,
       cost:parseFloat(row.querySelector('.vCost').value)||0,
       price:parseFloat(row.querySelector('.vPrice').value)||0,
-      inventory: rawInv==='' ? null : Math.max(0,parseInt(rawInv)||0)
+      inventory: see ? (rawInv==='' ? null : Math.max(0,parseInt(rawInv)||0))
+                     : (prev ? (prev.inventory!=null?prev.inventory:null) : null)
     };
   }).filter(v=>v.size||v.packaging);
 }
@@ -3097,6 +3115,16 @@ function getVariantsFromForm(){
 // banner shows how many units are left to distribute against variantMigrationTarget (the total
 // captured when the form was opened). Once every variant has a number, the top field just mirrors
 // the live sum and the banner hides — no more special-casing needed going forward.
+// Stock inputs follow the same owner-only rule as the displays. Called from editProduct and
+// whenever variant rows are rebuilt, so a staff session never has a stock box to read or type in.
+function applyStockVisibility(){
+  const see=canSeeStock();
+  const f=document.getElementById('pInventoryField'); if(f) f.style.display=see?'':'none';
+  document.querySelectorAll('.vInv').forEach(el=>{ el.style.display=see?'':'none'; });
+  const b=document.getElementById('variantInvBanner'); if(b && !see) b.style.display='none';
+}
+window.applyStockVisibility=applyStockVisibility;
+
 window.updateVariantInvBanner=function(){
   const variants=getVariantsFromForm();
   const banner=document.getElementById('variantInvBanner');
@@ -3330,7 +3358,7 @@ window.saveProduct=async function(){
   // Stock can never legitimately be below zero. Selling can't produce it (adjustVariantInventory
   // clamps at 0), so any negative came from a typed entry or an import — and it silently corrupts
   // reorder suggestions and every stock valuation. Refuse it at the source.
-  const invRaw=parseInt(document.getElementById('pInventory').value);
+  const invRaw=canSeeStock()?parseInt(document.getElementById('pInventory').value):NaN;
   if(!isNaN(invRaw) && invRaw<0){
     msg.style.color='var(--red)';
     msg.textContent=`Inventory can't be negative (${invRaw}). Enter the real count on hand, or 0 if there is none.`;
@@ -3363,7 +3391,11 @@ window.saveProduct=async function(){
     address,
     cost:costVal,
     price:priceVal,
-    inventory: variants.length ? variants.reduce((a,v)=>a+(v.inventory||0),0) : (parseInt(document.getElementById('pInventory').value)||0),
+    // A hidden field reads as '' -> 0. Never let a non-owner's save silently zero the stock:
+    // fall back to whatever is already on file (0 for a brand-new product).
+    inventory: variants.length ? variants.reduce((a,v)=>a+(v.inventory||0),0)
+      : (canSeeStock() ? (parseInt(document.getElementById('pInventory').value)||0)
+                       : (editingProdId ? (allProductsFull[editingProdId]?.inventory||0) : 0)),
     lowStock:parseInt(document.getElementById('pLowStock').value)||10,
     variants,
     mrpCap, mrpRef,
@@ -3419,6 +3451,7 @@ window.editProduct=async function(id){
   document.getElementById('pCost').value=p.cost||'';
   document.getElementById('pPrice').value=p.price||'';
   document.getElementById('pInventory').value=p.inventory||'';
+  applyStockVisibility();
   document.getElementById('pLowStock').value=p.lowStock||'';
   document.getElementById('pAddress').value=p.address||'';
   document.getElementById('pMrpCap').value=p.mrpCap||'';
@@ -3494,8 +3527,9 @@ window.searchProducts=function(){
   if(!results.length){el.innerHTML='<div class="empty"><i class="ti ti-search"></i>No products found</div>';return;}
   el.innerHTML=results.map(p=>{
     const inv=p.inventory||0, low=p.lowStock||10;
-    const invClass=inv<=0?'prod-out':inv<=low?'prod-low':'';
-    const invLabel=inv<=0?'Out of stock':inv<=low?`Low: ${inv}`:inv;
+    const seeStock=canSeeStock();
+    const invClass=inv<=0?'prod-out':(seeStock&&inv<=low)?'prod-low':'';
+    const invLabel=inv<=0?'Out of stock':seeStock?(inv<=low?`Low: ${inv}`:inv):'In stock';
     const isGeneric=(p.category||'').trim().toLowerCase()==='generics';
     const catTag=p.category?`<span class="chip ${isGeneric?'chip-generic':''}" style="margin-left:6px">${p.category}</span>`:'';
     const addrTag=p.address?`<span class="pill" style="margin-left:6px;padding:2px 7px;font-size:9px"><i class="ti ti-map-pin" style="font-size:9px"></i> ${p.address}</span>`:'';
@@ -4480,8 +4514,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.95';
+const APP_VERSION='v4.96';
 const CHANGELOG=[
+  {v:'v4.96', date:'2026-08-15', notes:[
+    'Stock quantities are now visible to the owner only. Staff and managers see In stock / Low / Out of stock instead of the number — on the Products list, POS search, order search, reorder suggestions and the personal-stock picker',
+    'Why: during a physical count, anyone who can look up "20" tends to confirm 20 rather than count the shelf. Hiding the number is what makes a blind count trustworthy. Staff can still tell a customer whether an item is available',
+    'The Inventory box on Add/Edit Product is hidden for non-owners too. Saving as a staff member keeps whatever stock is already on file instead of blanking it, including per-variant quantities',
+    'Nothing changed for the owner - all numbers show exactly as before']},
   {v:'v4.95', date:'2026-08-14', notes:[
     'Opening the Products tab no longer re-downloads the whole product list every time. It now shows the copy already loaded, which is instant. This was the last of the big repeated downloads — after the sale and product-edit ones fixed in v4.93',
     'New Refresh button on the Products tab, with the time the list was last loaded shown beside it. That time turns amber after 30 minutes as a reminder to refresh if another tablet has been adding or editing products',
@@ -5353,7 +5392,7 @@ function renderLowStock() {
     return `<div class="po-item">
       <input type="checkbox" id="chk_${r.key}" onchange="toggleLowStockItem('${r.key}',this.checked,${suggested})">
       <div class="po-info">
-        <div class="po-name">${r.name}${label} <span class="${isOut?'chip chip-out':'chip chip-low'}">${isOut?'Out of stock':'Low: '+inv}</span></div>
+        <div class="po-name">${r.name}${label} <span class="${isOut?'chip chip-out':'chip chip-low'}">${isOut?'Out of stock':(canSeeStock()?'Low: '+inv:'Low')}</span></div>
         <div class="po-meta">${r.sku||'No SKU'} · ${allProductsFull[r.prod.id]?.suppliers||'No supplier'}</div>
       </div>
       <div class="po-qty-wrap">
@@ -5461,7 +5500,7 @@ window.renderOrderSearch = function() {
     <div class="po-item" style="cursor:pointer" onclick="addToOrder('${p.id}')">
       <div class="po-info">
         <div class="po-name">${p.name}${variantTag}</div>
-        <div class="po-meta">${p.sku||'No SKU'} · Stock: ${p.inventory||0} · ${supplierListHtml(p.id)}</div>
+        <div class="po-meta">${p.sku||'No SKU'}${canSeeStock()?` · Stock: ${p.inventory||0}`:''} · ${supplierListHtml(p.id)}</div>
       </div>
       <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editProduct('${p.id}')" title="Edit product / add a variant"><i class="ti ti-edit"></i></button>
       <button class="btn btn-ghost btn-xs"><i class="ti ti-plus"></i> Add</button>
@@ -5563,7 +5602,7 @@ function renderOrderList() {
         <div class="po-item">
           <div class="po-info">
             <div class="po-name">${prod.name}${label?` <span style="color:var(--text3);font-weight:400">(${label})</span>`:''}</div>
-            <div class="po-meta">${prod.sku||'No SKU'} · Stock: ${prod.inventory||0}</div>
+            <div class="po-meta">${prod.sku||'No SKU'}${canSeeStock()?` · Stock: ${prod.inventory||0}`:''}</div>
           </div>
           <div class="po-qty-wrap">
             <label style="font-size:10px;color:var(--text3)">Unit:</label>
