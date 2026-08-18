@@ -363,6 +363,8 @@ select option{background:var(--bg3)}
 .sup-opt:hover{border-color:var(--teal)}
 .sup-opt-new{color:var(--teal);display:flex;align-items:center;gap:5px}
 .variant-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.update-banner{display:flex;align-items:center;gap:8px;background:var(--teal-dim);border:1px solid var(--teal-mid);color:var(--teal);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12px;font-weight:600;cursor:pointer}
+.update-banner:active{opacity:.75}
 .variant-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px}
 .variant-row .field{flex:1 1 110px;min-width:90px}
 /* RECEIPT */
@@ -419,6 +421,7 @@ select option{background:var(--bg3)}
   /* Refresh is btn-xs so it fits the header on desktop, but it is the one header button
      staff are told to tap — the .btn-xs exclusion above would leave it a 20px target. */
   #refreshBtn{min-height:38px;padding:8px 12px;font-size:12px}
+  .update-banner{padding:13px 14px;font-size:13px}
   .pin-key{padding:16px;font-size:18px}
   .pay-mode-btn{min-height:48px}
   .checkout-btn{min-height:54px}
@@ -821,6 +824,8 @@ select option{background:var(--bg3)}
       <div class="pill" id="clockPill"></div>
     </div>
   </div>
+
+  <div class="update-banner" id="updateBanner" style="display:none" onclick="applyUpdate()"><i class="ti ti-arrow-up-circle"></i><span id="updateBannerText">Update available — tap to install</span></div>
 
   <div class="tabs">
     <button class="tab active" onclick="switchTab('shift')" id="tab-shift"><i class="ti ti-clock"></i><span> Shift</span></button>
@@ -2979,6 +2984,32 @@ window.onCostInput=function(){
   if(!document.getElementById('pPrice').value || priceAutoSet){ refreshCatMarkupHint(true); }
   calcMargin();
 };
+// ── Update check ──
+// This runs as an installed standalone PWA: no address bar, no reload button, and
+// overscroll-behavior:contain on .app rules out pull-to-refresh — so a tablet has no way at all to
+// notice a deploy. version.json is a few bytes sitting beside index.html on Pages; check-syntax.js
+// refuses the commit if it ever drifts from APP_VERSION, so the two cannot disagree.
+// Pages serves index.html with Cache-Control max-age=600, hence the cache-buster + no-store: without
+// them this would read the same stale copy the app is already running.
+let updateReady=false;
+async function checkForUpdate(){
+  if(updateReady) return;
+  try{
+    const r=await fetch('version.json?cb='+Date.now(),{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(!j || !j.version || j.version===APP_VERSION) return;
+    updateReady=true;
+    const b=document.getElementById('updateBanner');
+    if(b){ document.getElementById('updateBannerText').textContent=`Update available (${j.version}) — tap to install`; b.style.display='flex'; }
+  }catch(_){ /* offline, or Pages hiccuped: say nothing and try again on the next tick */ }
+}
+// Same guard as the Refresh button: a reload would discard a sale in progress.
+window.applyUpdate=function(){
+  if(cart.length){ toast('Finish or clear the sale first, then tap the update banner again','info'); return; }
+  toast('Updating...','info');
+  setTimeout(()=>location.reload(),300);
+};
 // Typing in the price box makes it the user's number from then on.
 window.onPriceInput=function(){ priceAutoSet=false; calcMargin(); };
 
@@ -4559,8 +4590,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.98';
+const APP_VERSION='v4.99';
 const CHANGELOG=[
+  {v:'v4.99', date:'2026-08-18', notes:[
+    'The app now notices when a new version has been deployed and shows an "Update available — tap to install" banner under the header',
+    'Why: installed on a tablet there is no address bar, no reload button and no pull-to-refresh, so a device had no way to pick up an update — someone had to reload each one by hand',
+    'It checks on startup, every 15 minutes, and whenever the app is brought back to the foreground. If a sale is in progress it asks you to finish it first, so nothing in the cart is lost',
+    'The version it checks against is kept in step automatically — a commit is refused if it ever disagrees with the app version']},
   {v:'v4.98', date:'2026-08-18', notes:[
     'Fixed: typing a cost into Add/Edit Product left the selling price stuck on the first digit. Entering 120 filled the price from "1" and then froze, so the product saved at a price of 1.33 with a -1027% margin. The price now keeps following the cost until you type a price yourself, after which it is left alone',
     'Add/Edit Product: each Variant box now has a label (Size, Packaging, Cost, Price, Inventory). Once the boxes were filled the placeholder disappeared and there was no way to tell which was which',
@@ -4862,6 +4898,11 @@ window.toggleChangelogOlder=function(){
 
 async function init(){
   renderVersion();
+  // Check on boot, every 15 minutes, and whenever the app is brought back to the foreground —
+  // which is what actually catches a deploy on a tablet that sits idle between customers.
+  checkForUpdate();
+  setInterval(checkForUpdate, 15*60*1000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkForUpdate(); });
   document.getElementById('sumDate').value=today();
   document.getElementById('payDate').value=today();
   const rt=document.getElementById('rpTo'),rf=document.getElementById('rpFrom');
