@@ -771,7 +771,7 @@ select option{background:var(--bg3)}
       <div class="field fc" style="grid-column:2/-1"><label>Product Name</label><input type="text" id="pName" placeholder="e.g. Amoxicillin 500mg" oninput="checkMrpCap()"></div>
       <div class="field"><label>Category</label><input type="text" id="pCategory" list="catList" placeholder="Select or type..." autocomplete="off" onchange="applyCategoryMarkup()"><datalist id="catList"></datalist><div id="catMarkupHint" style="font-size:10px;color:var(--teal);margin-top:3px"></div></div>
       <div class="field"><label>Cost (PHP)</label><input type="number" id="pCost" placeholder="0.00" step="0.01" oninput="onCostInput()"></div>
-      <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="calcMargin()"></div>
+      <div class="field"><label>Selling Price (PHP)</label><input type="number" id="pPrice" placeholder="0.00" step="0.01" oninput="onPriceInput()"></div>
       <div class="field"><label>Margin %</label><input type="text" id="pMarginPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field"><label>Markup %</label><input type="text" id="pMarkupPct" placeholder="auto" readonly style="color:var(--teal)"></div>
       <div class="field" id="pInventoryField"><label id="pInventoryLabel">Inventory (base stock)</label><input type="number" id="pInventory" placeholder="0" step="1" min="0"></div>
@@ -866,7 +866,7 @@ select option{background:var(--bg3)}
       </div>
     </div>
     <div class="card" id="cashInCard">
-      <div class="card-title"><i class="ti ti-circle-plus"></i> During-Shift Cash Ins</div>
+      <div class="card-title"><i class="ti ti-circle-plus"></i> During-Shift Cash Ins<span id="ciTotal" style="margin-left:auto;font-size:11px;font-weight:600;color:var(--teal);font-family:var(--mono)"></span></div>
       <div class="infonote" id="ciPermNote" style="display:none"><i class="ti ti-lock"></i> You don't have the <strong>Cash In/Out</strong> privilege — ask the owner to grant it in Settings.</div>
       <div class="fg fg2">
         <div class="field"><label>Amount (PHP)</label><input type="number" id="ciAmt" placeholder="0.00" step="0.01"></div>
@@ -1988,7 +1988,7 @@ window.updatePaySum=function(){
 window.addCI=async function(){
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
   const amt=parseFloat(document.getElementById('ciAmt').value); if(!amt){toast('Enter amount','err');return;}
-  const s=await getShift(curShift,curDate()); s.cashIns.push({amount:amt,note:document.getElementById('ciNote').value,time:tnow()});
+  const s=await getShift(curShift,curDate()); s.cashIns.push({amount:amt,note:document.getElementById('ciNote').value,time:tnow(),by:session?.name||''});
   document.getElementById('ciAmt').value=''; document.getElementById('ciNote').value=''; await persistShift(curShift,curDate()); renderCI();
 };
 window.removeCI=async function(i,sh,dt){
@@ -2027,8 +2027,12 @@ window.fixCOAmount=async function(i,sh,dt){
 };
 async function renderCI(){
   const s=await getShift(curShift,curDate()); const el=document.getElementById('ciList');
-  if(!s.cashIns.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>';return;}
-  el.innerHTML=s.cashIns.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}">${c.note||'Cash in'}</div><div class="ed">${c.time||''}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span>${c.voided?'':`<button class="del-btn" onclick="removeCI(${i})"><i class="ti ti-x"></i></button>`}</div></div>`).join('');
+  const tot=document.getElementById('ciTotal');
+  if(!s.cashIns.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>None</div>'; if(tot) tot.textContent=''; return;}
+  // Voided entries stay listed (struck through) for the audit trail but must not count toward the total.
+  const live=s.cashIns.filter(c=>!c.voided);
+  if(tot) tot.textContent=`${live.length} cash in${live.length===1?'':'s'} · ${fmt(live.reduce((a,c)=>a+(+c.amount||0),0))}`;
+  el.innerHTML=s.cashIns.map((c,i)=>`<div class="eitem" style="${c.voided?'opacity:.55':''}"><div><div class="el" style="${c.voided?'text-decoration:line-through':''}">${c.note||'Cash in'}</div><div class="ed">${[c.time||'',c.by||''].filter(Boolean).join(' · ')}</div>${voidTag(c)}</div><div style="display:flex;align-items:center"><span class="eval c-pos">+${fmt(c.amount)}</span>${c.voided?'':`<button class="del-btn" onclick="removeCI(${i})"><i class="ti ti-x"></i></button>`}</div></div>`).join('');
 }
 window.addCO=async function(){
   if(!hasPerm('cashio')){ toast('No permission for Cash In/Out','err'); return; }
@@ -2637,19 +2641,27 @@ function logCostChange(prodId, name, oldCost, newCost, source, extra){
   }catch(_){ /* never let auditing break a save */ }
 }
 // Reads the cost currently on file for a product/variant — the "before" value for logCostChange.
+// Cost is per-variant whenever the variant exists — this must NOT be gated on hasVariantInventory.
+// That gate requires EVERY variant to carry a non-null inventory, and most products here still
+// hold their stock on the parent with every variant inventory left null. Under the old gate the
+// lookup fell straight through to the parent, so receiving a delivery read and wrote one shared
+// cost for the whole product: two variants on one PO both wrote the parent (last line won), and
+// every variant then reported whichever cost landed there.
 function currentCostOf(prod, size, packaging){
   if(!prod) return 0;
-  if(hasVariantInventory(prod)){
-    const v=findVariantByLabel(prod, size, packaging);
-    if(v) return v.cost||0;
-  }
+  const v=findVariantByLabel(prod, size, packaging);
+  if(v && v.cost!=null && v.cost!=='') return v.cost||0;
   return prod.cost||0;
 }
-// Sets cost on the matching variant when migrated, else on the parent product (today's fallback).
+// Sets cost on the matching variant; falls back to the parent only when no variant matches.
+// When stock lives on the parent, keep the parent in step with a single-variant product so the
+// base cost shown on the product row doesn't drift away from the only variant it has.
 function adjustVariantCost(prod, size, packaging, cost){
-  if(hasVariantInventory(prod)){
-    const v=findVariantByLabel(prod, size, packaging);
-    if(v){ v.cost=cost; return; }
+  const v=findVariantByLabel(prod, size, packaging);
+  if(v){
+    v.cost=cost;
+    if(!hasVariantInventory(prod) && (prod.variants||[]).length===1) prod.cost=cost;
+    return;
   }
   prod.cost=cost;
 }
@@ -2942,6 +2954,9 @@ async function ensureSuppliersRegistered(names){
 // selecting category before typing cost used to never actually fill the price — the hint said
 // "auto-set from cost" but nothing re-ran once cost showed up), and editProduct (population only,
 // never overwrites a price the product already has).
+// True while the Selling Price box still holds a figure WE derived from cost, rather than one the
+// user typed. Cost edits may overwrite an auto price; they must never overwrite a typed one.
+let priceAutoSet=false;
 function refreshCatMarkupHint(overwritePrice){
   const name=document.getElementById('pCategory').value;
   const cat=categories.find(c=>c.name.toLowerCase()===name.toLowerCase());
@@ -2951,17 +2966,21 @@ function refreshCatMarkupHint(overwritePrice){
     if(hint) hint.textContent=`Recommended ${label} ${cat.value}% — price auto-set from cost`;
     const cost=parseFloat(document.getElementById('pCost').value)||0;
     const np=priceFromCat(cat,cost);
-    if(overwritePrice && cost>0 && np!=null){ document.getElementById('pPrice').value=np.toFixed(2); calcMargin(); }
+    if(overwritePrice && cost>0 && np!=null){ document.getElementById('pPrice').value=np.toFixed(2); priceAutoSet=true; calcMargin(); }
   } else if(hint){ hint.textContent=''; }
 }
 window.applyCategoryMarkup=function(){ refreshCatMarkupHint(true); };
-// Cost changed: fill price from the category recommendation too, but only while price is still
-// blank — once a price exists (auto-filled or typed), further cost edits must never silently
-// overwrite it.
+// Cost changed: re-derive the price from the category recommendation while the price box is still
+// blank OR still holds an auto-derived figure. Keying on "is the box empty?" was wrong: typing a
+// cost of 120 fires this per keystroke, so the "1" filled a price, and from the "2" onward the box
+// was no longer empty and the price stayed frozen at the one-digit value (cost 120 -> price 1.33).
+// A price the user typed themselves is never touched.
 window.onCostInput=function(){
-  if(!document.getElementById('pPrice').value){ refreshCatMarkupHint(true); }
+  if(!document.getElementById('pPrice').value || priceAutoSet){ refreshCatMarkupHint(true); }
   calcMargin();
 };
+// Typing in the price box makes it the user's number from then on.
+window.onPriceInput=function(){ priceAutoSet=false; calcMargin(); };
 
 // Category dropdown: categories DB first, falling back to distinct product categories.
 function populateCategoryList(){
@@ -3102,11 +3121,11 @@ window.addVariantRow=function(v=null){
   const div=document.createElement('div');
   div.className='variant-row'; div.id=id;
   div.innerHTML=`
-    <div class="field"><input type="text" placeholder="Size (e.g. 500mg)" value="${v?.size||''}" class="vSize" oninput="updateVariantInvBanner()"></div>
-    <div class="field"><input type="text" placeholder="Packaging (e.g. Capsule)" value="${v?.packaging||''}" class="vPkg" oninput="updateVariantInvBanner()"></div>
-    <div class="field"><input type="number" placeholder="Cost" step="0.01" value="${v?.cost||''}" class="vCost"></div>
-    <div class="field"><input type="number" placeholder="Price" step="0.01" value="${v?.price||''}" class="vPrice"></div>
-    <div class="field"><input type="number" placeholder="Inventory" step="1" value="${v?.inventory!=null?v.inventory:''}" class="vInv" oninput="updateVariantInvBanner()"></div>
+    <div class="field"><label>Size</label><input type="text" placeholder="e.g. 500mg" value="${v?.size||''}" class="vSize" oninput="updateVariantInvBanner()"></div>
+    <div class="field"><label>Packaging</label><input type="text" placeholder="e.g. Capsule" value="${v?.packaging||''}" class="vPkg" oninput="updateVariantInvBanner()"></div>
+    <div class="field"><label>Cost (PHP)</label><input type="number" placeholder="0.00" step="0.01" value="${v?.cost||''}" class="vCost"></div>
+    <div class="field"><label>Price (PHP)</label><input type="number" placeholder="0.00" step="0.01" value="${v?.price||''}" class="vPrice"></div>
+    <div class="field"><label>Inventory</label><input type="number" placeholder="0" step="1" value="${v?.inventory!=null?v.inventory:''}" class="vInv" oninput="updateVariantInvBanner()"></div>
     <button class="del-btn" onclick="removeVariantRow('${id}')"><i class="ti ti-x"></i></button>`;
   document.getElementById('variantList').appendChild(div);
   updateVariantInvBanner();
@@ -3482,6 +3501,7 @@ window.editProduct=async function(id){
   document.getElementById('pMrpCap').value=p.mrpCap||'';
   document.getElementById('pMrpRef').value=p.mrpRef||'';
   checkMrpCap();
+  priceAutoSet=false;
   refreshCatMarkupHint(!p.price);
   document.getElementById('variantList').innerHTML=''; variantRows=[];
   variantMigrationTarget=p.inventory||0;
@@ -3493,7 +3513,7 @@ window.editProduct=async function(id){
 };
 
 window.cancelEditProduct=function(){
-  editingProdId=null;
+  editingProdId=null; priceAutoSet=false;
   document.getElementById('prodFormTitle').textContent='Add New Product';
   ['pSku','pName','pCategory','pCost','pPrice','pInventory','pLowStock','pAddress','pMrpCap','pMrpRef','pMarginPct','pMarkupPct','supSearch'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('catMarkupHint').textContent='';
@@ -4539,8 +4559,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.97';
+const APP_VERSION='v4.98';
 const CHANGELOG=[
+  {v:'v4.98', date:'2026-08-18', notes:[
+    'Fixed: typing a cost into Add/Edit Product left the selling price stuck on the first digit. Entering 120 filled the price from "1" and then froze, so the product saved at a price of 1.33 with a -1027% margin. The price now keeps following the cost until you type a price yourself, after which it is left alone',
+    'Add/Edit Product: each Variant box now has a label (Size, Packaging, Cost, Price, Inventory). Once the boxes were filled the placeholder disappeared and there was no way to tell which was which',
+    'Fixed: receiving a delivery read and wrote ONE shared cost for a product with variants, so every variant ended up on whichever cost landed last. Each variant now keeps its own cost even when stock is still counted on the parent rather than split per variant',
+    'During-Shift Cash Ins now shows the running total in the card header, and each entry shows who added it']},
   {v:'v4.97', date:'2026-08-18', notes:[
     'New Refresh button in the header, on every tab. Reloads prices, stock and the app itself',
     'Why: the product list is cached for the whole session to stay inside the daily read limit, so a price or product changed on another device never reached a session that was already open — and the next sale of that item wrote the old copy back, undoing the change and charging the old price. Six price corrections were lost this way on 18 Aug',
