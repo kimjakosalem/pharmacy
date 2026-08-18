@@ -810,6 +810,7 @@ select option{background:var(--bg3)}
     </div>
     <div class="hright">
       <div class="pill" id="userChip" style="display:none;gap:6px"><i class="ti ti-user-circle"></i><span id="userName"></span><span id="userRole" style="color:var(--teal);text-transform:uppercase;font-size:9px;font-weight:700;letter-spacing:.05em"></span></div>
+      <button class="btn btn-ghost btn-xs" id="refreshBtn" onclick="appRefresh()" title="Reload prices, stock and the app — use this after someone edits products on another device"><i class="ti ti-refresh"></i> Refresh</button>
       <button class="btn btn-ghost btn-xs" id="logoutBtn" onclick="logout()" style="display:none" title="Switch account — keeps the shift open"><i class="ti ti-switch-horizontal"></i> Logout</button>
       <button class="btn btn-ghost btn-xs" id="closeShiftBtn" onclick="openCloseShift()" style="display:none"><i class="ti ti-logout"></i> Close Shift</button>
       <div class="pill" id="datePill"></div>
@@ -2690,6 +2691,27 @@ async function ensureProductsFresh(){
 // Exposed on window because the Refresh button uses an inline onclick and this file's script is a
 // module — module-scoped functions are not global, so an unexposed one makes the button silently dead.
 window.loadProducts=loadProducts;
+
+// ── Header Refresh ──
+// The product list is cached for the whole session on purpose (see the read-quota note above), so
+// an edit made anywhere else — a price corrected on the owner's laptop, a product added on another
+// tablet — never reaches a session that is already open. Worse, saving a sale writes this session's
+// stale copy of the product back, silently undoing that edit and charging the old price. On
+// 2026-08-18 six price corrections were reverted exactly this way, every one of them on an item
+// that sold that day.
+// Hence a Refresh in the HEADER, not only on the Products tab: the cashier never opens that tab.
+// A page reload is the real fix (it re-reads everything), but it would throw away a sale in
+// progress, so a loaded cart downgrades this to a data-only refresh.
+window.appRefresh=async function(){
+  if(cart.length){
+    await loadProducts(true);
+    toast('Prices and stock refreshed. Finish the sale, then tap Refresh again for a full reload','info');
+    return;
+  }
+  toast('Refreshing...','info');
+  // No caches to clear: sw.js deliberately does not cache, so a plain reload re-fetches the app.
+  setTimeout(()=>location.reload(),300);
+};
 async function loadProducts(force){
   const rawProducts=await fsGetAll('products');
   // fsGetAll returns [] on ANY failure (it swallows the error), and the most likely failure on the
@@ -4514,8 +4536,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.96';
+const APP_VERSION='v4.97';
 const CHANGELOG=[
+  {v:'v4.97', date:'2026-08-18', notes:[
+    'New Refresh button in the header, on every tab. Reloads prices, stock and the app itself',
+    'Why: the product list is cached for the whole session to stay inside the daily read limit, so a price or product changed on another device never reached a session that was already open — and the next sale of that item wrote the old copy back, undoing the change and charging the old price. Six price corrections were lost this way on 18 Aug',
+    'If a sale is in progress the button refreshes prices and stock only, so nothing in the cart is lost. Finish the sale and tap it again for a full reload',
+    'Staff no longer need to know how to hard-refresh the browser']},
   {v:'v4.96', date:'2026-08-15', notes:[
     'Stock quantities are now visible to the owner only. Staff and managers see In stock / Low / Out of stock instead of the number — on the Products list, POS search, order search, reorder suggestions and the personal-stock picker',
     'Why: during a physical count, anyone who can look up "20" tends to confirm 20 rather than count the shelf. Hiding the number is what makes a blind count trustworthy. Staff can still tell a customer whether an item is available',
