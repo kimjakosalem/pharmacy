@@ -1401,7 +1401,7 @@ select option{background:var(--bg3)}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, deleteDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, deleteDoc, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
@@ -1522,6 +1522,12 @@ async function fsGet(col,id,onFresh){
 // and the write auto-syncs when the connection returns.
 function fsSet(col,id,data){
   lastLocalWrite[col+'/'+id]=Date.now();
+  // Products carry a numeric `updatedAtMs` so the catalogue can be re-synced by asking Firestore
+  // for ONLY what changed (see loadProducts). The human-readable `updatedAt` is a time-only string
+  // with no date, so it cannot be used for that. Stamped here — the single write choke point — so
+  // every path gets it: product edits, sale-time stock changes, migrations, receiving.
+  // A product written WITHOUT this stamp becomes invisible to the delta query, so never bypass fsSet.
+  if(col==='products' && data && typeof data==='object') data.updatedAtMs=Date.now();
   setDoc(doc(db,col,id),data).then(setLastSaved).catch(()=>{ /* queued; will retry on reconnect */ });
   setLastSaved();
   return Promise.resolve(true);
@@ -2732,8 +2738,48 @@ window.appRefresh=async function(){
   // No caches to clear: sw.js deliberately does not cache, so a plain reload re-fetches the app.
   setTimeout(()=>location.reload(),300);
 };
+// ── Delta sync for the catalogue ─────────────────────────────────────────────────────────────
+// A full products read is ~2,500 billed documents against a 50,000/day free quota, and it used to
+// run on EVERY boot of every device. Now the last-known catalogue is kept in localStorage and a
+// boot only asks Firestore for products whose updatedAtMs is newer than our copy — typically a
+// handful of documents instead of 2,500.
+// Safety: any doubt -> full read. Specifically we fall back when there is no local copy, when the
+// delta query throws, and once a day regardless (a delta cannot report DELETED products, so a
+// daily full read is what eventually drops them). The Refresh button always forces a full read.
+const PRODUCTS_CACHE_KEY='dkp_products_cache_v1';
+const PRODUCTS_SYNC_KEY='dkp_products_synced_ms';
+const PRODUCTS_FULL_EVERY_MS=24*60*60*1000;
+function readProductCache(){
+  try{ const raw=localStorage.getItem(PRODUCTS_CACHE_KEY); if(!raw) return null;
+    const arr=JSON.parse(raw); return (Array.isArray(arr)&&arr.length)?arr:null;
+  }catch(_){ return null; }
+}
+function writeProductCache(list,syncedMs){
+  try{
+    localStorage.setItem(PRODUCTS_CACHE_KEY,JSON.stringify(list));
+    localStorage.setItem(PRODUCTS_SYNC_KEY,String(syncedMs));
+  }catch(_){ /* quota or private mode — we simply do a full read next boot */ }
+}
+async function fetchProductsChangedSince(ms){
+  const snap=await getDocs(query(collection(db,'products'),where('updatedAtMs','>',ms)));
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+}
 async function loadProducts(force){
-  const rawProducts=await fsGetAll('products');
+  let rawProducts=null, usedDelta=false;
+  const cached=force?null:readProductCache();
+  const since=+(localStorage.getItem(PRODUCTS_SYNC_KEY)||0);
+  const stale=!since||(Date.now()-since)>PRODUCTS_FULL_EVERY_MS;
+  if(cached&&since&&!stale){
+    try{
+      const startedAt=Date.now();
+      const changed=await fetchProductsChangedSince(since);
+      const map={}; cached.forEach(p=>map[p.id]=p); changed.forEach(p=>map[p.id]=p);
+      rawProducts=Object.values(map); usedDelta=true;
+      writeProductCache(rawProducts,startedAt);
+      if(changed.length) console.info(`[products] delta sync: ${changed.length} changed of ${rawProducts.length}`);
+    }catch(e){ rawProducts=null; /* index missing, offline, etc — fall through to a full read */ }
+  }
+  if(!rawProducts) rawProducts=await fsGetAll('products');
   // fsGetAll returns [] on ANY failure (it swallows the error), and the most likely failure on the
   // free tier is a read-quota 429 mid-shift. Overwriting a good catalogue with [] would blank POS
   // search and make every product un-sellable until reload — so if we already had products and the
@@ -2768,6 +2814,9 @@ async function loadProducts(force){
     fsSet('products',p.id,p);
   });
   if(newConsignmentSuppliers.size) await ensureSuppliersRegistered([...newConsignmentSuppliers]);
+  // Persist the catalogue so the next boot can ask only for what changed instead of re-reading
+  // ~2,500 documents. Only after a FULL read — a delta path already saved its own merged copy.
+  if(!usedDelta) writeProductCache(rawProducts,Date.now());
   // Store lightweight version for search
   allProducts=rawProducts.map(p=>({
     id:p.id,
@@ -4590,8 +4639,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v4.99';
+const APP_VERSION='v5.0';
 const CHANGELOG=[
+  {v:'v5.0', date:'2026-08-21', notes:[
+    'Starting the app no longer re-downloads the whole product list. It keeps its own copy and asks only for the products that changed since it last looked, which is usually a handful instead of all 2,485',
+    'Why: the free daily read allowance is 50,000 documents and one startup used to spend about 2,485 of it. A few devices restarting a few times each could use up the day on its own — which is exactly what happened on 20 Aug and left the pharmacy unable to load data for half a day',
+    'It still does a full download once a day, when you press Refresh, and any time something looks wrong — so a product deleted on another device still disappears here',
+    'Every product now records the exact moment it was last changed. The old stamp only kept the time of day, so there was no way to tell a change made today from one made in March']},
   {v:'v4.99', date:'2026-08-18', notes:[
     'The app now notices when a new version has been deployed and shows an "Update available — tap to install" banner under the header',
     'Why: installed on a tablet there is no address bar, no reload button and no pull-to-refresh, so a device had no way to pick up an update — someone had to reload each one by hand',
