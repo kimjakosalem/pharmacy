@@ -20,3 +20,8 @@ pharmacy_products_backup_*.json
 # shipping it would serve an out-of-date copy alongside the real one).
 * - Copy.*
 *.zip
+
+# Telegram intake automation (fetches staff photos into Downloads). Not part of the deployed app —
+# lives here only because this is the project folder. Contains a group chat id and staff Telegram
+# user ids (telegram_senders.json), which must never reach this PUBLIC repo.
+scripts/

@@ -4639,8 +4639,12 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.0';
+const APP_VERSION='v5.1';
 const CHANGELOG=[
+  {v:'v5.1', date:'2026-08-24', notes:[
+    'The product list now refreshes itself automatically — once an hour, and whenever the tab is brought back to the foreground — instead of only ever loading once at startup',
+    'Why: a device left open all day was working from a copy of the catalogue that got further out of date as the day went on. If it then saved any product, it wrote back everything it remembered — including a stock count or shelf address someone else had corrected hours earlier, silently undoing that fix. Five products were reverted this way in one day during the August stock count',
+    'Same lightweight refresh as the daily one — it only downloads what changed since the last check, so this adds a few hundred reads a day across all devices, not thousands']},
   {v:'v5.0', date:'2026-08-21', notes:[
     'Starting the app no longer re-downloads the whole product list. It keeps its own copy and asks only for the products that changed since it last looked, which is usually a handful instead of all 2,485',
     'Why: the free daily read allowance is 50,000 documents and one startup used to spend about 2,485 of it. A few devices restarting a few times each could use up the day on its own — which is exactly what happened on 20 Aug and left the pharmacy unable to load data for half a day',
@@ -4956,7 +4960,18 @@ async function init(){
   // which is what actually catches a deploy on a tablet that sits idle between customers.
   checkForUpdate();
   setInterval(checkForUpdate, 15*60*1000);
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkForUpdate(); });
+  // Product catalogue: refresh hourly and whenever the tab wakes up, via the DELTA path only
+  // (loadProducts() with no `force` — see its comment). A device left open all day used to hold
+  // a stale in-memory copy that would silently overwrite another device's edits (stock, address,
+  // cost) the next time it saved anything. Delta cost is ~1 read per product touched since last
+  // sync — a few hundred/day catalogue-wide — nowhere near the 50k/day quota. NEVER pass true
+  // here: a forced full read is ~2,500 reads, and hourly would exhaust the quota on one device.
+  setInterval(()=>{ if(allProducts.length) loadProducts(); }, 60*60*1000);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden) return;
+    checkForUpdate();
+    if(allProducts.length) loadProducts();
+  });
   document.getElementById('sumDate').value=today();
   document.getElementById('payDate').value=today();
   const rt=document.getElementById('rpTo'),rf=document.getElementById('rpFrom');
