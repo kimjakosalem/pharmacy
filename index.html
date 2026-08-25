@@ -1658,6 +1658,13 @@ window.selLoginShift=async function(n){
     wrap.style.display='none';
     note.innerHTML=`<i class="ti ti-lock" style="font-size:11px"></i> Shift already open — starting cash ${fmt(s.startCash)} (kept).`;
     note.style.display='block';
+  } else if(pendingUser?.role==='owner'){
+    // Owner login: skip the starting-cash prompt entirely (owner's instruction 2026-08-26).
+    // The field stays hidden and empty, so the next cashier is still asked for the real float.
+    cash.value='';
+    wrap.style.display='none';
+    note.innerHTML=`<i class="ti ti-user-check" style="font-size:11px"></i> Owner login — starting cash not needed. The cashier will set it.`;
+    note.style.display='block';
   } else {
     wrap.style.display='block';
     // Not started yet — carry over the leftover "next shift cash" from the previous shift.
@@ -1678,15 +1685,21 @@ window.startSession=async function(){
   curShift=loginShift;
   const s=await getShift(curShift);           // unlock the drawer with starting cash
   const already=(s.startCash||0)>0;           // shift already started earlier today
+  const ownerLogin=pendingUser?.role==='owner';
   let cash=parseFloat(document.getElementById('loginCash').value);
   if(already){
     if(isNaN(cash)) cash=s.startCash;         // succeeding login: cash optional
+  } else if(ownerLogin){
+    // The owner is never asked for starting cash. startCash is deliberately left UNSET so the
+    // first CASHIER login still establishes the drawer - an owner checking in must not silently
+    // become the day's opening float, or the shift reconciles against a figure nobody counted.
+    cash=NaN;
   } else if(isNaN(cash)||cash<0){
     toast('Enter starting cash','err'); return;   // first login of the shift requires it
   }
   session={name:pendingUser.name,role:pendingUser.role,shift:loginShift,perms:pendingUser.perms||{}};
   if(!s.cashier) s.cashier=session.name;
-  if(!s.startCash) s.startCash=cash;
+  if(!s.startCash && !isNaN(cash)) s.startCash=cash;   // never write NaN (owner login)
   await persistShift(curShift);
   await logAttendance('login',session.name,session.role,curShift);
   applyRole();
@@ -4639,8 +4652,11 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.1';
+const APP_VERSION='v5.2';
 const CHANGELOG=[
+  {v:'v5.2', date:'2026-08-26', notes:[
+    'Owner login no longer asks for starting cash. The field is hidden and, importantly, an owner login does NOT set the drawer float — the first cashier of the shift is still asked, so the shift never reconciles against a figure nobody counted'
+  ]},
   {v:'v5.1', date:'2026-08-24', notes:[
     'The product list now refreshes itself automatically — once an hour, and whenever the tab is brought back to the foreground — instead of only ever loading once at startup',
     'Why: a device left open all day was working from a copy of the catalogue that got further out of date as the day went on. If it then saved any product, it wrote back everything it remembered — including a stock count or shelf address someone else had corrected hours earlier, silently undoing that fix. Five products were reverted this way in one day during the August stock count',
