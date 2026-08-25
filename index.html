@@ -640,6 +640,23 @@ select option{background:var(--bg3)}
 </div>
 
 <!-- Variant/Add Modal -->
+<div class="modal-overlay" id="zeroStockModal">
+  <div class="modal">
+    <h3 style="color:var(--red)"><i class="ti ti-alert-triangle"></i> Out of stock</h3>
+    <div class="modal-sub" id="zeroStockWhat" style="font-weight:700;color:var(--text)"></div>
+    <div class="modal-sub" id="zeroStockDetail" style="margin-bottom:10px"></div>
+    <div class="modal-sub" style="margin-bottom:10px;line-height:1.55">
+      You can still sell it, but tell us why so the count can be fixed. This is recorded with your name.
+    </div>
+    <button class="btn btn-block" style="margin-bottom:6px" onclick="zeroStockChoose('arrived')">
+      <i class="ti ti-truck-delivery"></i> Stock arrived, not yet received</button>
+    <button class="btn btn-block" style="margin-bottom:6px" onclick="zeroStockChoose('count')">
+      <i class="ti ti-calculator"></i> Count is wrong</button>
+    <button class="btn btn-block" style="margin-bottom:10px" onclick="zeroStockChoose('other')">
+      <i class="ti ti-dots"></i> Other</button>
+    <button class="btn btn-ghost btn-block" onclick="zeroStockCancel()">Cancel — do not sell</button>
+  </div>
+</div>
 <div class="modal-overlay" id="variantModal">
   <div class="modal">
     <h3 id="modalProdName">Product</h3>
@@ -3726,6 +3743,39 @@ window.modalQtyStep=function(d){
   const el=document.getElementById('modalQty');
   el.value=Math.max(1,(parseInt(el.value)||1)+d);
 };
+// Stock available for a specific variant, minus whatever is already sitting in the cart for it.
+// Selling can never push inventory negative (adjustVariantInventory clamps at 0) — the real problem
+// is that selling AT zero is silent: product leaves the shelf while the system stays at 0, so the
+// count drifts and nobody finds out until a physical sweep. This is what makes that visible.
+function availableFor(prod, v){
+  let inv;
+  if(hasVariantInventory(prod)){
+    const hit=findVariantByLabel(prod, v.size||'', v.packaging||'');
+    inv = hit ? (hit.inventory||0) : (prod.inventory||0);
+  } else inv = prod.inventory||0;
+  const inCart=cart.filter(c=>c.prodId===prod.id&&c.size===(v.size||'')&&c.packaging===(v.packaging||''))
+                   .reduce((a,c)=>a+c.qty,0);
+  return inv - inCart;
+}
+// Reason codes for selling at/below zero. "arrived" is first because it is the common case here:
+// staff key deliveries in themselves, so stock is often physically present before it is received.
+const ZERO_REASONS={arrived:'Stock arrived, not yet received',count:'Count is wrong',other:'Other'};
+let pendingZeroAdd=null;
+window.zeroStockChoose=function(code){
+  const pa=pendingZeroAdd; pendingZeroAdd=null;
+  document.getElementById('zeroStockModal').classList.remove('show');
+  if(!pa) return;
+  pa.override={reason:ZERO_REASONS[code]||code, code, by:session?.name||'', at:tnow()};
+  pushToCart(pa);
+  toast('Added — override logged','ok');
+};
+window.zeroStockCancel=function(){ pendingZeroAdd=null; document.getElementById('zeroStockModal').classList.remove('show'); };
+function pushToCart(a){
+  const existing=cart.find(c=>c.prodId===a.prodId&&c.size===a.size&&c.packaging===a.packaging);
+  if(existing){ existing.qty+=a.qty; if(a.override) existing.override=a.override; }
+  else cart.push(a);
+  closeModal(); renderCart();
+}
 window.confirmAddToCart=function(){
   if(!modalVariant&&modalProd.variants?.length){toast('Select a variant first','err');return;}
   const v=modalVariant||{size:'',packaging:'',price:modalProd.price};
@@ -3761,10 +3811,22 @@ window.confirmAddToCart=function(){
     toast(`${label} added`,'ok');
     return;
   }
-  const existing=cart.find(c=>c.prodId===modalProd.id&&c.size===v.size&&c.packaging===v.packaging);
-  if(existing){existing.qty+=qty;}
-  else{cart.push({prodId:modalProd.id,name,size:v.size||'',packaging:v.packaging||'',price,cost:vcost,qty,address:modalProd.address||''});}
-  closeModal(); renderCart(); toast(`${name} ×${qty} added`,'ok');
+  const line={prodId:modalProd.id,name,size:v.size||'',packaging:v.packaging||'',price,cost:vcost,qty,address:modalProd.address||''};
+  const avail=availableFor(modalProd, v);
+  if(avail<qty){
+    // Blocked, not refused: a customer is at the counter, and a hard block just pushes staff to
+    // ring it as a manual sale — which records no product and no stock movement at all. Worse.
+    pendingZeroAdd=line;
+    const label=[v.size,v.packaging].filter(Boolean).join(' ');
+    document.getElementById('zeroStockWhat').textContent=name+(label?' ('+label+')':'');
+    document.getElementById('zeroStockDetail').textContent =
+      avail<=0 ? 'The system says there is none left.'
+               : `The system says only ${avail} left, and you are adding ${qty}.`;
+    document.getElementById('zeroStockModal').classList.add('show');
+    return;
+  }
+  pushToCart(line);
+  toast(`${name} ×${qty} added`,'ok');
 };
 
 window.closeModal=function(){ document.getElementById('variantModal').classList.remove('show'); modalProd=null; modalVariant=null; modalPurpose='cart'; };
@@ -3912,7 +3974,7 @@ async function finalizeSale(total, cashInfo){
     subtotal, discount:discSnap,
     cashReceived:cashInfo?cashInfo.received:null, change:cashInfo?cashInfo.change:null,
     cashier:session?.name||'', backdated:!!posBackdate,
-    items:sold.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(it.cost!=null?it.cost:(allProductsFull[it.prodId]?.cost ?? 0))})) });
+    items:sold.map(it=>Object.assign({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(it.cost!=null?it.cost:(allProductsFull[it.prodId]?.cost ?? 0))}, it.override?{override:it.override}:{})) });
   s.posTot=(s.posTot||0)+total;
   s.posTxn=(s.posTxn||0)+1;
   if(payMode==='cash') s.pbCash=(s.pbCash||0)+total;
@@ -4399,6 +4461,20 @@ window.renderDataHealth=async function(){
   // It needs a physical count to resolve, so it's surfaced here rather than auto-corrected.
   const negStockItems=all.filter(p=>(p.inventory||0)<0).sort((a,b)=>(a.inventory||0)-(b.inventory||0));
   const stockAtRisk=noCost.reduce((a,p)=>a+Math.max(0,p.inventory||0),0);
+  // Sold-at-zero overrides: every time a cashier sold something the system said it did not have.
+  // This is the list that keeps the count honest — each entry names a SKU whose figure is wrong and
+  // says why, instead of the drift being invisible until the next physical sweep.
+  const zeroSales=[];
+  for(const sh of Object.values(shiftCache||{})){
+    for(const sale of ((sh&&sh.sales)||[])){
+      for(const it of (sale.items||[])){
+        if(!it.override) continue;
+        zeroSales.push({name:it.name,qty:it.qty,size:it.size,packaging:it.packaging,
+          reason:it.override.reason||'',by:it.override.by||sale.cashier||'',date:sh.date||'',time:sale.time||''});
+      }
+    }
+  }
+  zeroSales.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
   const row=(p,right)=>`<div class="eitem"><div><div class="el">${p.name||p.id}</div><div class="ed">${p.category||'No category'}${p.inventory?` · ${p.inventory} in stock`:''}</div></div><span class="eval ${right.cls}">${right.txt}</span></div>`;
   const card=(title,icon,tone,count,blurb,items,rightFn)=>`<div class="card"><div class="card-title"><i class="ti ti-${icon}"></i> ${title}<span class="badge ${tone}" style="margin-left:auto">${count}</span></div>
     <div style="font-size:10px;color:var(--text3);margin:-2px 0 8px;line-height:1.6">${blurb}</div>
@@ -4407,7 +4483,7 @@ window.renderDataHealth=async function(){
       <div class="metric"><div class="ml">Products</div><div class="mv">${all.length}</div></div>
       <div class="metric"><div class="ml">Selling below cost</div><div class="mv" style="color:${belowCost.length?'var(--red)':'var(--green)'}">${belowCost.length}</div></div>
       <div class="metric"><div class="ml">No cost on file</div><div class="mv" style="color:${noCost.length?'var(--amber)':'var(--green)'}">${noCost.length}</div></div>
-      <div class="metric"><div class="ml">Negative stock</div><div class="mv" style="color:${negStockItems.length?'var(--red)':'var(--green)'}">${negStockItems.length}</div></div>
+      <div class="metric"><div class="ml">Sold at zero</div><div class="mv" style="color:${zeroSales.length?'var(--amber)':'var(--green)'}">${zeroSales.length}</div></div>
     </div>
     ${card('Selling below cost','alert-triangle','b-draft',belowCost.length,
       'Every sale of these loses money. Either the cost is a data-entry error (a whole case total typed as the per-piece cost), or the supplier raised their price and yours never followed.',
@@ -4415,8 +4491,12 @@ window.renderDataHealth=async function(){
     ${card('No cost on file','help-circle','b-draft',noCost.length,
       'These report 100% profit on every sale, which inflates your margin and hides real performance. Highest stock first — those distort the figures most.',
       noCost,p=>({cls:'c-amb',txt:`${fmt(p.price)} / no cost`}))}
+    ${zeroSales.length?`<div class="card"><div class="card-title"><i class="ti ti-alert-triangle"></i> Sold at zero stock<span class="badge b-draft" style="margin-left:auto">${zeroSales.length}</span></div>
+      <div style="font-size:10px;color:var(--text3);margin:-2px 0 8px;line-height:1.6">A cashier sold these while the system said there were none left, and gave a reason. Each one is a product whose count is wrong — fix the count and it stops appearing. "Stock arrived, not yet received" usually means a delivery still needs entering. Covers the days currently loaded in this session — the nightly briefing reports every day.</div>
+      <div class="elist" style="max-height:320px">${zeroSales.slice(0,60).map(z=>`<div class="eitem"><div><div class="el">${z.name}${[z.size,z.packaging].filter(Boolean).length?' ('+[z.size,z.packaging].filter(Boolean).join(' ')+')':''}</div><div class="ed">${z.date} ${z.time} · ${z.by} · ${z.reason}</div></div><span class="eval c-amb">×${z.qty}</span></div>`).join('')}</div>
+      ${zeroSales.length>60?`<div style="font-size:10px;color:var(--text3);margin-top:6px">…and ${zeroSales.length-60} more</div>`:''}</div>`:''}
     ${card('Negative stock','arrow-down-circle','b-draft',negStockItems.length,
-      'Stock below zero is impossible — selling stops at 0 — so these came from a typed entry or a CSV import. They make reorder suggestions and stock valuations wrong. Each needs a physical count; entering the real number clears it. Most negative first.',
+      'Stock below zero is impossible — selling clamps at 0 — so these came from a typed entry or a CSV import. They make reorder suggestions and stock valuations wrong. Each needs a physical count; entering the real number clears it. Most negative first.',
       negStockItems,p=>({cls:'c-neg',txt:`${p.inventory} on file`}))}
     ${card('Zero margin (cost = price)','equal','b-saved',zeroMargin.length,
       'Cost exactly equals price, so these break even on paper. Usually means the cost was copied from the price rather than taken from a real receipt.',
@@ -4652,8 +4732,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.2';
+const APP_VERSION='v5.3';
 const CHANGELOG=[
+  {v:'v5.3', date:'2026-08-26', notes:[
+    'Selling something the system says is out of stock now stops and asks why. You can still sell it — a customer is standing there — but you pick a reason first: stock arrived and is not yet received, the count is wrong, or other. Your name and the reason are saved with the sale',
+    'Reports → Data Health gained a Sold at zero stock list. Every one of those sales is a product whose count is wrong, named with the reason and the cashier, so it can be corrected instead of quietly drifting until the next physical count',
+    'Why not just block it outright: refusing the sale would either turn the customer away or push staff to ring it as a manual sale, which records no product and no stock movement at all — worse than knowing'
+  ]},
   {v:'v5.2', date:'2026-08-26', notes:[
     'Owner login no longer asks for starting cash. The field is hidden and, importantly, an owner login does NOT set the drawer float — the first cashier of the shift is still asked, so the shift never reconciles against a figure nobody counted'
   ]},
