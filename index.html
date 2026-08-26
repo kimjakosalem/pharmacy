@@ -1418,7 +1418,7 @@ select option{background:var(--bg3)}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, deleteDoc, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, updateDoc, increment, deleteDoc, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
@@ -1546,6 +1546,42 @@ function fsSet(col,id,data){
   // A product written WITHOUT this stamp becomes invisible to the delta query, so never bypass fsSet.
   if(col==='products' && data && typeof data==='object') data.updatedAtMs=Date.now();
   setDoc(doc(db,col,id),data).then(setLastSaved).catch(()=>{ /* queued; will retry on reconnect */ });
+  setLastSaved();
+  return Promise.resolve(true);
+}
+// Stock-only write for sales, returns and stock-use. NEVER use fsSet for those.
+//
+// fsSet is a setDoc: it rewrites the WHOLE product document from this tab's in-memory copy. A
+// sale only means to move stock, but it was also re-writing cost, price, address, name, category
+// and lowStock from whatever the tab happened to be holding. A device left open since morning
+// therefore silently reverted every price and cost another device had changed since — that is how
+// Chuckie 180ml's cost fell back from 19.89 to 17.761 after the 19 Aug delivery.
+//
+// Two protections here:
+//   1. updateDoc with an explicit field list, so a sale can only ever touch stock fields. Cost,
+//      price and address are now untouchable from the selling path, whatever the cache holds.
+//   2. increment() for the parent count, so the SERVER applies the delta. No cached stock number
+//      is ever written back, and two tills selling at once compose instead of overwriting.
+//
+// Quota: identical to before. Firestore bills per document write, not per field, so this is still
+// 1 write per product per stock movement, and increment() is a server transform, not a read.
+// updatedAtMs is still stamped, so the hourly delta sync on other devices behaves exactly as before.
+//
+// variantsTouched: when a product keeps stock per VARIANT the parent total is a re-sum of the
+// array, so the array and the summed total must both be written and increment cannot be used.
+// That path still carries the old staleness risk for VARIANT costs — bounded by the hourly/on-focus
+// delta refresh — because merging an array safely would need a transaction, and transactions fail
+// offline, which a till cannot afford.
+function fsSetStock(id, fp, delta, variantsTouched){
+  lastLocalWrite['products/'+id]=Date.now();
+  const payload={ updatedAt: fp.updatedAt, updatedAtMs: Date.now() };
+  if(variantsTouched){
+    payload.variants = fp.variants||[];
+    payload.inventory = fp.inventory;
+  } else {
+    payload.inventory = increment(delta);
+  }
+  updateDoc(doc(db,'products',id), payload).then(setLastSaved).catch(()=>{ /* queued; retries on reconnect */ });
   setLastSaved();
   return Promise.resolve(true);
 }
@@ -2086,7 +2122,7 @@ window.addCO=async function(){
     const unitCost=stockUseProd.cost||0, amt=Math.round(unitCost*qty*100)/100;
     s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),cashier:session?.name||'',prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost,size:stockUseProd.size||'',packaging:stockUseProd.packaging||''});
     const fp=allProductsFull[stockUseProd.id];
-    if(fp){ adjustVariantInventory(fp, stockUseProd.size, stockUseProd.packaging, -qty); fp.updatedAt=tnow(); await fsSet('products',stockUseProd.id,fp); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ const _vt=adjustVariantInventory(fp, stockUseProd.size, stockUseProd.packaging, -qty); fp.updatedAt=tnow(); await fsSetStock(stockUseProd.id,fp,-qty,_vt); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
     document.getElementById('coNote').value=''; resetStockUse();
     await persistShift(curShift,curDate()); renderCO();
     toast(`${qty} ${stockUseProd?stockUseProd.name:'item'} taken from stock`,'ok');
@@ -2104,7 +2140,7 @@ window.removeCO=async function(i,sh,dt){
   // Reverse a stock-use deduction: return the qty back into inventory.
   if(c.type==='Personal Stock Use' && c.prodId && c.qty){
     const fp=allProductsFull[c.prodId];
-    if(fp){ adjustVariantInventory(fp, c.size, c.packaging, c.qty); fp.updatedAt=tnow(); await fsSet('products',c.prodId,fp); const lp=allProducts.find(p=>p.id===c.prodId); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ const _vt=adjustVariantInventory(fp, c.size, c.packaging, c.qty); fp.updatedAt=tnow(); await fsSetStock(c.prodId,fp,c.qty,_vt); const lp=allProducts.find(p=>p.id===c.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   c.voided=true; c.voidedBy=session?.name||''; c.voidedAt=tnow();
   await persistShift(sh,dt);
@@ -2339,7 +2375,7 @@ window.voidSale=async function(id,sh,dt){
   if(mk) s[mk]=Math.max(0,(s[mk]||0)-t.total);
   // Return stock
   for(const it of (t.items||[])){
-    const fp=allProductsFull[it.prodId]; if(fp){ adjustVariantInventory(fp, it.size, it.packaging, it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+    const fp=allProductsFull[it.prodId]; if(fp){ const _vt=adjustVariantInventory(fp, it.size, it.packaging, it.qty); fp.updatedAt=tnow(); await fsSetStock(it.prodId,fp,it.qty,_vt); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   t.voided=true; t.voidedBy=session?.name||''; t.voidedAt=tnow();
   await persistShift(sh,dt);
@@ -2532,12 +2568,12 @@ window.confirmReturn=async function(){
   // Return items → back into stock
   for(const it of retItems){
     const fp=allProductsFull[it.prodId];
-    if(fp){ adjustVariantInventory(fp, it.size, it.packaging, it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ const _vt=adjustVariantInventory(fp, it.size, it.packaging, it.qty); fp.updatedAt=tnow(); await fsSetStock(it.prodId,fp,it.qty,_vt); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   // Replacement items → out of stock
   for(const it of newItems){
     const fp=allProductsFull[it.prodId];
-    if(fp){ adjustVariantInventory(fp, it.size, it.packaging, -it.qty); fp.updatedAt=tnow(); await fsSet('products',it.prodId,fp); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
+    if(fp){ const _vt=adjustVariantInventory(fp, it.size, it.packaging, -it.qty); fp.updatedAt=tnow(); await fsSetStock(it.prodId,fp,-it.qty,_vt); const lp=allProducts.find(p=>p.id===it.prodId); if(lp) lp.inventory=fp.inventory; }
   }
   // Net effect on the shift's POS sales (delta can be negative = money out of drawer)
   const mk={cash:'pbCash',gcash:'pbGcash',maya:'pbMaya',mcredit:'pbMcredit'}[mode];
@@ -2657,12 +2693,16 @@ function findVariantByLabel(prod, size, packaging){ return (prod&&prod.variants|
 // Adjusts stock by delta (+/-): targets the matching variant when migrated (and resyncs the
 // parent's cached sum), else falls back to the parent total directly (today's behavior).
 // Caller is still responsible for fsSet + syncing the light allProducts cache, same as before.
+// Returns TRUE when a variant's own inventory moved, so the caller knows the variants array has
+// to be persisted and the parent total cannot be written with increment() (it is a re-sum).
+// Returns FALSE when only the parent count moved — the common shape here.
 function adjustVariantInventory(prod, size, packaging, delta){
   if(hasVariantInventory(prod)){
     const v=findVariantByLabel(prod, size, packaging);
-    if(v){ v.inventory=Math.max(0,(v.inventory||0)+delta); prod.inventory=prod.variants.reduce((a,x)=>a+(x.inventory||0),0); return; }
+    if(v){ v.inventory=Math.max(0,(v.inventory||0)+delta); prod.inventory=prod.variants.reduce((a,x)=>a+(x.inventory||0),0); return true; }
   }
   prod.inventory=Math.max(0,(prod.inventory||0)+delta);
+  return false;
 }
 // Append-only log of every cost change, in its own `audit` collection. Cost is the field that keeps
 // getting silently corrupted (a case total typed as a unit cost, a 0 left in an undelivered line),
@@ -3509,9 +3549,11 @@ window.saveProduct=async function(){
   // Zeroing the cost of an item that HAS a cost silently turns every future sale of it into 100%
   // reported margin. It's never a deliberate edit, so make it an explicit confirmation rather than a
   // silent save. (A genuinely free/consignment item is the one real case, hence confirm not block.)
-  // Stock can never legitimately be below zero. Selling can't produce it (adjustVariantInventory
-  // clamps at 0), so any negative came from a typed entry or an import — and it silently corrupts
+  // Stock can never legitimately be below zero via a typed edit, and a negative silently corrupts
   // reorder suggestions and every stock valuation. Refuse it at the source.
+  // NOTE (v5.4): the SELLING path can now land slightly negative. Stock moves via increment() so
+  // the server applies the delta, which is right under concurrency but has no 0 floor. A small
+  // negative there is real information — it means the count was already wrong — not a typo.
   const invRaw=canSeeStock()?parseInt(document.getElementById('pInventory').value):NaN;
   if(!isNaN(invRaw) && invRaw<0){
     msg.style.color='var(--red)';
@@ -3744,9 +3786,11 @@ window.modalQtyStep=function(d){
   el.value=Math.max(1,(parseInt(el.value)||1)+d);
 };
 // Stock available for a specific variant, minus whatever is already sitting in the cart for it.
-// Selling can never push inventory negative (adjustVariantInventory clamps at 0) — the real problem
-// is that selling AT zero is silent: product leaves the shelf while the system stays at 0, so the
-// count drifts and nobody finds out until a physical sweep. This is what makes that visible.
+// Since v5.4 selling CAN push inventory slightly negative: stock moves by increment() so the server
+// applies the delta and there is no 0 floor (the local clamp only guards the cached copy). That is
+// deliberate — the real problem is that selling AT zero is silent: product leaves the shelf while
+// the system stays at 0, so the count drifts and nobody finds out until a physical sweep. A visible
+// negative says the count was already wrong. This is what makes that visible.
 function availableFor(prod, v){
   let inv;
   if(hasVariantInventory(prod)){
@@ -3986,9 +4030,10 @@ async function finalizeSale(total, cashInfo){
     const fullProd=allProductsFull[item.prodId];
     const lightProd=allProducts.find(p=>p.id===item.prodId);
     if(fullProd && lightProd){
-      adjustVariantInventory(fullProd, item.size, item.packaging, -item.qty);
+      // Stock-only write — a sale must never rewrite cost/price/address. See fsSetStock.
+      const _vt=adjustVariantInventory(fullProd, item.size, item.packaging, -item.qty);
       lightProd.inventory=fullProd.inventory;
-      await fsSet('products',item.prodId,fullProd);
+      await fsSetStock(item.prodId,fullProd,-item.qty,_vt);
     }
   }
   // Refresh the Shift tab only if it's currently showing the day this sale landed on — that's
@@ -4732,8 +4777,14 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.3';
+const APP_VERSION='v5.4';
 const CHANGELOG=[
+  {v:'v5.4', date:'2026-08-26', notes:[
+    'Selling something no longer overwrites its price, cost or shelf address. Until now every sale, return and stock-use rewrote the WHOLE product record from whatever that device had in memory, so a till left open since morning quietly undid price and cost changes made anywhere else that day. Sales now write stock and nothing else',
+    'Stock changes are applied by the server as +/- amounts instead of the device sending the number it thinks is right. Two tills selling the same item at the same time now both count, where before the second one to save simply overwrote the first',
+    'Because the server now applies the real change, stock can show slightly below zero instead of stopping at 0. That is deliberate: a negative means the count was already wrong, and seeing it is better than hiding it. Typing a negative stock by hand is still refused',
+    'No extra Firestore usage: this is the same one write per item sold as before, and it adds no reads'
+  ]},
   {v:'v5.3', date:'2026-08-26', notes:[
     'Selling something the system says is out of stock now stops and asks why. You can still sell it — a customer is standing there — but you pick a reason first: stock arrived and is not yet received, the count is wrong, or other. Your name and the reason are saved with the sale',
     'Reports → Data Health gained a Sold at zero stock list. Every one of those sales is a product whose count is wrong, named with the reason and the cashier, so it can be corrected instead of quietly drifting until the next physical count',
