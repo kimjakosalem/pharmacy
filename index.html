@@ -174,6 +174,28 @@ select option{background:var(--bg3)}
 .elist::-webkit-scrollbar{width:3px}
 .elist::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 .eitem{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;background:var(--bg3);border-radius:7px;border:1px solid var(--border)}
+/* Returns & Exchanges entry. The old one crammed both legs of a swap onto a single
+   truncated line ("in a, b - out c, d") with no per-side value, so an exchange was
+   unreadable and you could not see what came back versus what went out. */
+.ritem{display:flex;flex-direction:column;gap:5px;padding:9px 11px;background:var(--bg3);border-radius:7px;border:1px solid var(--border)}
+.rhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rmeta{font-size:10px;color:var(--text3);margin-left:auto}
+.rnet{font-size:11px;font-weight:700;white-space:nowrap}
+.rleg{display:flex;gap:7px;align-items:baseline;font-size:11px;line-height:1.45}
+.rdir{flex:0 0 auto;font-size:8.5px;font-weight:700;letter-spacing:.05em;padding:2px 5px;border-radius:3px;white-space:nowrap}
+.rdir.in{background:var(--green-dim);color:var(--green)}
+.rdir.out{background:var(--red-dim);color:var(--red)}
+.ritems{flex:1;min-width:0;color:var(--text2);overflow-wrap:anywhere}
+.rqty{color:var(--text3)}
+.rval{font-variant-numeric:tabular-nums;color:var(--text);font-weight:600;white-space:nowrap}
+.rnote{font-size:9.5px;color:var(--text3);border-top:1px dashed var(--border);padding-top:4px;overflow-wrap:anywhere}
+/* On a phone the direction label plus the value leaves ~140px for the item names, which
+   wraps them to four lines. Give the names the full width on their own row instead. */
+@media(max-width:520px){
+  .rleg{flex-wrap:wrap;row-gap:2px}
+  .ritems{flex:1 0 100%;order:3}
+  .rval{margin-left:auto}
+}
 .el{font-size:12px;color:var(--text)}
 .ed{font-size:10px;color:var(--text2);margin-top:1px}
 .eval{font-family:var(--mono);font-size:13px;font-weight:500}
@@ -2424,12 +2446,33 @@ async function renderReturns(){
   const cnt=document.getElementById('returnsCount'); if(cnt) cnt.textContent=rets.length?rets.length+(rets.length===1?' record':' records'):'';
   if(!rets.length){ el.innerHTML='<div class="empty"><i class="ti ti-arrow-back-up"></i>No returns this shift</div>'; return; }
   el.innerHTML=[...rets].reverse().map(r=>{
-    const ri=(r.returnedItems||[]).map(it=>`${it.name} ×${it.qty}`).join(', ');
-    const ni=(r.newItems||[]).map(it=>`${it.name} ×${it.qty}`).join(', ');
+    // Each leg gets its own row with its own value. On an exchange the two legs rarely
+    // match, and the difference IS the transaction — burying it in one line hid that.
+    const leg=(items,dir,label)=>{
+      if(!items||!items.length) return '';
+      const units=items.reduce((a,it)=>a+(+it.qty||0),0);
+      const val=items.reduce((a,it)=>a+(+it.price||0)*(+it.qty||0),0);
+      const names=items.map(it=>`${it.name}${it.size?' '+it.size:''} <span class="rqty">x${it.qty}</span>`).join(', ');
+      return `<div class="rleg"><span class="rdir ${dir}">${label}</span>`
+           + `<span class="ritems">${names}</span>`
+           + `<span class="rval">${fmtShort(val)}<span class="rqty"> / ${units}u</span></span></div>`;
+    };
     const net=r.net||0;
-    const netTxt=net>0?`<span class="c-tel">collected ${fmtShort(net)}</span>`:net<0?`<span class="c-neg">refunded ${fmtShort(-net)}</span>`:'<span class="c-amb">even</span>';
-    const typeTag=r.type==='exchange'?'<span class="ptag" style="background:var(--amber-dim);color:var(--amber)">EXCHANGE</span>':'<span class="ptag" style="background:var(--red-dim);color:var(--red)">REFUND</span>';
-    return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el">${typeTag} <span class="ptag pt-${r.mode||'cash'}">${MODE_LABEL[r.mode||'cash']}</span></div><div class="ed">↩ ${ri||'—'}${ni?` · ↪ ${ni}`:''} · ${r.time||''}${r.cashier?' · '+r.cashier:''}</div></div><div style="text-align:right;font-size:11px">${netTxt}</div></div>`;
+    const netTxt=net>0?`<span class="rnet c-tel">+${fmtShort(net)} collected</span>`
+               :net<0?`<span class="rnet c-neg">-${fmtShort(-net)} refunded</span>`
+                     :'<span class="rnet c-amb">even swap</span>';
+    const typeTag=r.type==='exchange'
+      ?'<span class="ptag" style="background:var(--amber-dim);color:var(--amber)">EXCHANGE</span>'
+      :'<span class="ptag" style="background:var(--red-dim);color:var(--red)">REFUND</span>';
+    const modeTag=net!==0?`<span class="ptag pt-${r.mode||'cash'}">${MODE_LABEL[r.mode||'cash']}</span>`:'';
+    return `<div class="ritem">`
+      + `<div class="rhead">${typeTag}${modeTag}`
+      + `<span class="rmeta">${r.time||''}${r.cashier?' &middot; '+r.cashier:''}${r.origSaleId?' &middot; vs receipt':' &middot; no receipt'}</span>`
+      + netTxt + `</div>`
+      + leg(r.returnedItems,'in','BACK TO STOCK')
+      + leg(r.newItems,'out','GIVEN OUT')
+      + (r.note?`<div class="rnote">${r.note}</div>`:'')
+      + `</div>`;
   }).join('');
 }
 
@@ -4777,8 +4820,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.4';
+const APP_VERSION='v5.5';
 const CHANGELOG=[
+  {v:'v5.5', date:'2026-08-27', notes:[
+    'Returns & Exchanges entries are readable now. Each swap shows what came BACK TO STOCK and what was GIVEN OUT on their own lines, each with its own peso value and unit count, instead of both being squeezed onto one cut-off line',
+    'The money line now says what actually happened - collected, refunded, or an even swap - and the payment tag is hidden on an even swap, where no money moved',
+    'Each entry also says whether it was matched to a receipt or done without one, and shows any note recorded with it'
+  ]},
   {v:'v5.4', date:'2026-08-26', notes:[
     'Selling something no longer overwrites its price, cost or shelf address. Until now every sale, return and stock-use rewrote the WHOLE product record from whatever that device had in memory, so a till left open since morning quietly undid price and cost changes made anywhere else that day. Sales now write stock and nothing else',
     'Stock changes are applied by the server as +/- amounts instead of the device sending the number it thinks is right. Two tills selling the same item at the same time now both count, where before the second one to save simply overwrote the first',
