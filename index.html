@@ -1962,7 +1962,46 @@ async function getShift(sh,dt){
   }
   return shiftCache[k];
 }
-async function persistShift(sh,dt){ const k=shiftKey(sh,dt); await fsSet('shifts',k,shiftCache[k]); }
+// A shift is a WHOLE-document save, and two devices can hold the same open shift. Whoever saved
+// last used to wipe the other's cash-outs and returns outright. That is not theoretical: on
+// 2026-08-27 an open evening shift silently swallowed a PHP 487.73 delivery cash-out and, later
+// the same evening, an entire exchange record — both written while a till had the shift open.
+// v5.4 fixed the same class of bug for products; this is the shift half of it.
+//
+// cashOuts and returns are append-only in practice (a void marks an entry, it never removes one),
+// so before saving we re-read the server copy and UNION it with ours: our entries win on conflict
+// (they may carry a fresh void), and anything only the server has is kept instead of erased.
+// Cost is one read per shift save — a shift saves a few dozen times a day, so this is noise
+// against the 50k/day quota, and far cheaper than losing a cash-out.
+const newEntryId = p => p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+function shiftEntryKey(e, prefix){
+  if(e && e.id) return e.id;
+  // Legacy entries predate ids; fall back to the fields that make one unique in practice.
+  return prefix+'|'+(e&&e.time||'')+'|'+(e&&e.amount!=null?e.amount:'')+'|'+(e&&e.type||'')+'|'+(e&&e.note||'');
+}
+function mergeShiftEntries(remote, local, prefix){
+  const out = Array.isArray(local) ? local.slice() : [];
+  const seen = new Set(out.map(e=>shiftEntryKey(e,prefix)));
+  for(const e of (Array.isArray(remote)?remote:[])){
+    const k = shiftEntryKey(e,prefix);
+    if(!seen.has(k)){ out.push(e); seen.add(k); }   // only on the server -> keep it
+  }
+  return out;
+}
+async function persistShift(sh,dt){
+  const k=shiftKey(sh,dt);
+  const local=shiftCache[k];
+  if(!local){ return; }
+  try{
+    const snap=await getDoc(doc(db,'shifts',k));
+    if(snap.exists()){
+      const remote=snap.data()||{};
+      local.cashOuts=mergeShiftEntries(remote.cashOuts, local.cashOuts, 'co');
+      local.returns =mergeShiftEntries(remote.returns,  local.returns,  'ret');
+    }
+  }catch(_){ /* offline or unreachable: keep our copy, the write queues and syncs on reconnect */ }
+  await fsSet('shifts',k,local);
+}
 
 window.selShift=function(n){ curShift=n; document.getElementById('s1btn').classList.toggle('active',n===1); document.getElementById('s2btn').classList.toggle('active',n===2); loadShiftFields(); };
 
@@ -2142,7 +2181,7 @@ window.addCO=async function(){
     if(!stockUseProd){ toast('Search and pick the item taken','err'); return; }
     const qty=Math.max(1,parseInt(document.getElementById('suQty').value)||1);
     const unitCost=stockUseProd.cost||0, amt=Math.round(unitCost*qty*100)/100;
-    s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),cashier:session?.name||'',prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost,size:stockUseProd.size||'',packaging:stockUseProd.packaging||''});
+    s.cashOuts.push({id:newEntryId('co'),amount:amt,type,note:document.getElementById('coNote').value||stockUseProd.name,time:tnow(),cashier:session?.name||'',prodId:stockUseProd.id,prodName:stockUseProd.name,qty,unitCost,size:stockUseProd.size||'',packaging:stockUseProd.packaging||''});
     const fp=allProductsFull[stockUseProd.id];
     if(fp){ const _vt=adjustVariantInventory(fp, stockUseProd.size, stockUseProd.packaging, -qty); fp.updatedAt=tnow(); await fsSetStock(stockUseProd.id,fp,-qty,_vt); const lp=allProducts.find(p=>p.id===stockUseProd.id); if(lp) lp.inventory=fp.inventory; }
     document.getElementById('coNote').value=''; resetStockUse();
@@ -2151,7 +2190,7 @@ window.addCO=async function(){
     return;
   }
   const amt=parseFloat(document.getElementById('coAmt').value); if(!amt){toast('Enter amount','err');return;}
-  s.cashOuts.push({amount:amt,type,note:document.getElementById('coNote').value,time:tnow(),cashier:session?.name||''});
+  s.cashOuts.push({id:newEntryId('co'),amount:amt,type,note:document.getElementById('coNote').value,time:tnow(),cashier:session?.name||''});
   document.getElementById('coAmt').value=''; document.getElementById('coNote').value=''; await persistShift(curShift,curDate()); renderCO();
 };
 window.removeCO=async function(i,sh,dt){
@@ -4487,7 +4526,7 @@ window.confirmPay=async function(){
     // Take-Home cash isn't register cash → flag nonDrawer so it's still listed as an expense
     // but doesn't reduce the expected drawer. Drawer Cash does reduce it.
     const envNote=envResult?` · envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)} (remaining ${fmt(e.balance)})`).join(', ')}`:'';
-    s.cashOuts.push({type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})${envNote}`, time:tnow(), cashier:session?.name||'', settlement:true, nonDrawer:(sub==='Take Home'), payableId:p.id, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
+    s.cashOuts.push({id:newEntryId('co'),type:'Delivery Payment', amount:p.amount, note:`${p.desc||p.supplier||'Payable settlement'} (${sub})${envNote}`, time:tnow(), cashier:session?.name||'', settlement:true, nonDrawer:(sub==='Take Home'), payableId:p.id, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
     await persistShift(curShift,today());
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
     if(document.getElementById('panel-payables')?.classList.contains('active')) renderEnvelopes();
@@ -4820,8 +4859,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.5';
+const APP_VERSION='v5.6';
 const CHANGELOG=[
+  {v:'v5.6', date:'2026-08-27', notes:[
+    'Two devices can now work the same open shift without erasing each other. Saving a shift used to write the whole thing from whatever that one device had in memory, so whoever saved last wiped any cash-out or return the other had added. It now merges with what is already saved and keeps both',
+    'This was losing real entries: an open shift swallowed a PHP 487.73 delivery payment, and later the same evening an entire exchange record. Both were written while a till had the shift open',
+    'Every cash-out now carries its own hidden id, which is what lets the merge tell two entries apart even when the notes are worded differently'
+  ]},
   {v:'v5.5', date:'2026-08-27', notes:[
     'Returns & Exchanges entries are readable now. Each swap shows what came BACK TO STOCK and what was GIVEN OUT on their own lines, each with its own peso value and unit count, instead of both being squeezed onto one cut-off line',
     'The money line now says what actually happened - collected, refunded, or an even swap - and the payment tag is hidden on an even swap, where no money moved',
@@ -5699,7 +5743,7 @@ window.confirmReceiveDelivery=async function(){
   if(payMode==='cash'){
     const s=await getShift(curShift,today());
     const envNote=envResult?` · envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)} (remaining ${fmt(e.balance)})`).join(', ')}`:'';
-    s.cashOuts.push({type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})${envNote}`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
+    s.cashOuts.push({id:newEntryId('co'),type:'Delivery Payment', amount:grand, note:`${poNum} — ${supplier} (${cashSource})${envNote}`, time:now, cashier:session?.name||'', settlement:true, nonDrawer:(cashSource==='Take Home'), payableId:payId, envelopeIds:envResult?envResult.envelopes.map(e=>e.id):null});
     await persistShift(curShift,today());
     if(document.getElementById('panel-shift')?.classList.contains('active')) renderCO();
   }
