@@ -169,6 +169,9 @@ select option{background:var(--bg3)}
 .btn-sm{padding:5px 10px;font-size:11px}
 .btn-xs{padding:3px 8px;font-size:10px}
 .btn-row{display:flex;gap:7px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+/* Date-stepper arrows in the Returns receipt picker — big enough to hit on the tablet. */
+#retDatePrev,#retDateNext{padding:7px 11px;font-size:13px;line-height:1}
 /* ENTRY LIST */
 .elist{display:flex;flex-direction:column;gap:4px;margin-top:9px;max-height:190px;overflow-y:auto}
 .elist::-webkit-scrollbar{width:3px}
@@ -745,9 +748,14 @@ select option{background:var(--bg3)}
 <div class="modal-overlay" id="returnModal">
   <div class="modal" style="width:480px;max-width:96vw">
     <h3 style="color:var(--amber)"><i class="ti ti-arrow-back-up" style="margin-right:6px"></i>Return / Refund / Exchange</h3>
-    <div class="field" style="margin-top:12px"><label>Original sale (last 7 days)</label>
-      <select id="retSaleSel" onchange="onRetSaleChange()"></select>
-      <div style="font-size:10px;color:var(--text3);margin-top:4px">Receipts from the past week, newest first. The refund itself is always recorded on <strong style="color:var(--text2)">today's</strong> shift.</div>
+    <div class="field" style="margin-top:12px"><label>Original sale</label>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input type="date" id="retSaleDate" onchange="onRetDateChange()" style="flex:1 1 130px">
+        <button class="btn btn-ghost btn-xs" id="retDatePrev" onclick="stepRetDate(-1)" title="Previous day" style="flex:0 0 auto"><i class="ti ti-chevron-left"></i></button>
+        <button class="btn btn-ghost btn-xs" id="retDateNext" onclick="stepRetDate(1)" title="Next day" style="flex:0 0 auto"><i class="ti ti-chevron-right"></i></button>
+      </div>
+      <select id="retSaleSel" onchange="onRetSaleChange()" style="margin-top:6px"></select>
+      <div id="retDateHint" style="font-size:10px;color:var(--text3);margin-top:4px">The refund itself is always recorded on <strong style="color:var(--text2)">today's</strong> shift.</div>
     </div>
     <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin:10px 0 6px">ITEMS BEING RETURNED</div>
     <div id="retReturnList"></div>
@@ -2585,41 +2593,65 @@ async function renderReturns(){
 const RETURN_LOOKBACK_DAYS=7;
 let retSaleIndex={};   // option value -> {sale, date, shift}
 function dateMinus(dt,n){ const d=new Date(dt+'T00:00:00'); d.setDate(d.getDate()-n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// Listing all 7 days at once meant scrolling a single dropdown holding every receipt of the week
+// — on a 100-sale day that is 700 options, unusable on the tablet. So the day is chosen FIRST
+// (date picker, or the < > arrows for the common "yesterday" case) and the dropdown then holds
+// only that day's receipts. It also reads just the 2 shift docs for the chosen day instead of 14.
+window.stepRetDate=function(d){
+  const inp=document.getElementById('retSaleDate');
+  const next=dateMinus(inp.value||curDate(), -d);
+  if(inp.min && next<inp.min) return;
+  if(inp.max && next>inp.max) return;
+  inp.value=next; onRetDateChange();
+};
+function syncRetDateArrows(){
+  const inp=document.getElementById('retSaleDate');
+  document.getElementById('retDatePrev').disabled = !!inp.min && dateMinus(inp.value,1)<inp.min;
+  document.getElementById('retDateNext').disabled = !!inp.max && dateMinus(inp.value,-1)>inp.max;
+}
+// Fills the receipt dropdown with the chosen day's sales (both shifts, newest first).
+window.onRetDateChange=async function(){
+  const dt=document.getElementById('retSaleDate').value||curDate();
+  const sel=document.getElementById('retSaleSel');
+  const hint=document.getElementById('retDateHint');
+  syncRetDateArrows();
+  sel.innerHTML='<option value="manual">Loading receipts…</option>';
+  retSaleIndex={};
+  const opts=[];
+  let n=0;
+  for(const sh of [2,1]){                         // evening first so the day reads newest-first
+    const ds=await getShift(sh,dt);
+    const rows=[];
+    (ds.sales||[]).slice().reverse().forEach(sale=>{
+      if(sale.voided) return;                     // already reversed — nothing to return
+      const val=`${dt}|${sh}|${sale.id}`;
+      retSaleIndex[val]={sale,date:dt,shift:sh};
+      const items=(sale.items||[]).map(it=>`${it.name}×${it.qty}`).join(', ');
+      rows.push(`<option value="${val}">${sale.time||''} · ${fmtShort(sale.total)} · ${items.slice(0,40)}</option>`);
+    });
+    if(rows.length){ n+=rows.length; opts.push(`<optgroup label="${sh===1?'Morning':'Evening'} shift">${rows.join('')}</optgroup>`); }
+  }
+  sel.innerHTML=`<option value="manual">No receipt — pick items manually</option>`+opts.join('');
+  sel.value='manual';
+  const dayLbl=dt===today()?'today':dt===dateMinus(today(),1)?'yesterday':'on '+dt;
+  hint.innerHTML=(n?`${n} receipt${n===1?'':'s'} ${dayLbl}.`:`<span style="color:var(--amber)">No receipts ${dayLbl}</span> — use “No receipt” or pick another day.`)
+    +` The refund itself is always recorded on <strong style="color:var(--text2)">today's</strong> shift.`;
+  onRetSaleChange();
+};
 window.openReturn=async function(){
   if(!canRefund()){ toast('No permission for Returns/Exchange','err'); return; }
   retState={ sale:null, returnItems:[], newItems:[] };
-  const sel=document.getElementById('retSaleSel');
-  sel.innerHTML='<option value="manual">Loading receipts…</option>';
+  const inp=document.getElementById('retSaleDate');
+  inp.max=curDate();
+  inp.min=dateMinus(curDate(), RETURN_LOOKBACK_DAYS-1);
+  inp.value=curDate();
   document.getElementById('returnModal').classList.add('show');
-  retSaleIndex={};
-  const opts=['<option value="manual">No receipt — pick items manually</option>'];
-  const base=curDate();
-  for(let i=0;i<RETURN_LOOKBACK_DAYS;i++){
-    const dt=dateMinus(base,i);
-    const dayOpts=[];
-    for(const sh of [2,1]){                       // evening first so the day reads newest-first
-      const ds=await getShift(sh,dt);
-      (ds.sales||[]).slice().reverse().forEach(sale=>{
-        if(sale.voided) return;                   // already reversed — nothing to return
-        const val=`${dt}|${sh}|${sale.id}`;
-        retSaleIndex[val]={sale,date:dt,shift:sh};
-        const items=(sale.items||[]).map(it=>`${it.name}×${it.qty}`).join(', ');
-        dayOpts.push(`<option value="${val}">${sale.time||''} · ${fmtShort(sale.total)} · ${items.slice(0,40)}</option>`);
-      });
-    }
-    if(dayOpts.length){
-      const lbl=i===0?`Today (${dt})`:i===1?`Yesterday (${dt})`:dt;
-      opts.push(`<optgroup label="${lbl}">${dayOpts.join('')}</optgroup>`);
-    }
-  }
-  sel.innerHTML=opts.join('');
-  sel.value='manual';
   document.getElementById('retExchange').checked=false;
   document.getElementById('retExchangeBox').style.display='none';
   document.getElementById('retReturnSearch').value=''; document.getElementById('retReturnResults').innerHTML='';
   document.getElementById('retNewSearch').value=''; document.getElementById('retNewResults').innerHTML='';
   document.getElementById('retMode').value='cash';
-  onRetSaleChange();
+  await onRetDateChange();     // fills the receipt list for today (also calls onRetSaleChange)
 };
 window.closeReturn=function(){ document.getElementById('returnModal').classList.remove('show'); };
 
@@ -2631,8 +2663,8 @@ window.onRetSaleChange=async function(){
     retState.saleDate=null; retState.saleShift=null;
     manualWrap.style.display='block';
   } else {
-    // Resolved from retSaleIndex, which spans the last 7 days — the sale may belong to another
-    // day or shift entirely. The item prices come from that ORIGINAL receipt, which is the point:
+    // Resolved from retSaleIndex, which holds the picked day's receipts across both shifts — the
+    // sale may be days old. Item prices come from that ORIGINAL receipt, which is the point:
     // a refund must be given at what the customer actually paid, not today's price.
     const hit=retSaleIndex[v];
     const sale=hit?hit.sale:null;
@@ -4954,8 +4986,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.71';
+const APP_VERSION='v5.72';
 const CHANGELOG=[
+  {v:'v5.72', date:'2026-08-30', notes:[
+    'Returns & Exchange: pick the DATE first, then the receipt. A week of receipts in one dropdown meant scrolling hundreds of lines on a busy week — now there is a date box (with ‹ › arrows for the usual “yesterday” case) and the list below holds only that day’s receipts, split into Morning and Evening shift',
+    'The line under the picker tells you how many receipts that day has, and says plainly when a day has none so you are not left staring at an empty list',
+    'Side benefit: opening Returns now reads only the chosen day instead of the whole week, so it opens faster on slow data'],
+  },
   {v:'v5.71', date:'2026-08-30', notes:[
     'Logging in as the OWNER no longer makes you the shift cashier. Checking in at midnight was opening the next morning shift with the owner recorded as its cashier, before that shift had even started — now the cashier is left blank for the first real cashier login to claim (and is still editable in the Shift tab)',
     'Returns & Exchange can now find the original receipt from the last 7 DAYS, not just the current shift. Receipts are grouped by day, newest first, so a customer coming back days later can still be matched to what they actually paid instead of being re-typed at today’s price with no sold-quantity cap',
