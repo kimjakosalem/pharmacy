@@ -2586,14 +2586,17 @@ async function renderReturns(){
 // The receipt picker used to list only the CURRENT shift's sales, so anything a customer brought
 // back after their shift ended — which is most returns — could not be matched to its receipt at
 // all, and staff had to fall back to "no receipt" and re-type the item at today's price with no
-// sold-quantity cap. It now covers the last 7 days, both shifts, newest first.
+// sold-quantity cap. It now covers the last 30 days, both shifts, newest first.
 //
 // Cost is at most 14 shift documents, read cache-first and kept in shiftCache, so re-opening the
 // modal later in the session is free. Voided sales are skipped — there is nothing left to return.
-const RETURN_LOOKBACK_DAYS=7;
+// How far back the receipt picker can reach. Since v5.72 the DAY is chosen first and only that
+// day's two shift documents are read, so widening this costs nothing per extra day — it only moves
+// the date input's `min`. Raised 7 -> 30 on 2026-08-30: customers turn up well after a week.
+const RETURN_LOOKBACK_DAYS=30;
 let retSaleIndex={};   // option value -> {sale, date, shift}
 function dateMinus(dt,n){ const d=new Date(dt+'T00:00:00'); d.setDate(d.getDate()-n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-// Listing all 7 days at once meant scrolling a single dropdown holding every receipt of the week
+// Listing every day at once meant scrolling a single dropdown holding every receipt of the period
 // — on a 100-sale day that is 700 options, unusable on the tablet. So the day is chosen FIRST
 // (date picker, or the < > arrows for the common "yesterday" case) and the dropdown then holds
 // only that day's receipts. It also reads just the 2 shift docs for the chosen day instead of 14.
@@ -4986,8 +4989,11 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.72';
+const APP_VERSION='v5.73';
 const CHANGELOG=[
+  {v:'v5.73', date:'2026-08-30', notes:[
+    'Returns & Exchange can now reach back 30 days instead of 7, so a customer returning weeks later can still be matched to their original receipt and refunded at what they actually paid'],
+  },
   {v:'v5.72', date:'2026-08-30', notes:[
     'Returns & Exchange: pick the DATE first, then the receipt. A week of receipts in one dropdown meant scrolling hundreds of lines on a busy week — now there is a date box (with ‹ › arrows for the usual “yesterday” case) and the list below holds only that day’s receipts, split into Morning and Evening shift',
     'The line under the picker tells you how many receipts that day has, and says plainly when a day has none so you are not left staring at an empty list',
