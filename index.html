@@ -1440,7 +1440,7 @@ select option{background:var(--bg3)}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, updateDoc, increment, deleteDoc, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, CACHE_SIZE_UNLIMITED, doc, getDoc, getDocFromCache, setDoc, updateDoc, increment, arrayUnion, deleteDoc, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
@@ -1951,14 +1951,21 @@ let viewDate=null;
 function curDate(){ return viewDate||today(); }
 function isReviewing(){ return !!viewDate; }
 function emptyShift(sh){ return {cashier:'',startCash:0,nextCash:0,cashIns:[],cashOuts:[],posTot:0,pbCash:0,pbGcash:0,pbMaya:0,pbMcredit:0,posTxn:0,sales:[],returns:[],manualSales:[],drawer:0,takehome:0,saved:false,date:today(),shift:sh}; }
+// Tracks which shifts/<key> documents we KNOW exist. Only consulted by the fast sale-write path
+// below, which uses field transforms and therefore needs the doc to already carry its scalar
+// fields (cashier, startCash, drawer...). Unknown -> that path falls back to a full persistShift.
+let shiftDocExists={};
 async function getShift(sh,dt){
   const k=shiftKey(sh,dt);
   if(!shiftCache[k]){
-    shiftCache[k]=await fsGet('shifts',k,fresh=>{
+    const got=await fsGet('shifts',k,fresh=>{
       // Another device updated this shift — adopt it and refresh the screen if we're viewing it.
+      shiftDocExists[k]=true;
       shiftCache[k]=fresh;
       if(k===shiftKey(curShift,curDate())){ try{ loadShiftFields(); renderSales(); }catch(_){} }
-    })||emptyShift(sh);
+    });
+    if(got) shiftDocExists[k]=true;
+    shiftCache[k]=got||emptyShift(sh);
   }
   return shiftCache[k];
 }
@@ -1988,19 +1995,67 @@ function mergeShiftEntries(remote, local, prefix){
   }
   return out;
 }
-async function persistShift(sh,dt){
+// The merge read is a SERVER round-trip. On the shop's mobile data it can take seconds, or hang
+// outright during a brownout, and every caller awaits it. Cap it: if the server has not answered
+// in 4s, fall back to the local cache copy (still better than no merge) and get on with the write.
+function readShiftDoc(k){
+  const ref=doc(db,'shifts',k);
+  return Promise.race([
+    getDoc(ref),
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('slow')),4000))
+  ]).catch(()=>getDocFromCache(ref));
+}
+// skipMerge: only for the owner's "Reset POS sales" action, which MEANS to empty the log —
+// merging there would resurrect exactly the entries being cleared.
+async function persistShift(sh,dt,skipMerge){
   const k=shiftKey(sh,dt);
   const local=shiftCache[k];
   if(!local){ return; }
   try{
-    const snap=await getDoc(doc(db,'shifts',k));
-    if(snap.exists()){
+    const snap=skipMerge?null:await readShiftDoc(k);
+    if(snap && snap.exists()){
       const remote=snap.data()||{};
       local.cashOuts=mergeShiftEntries(remote.cashOuts, local.cashOuts, 'co');
       local.returns =mergeShiftEntries(remote.returns,  local.returns,  'ret');
+      // Sales are append-only too (a void marks an entry in place, it never removes one), and
+      // since sales now compose across devices via arrayUnion, a whole-document save from the
+      // Shift tab must not drop a sale another till rang up. Ours wins on id — it may carry a
+      // fresh void — and anything only the server has is kept.
+      local.sales   =mergeShiftEntries(remote.sales,    local.sales,    'sale');
     }
   }catch(_){ /* offline or unreachable: keep our copy, the write queues and syncs on reconnect */ }
   await fsSet('shifts',k,local);
+  shiftDocExists[k]=true;
+}
+
+// ── Fast sale write ────────────────────────────────────────────────────────────────────────────
+// A sale is the ONE shift write that happens dozens of times a day with a cashier and a customer
+// waiting on it, and it was the slowest: persistShift re-reads the shift from the SERVER before
+// saving (the v5.6 anti-clobber merge), so on slow mobile data the receipt appeared only after a
+// full network round-trip. That is the "few seconds of lag after each sale" the staff reported.
+//
+// A sale only ever APPENDS to `sales` and adds to the running totals; it never edits a cash-out,
+// a return, or any other field. So it does not need to read anything at all — it can express
+// exactly that intent with server-side transforms:
+//   arrayUnion(rec)  -> appends the sale to whatever the server holds
+//   increment(total) -> the SERVER adds to the running totals
+// setDoc(..., {merge:true}) so only these fields are touched. Nothing else in the document can be
+// clobbered, which makes this strictly SAFER than the read-and-merge it replaces, as well as
+// instant: zero reads, and the local mutation is applied and persisted to IndexedDB synchronously.
+//
+// Transforms need the document to already exist (otherwise a brand-new shift would be created
+// holding only these fields, with no cashier/startCash/drawer). For the first sale of a shift we
+// therefore fall back to the full persistShift once, which creates it; every later sale is fast.
+const PAY_FIELD={cash:'pbCash',gcash:'pbGcash',maya:'pbMaya',mcredit:'pbMcredit'};
+function appendSaleToShift(sh,dt,rec,total,mode){
+  const k=shiftKey(sh,dt);
+  if(!shiftDocExists[k]) return persistShift(sh,dt);   // first sale of this shift: create the doc
+  lastLocalWrite['shifts/'+k]=Date.now();
+  const payload={ sales:arrayUnion(rec), posTot:increment(total), posTxn:increment(1) };
+  const pf=PAY_FIELD[mode]; if(pf) payload[pf]=increment(total);
+  setDoc(doc(db,'shifts',k), payload, {merge:true}).then(setLastSaved).catch(()=>{ /* queued; retries on reconnect */ });
+  setLastSaved();
+  return Promise.resolve();
 }
 
 window.selShift=function(n){ curShift=n; document.getElementById('s1btn').classList.toggle('active',n===1); document.getElementById('s2btn').classList.toggle('active',n===2); loadShiftFields(); };
@@ -2417,7 +2472,7 @@ window.doResetPosSales=async function(){
   if(document.getElementById('posResetConfirm').value!=='CLEAR'){ toast('Type CLEAR to confirm','err'); return; }
   const s=await getShift(curShift,curDate());
   s.posTot=0; s.posTxn=0; s.pbCash=0; s.pbGcash=0; s.pbMaya=0; s.pbMcredit=0; s.sales=[];
-  await persistShift(curShift,curDate());
+  await persistShift(curShift,curDate(),true);   // no merge: this action means to empty the log
   ['posTot','posTxn','pbCash','pbGcash','pbMaya','pbMcredit'].forEach(id=>document.getElementById(id).value='');
   updatePaySum(); renderSales();
   closePosResetModal();
@@ -4096,18 +4151,21 @@ async function finalizeSale(total, cashInfo){
   const s=await getShift(shNum,dt);
   // Record the sale as an individual transaction (the POS ledger) so it can be reviewed/voided.
   s.sales=s.sales||[];
-  s.sales.push({ id:'sale_'+Date.now(), time:now, ts:Date.now(), mode:payMode, total,
+  const saleRec={ id:'sale_'+Date.now(), time:now, ts:Date.now(), mode:payMode, total,
     subtotal, discount:discSnap,
     cashReceived:cashInfo?cashInfo.received:null, change:cashInfo?cashInfo.change:null,
     cashier:session?.name||'', backdated:!!posBackdate,
-    items:sold.map(it=>Object.assign({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(it.cost!=null?it.cost:(allProductsFull[it.prodId]?.cost ?? 0))}, it.override?{override:it.override}:{})) });
+    items:sold.map(it=>Object.assign({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty,cost:(it.cost!=null?it.cost:(allProductsFull[it.prodId]?.cost ?? 0))}, it.override?{override:it.override}:{})) };
+  s.sales.push(saleRec);
   s.posTot=(s.posTot||0)+total;
   s.posTxn=(s.posTxn||0)+1;
   if(payMode==='cash') s.pbCash=(s.pbCash||0)+total;
   else if(payMode==='gcash') s.pbGcash=(s.pbGcash||0)+total;
   else if(payMode==='maya') s.pbMaya=(s.pbMaya||0)+total;
   else if(payMode==='mcredit') s.pbMcredit=(s.pbMcredit||0)+total;
-  await persistShift(shNum,dt);
+  // Read-free append (see appendSaleToShift): no server round-trip, so the receipt is instant even
+  // on slow mobile data. NOT persistShift — that re-reads the shift from the server first.
+  await appendSaleToShift(shNum,dt,saleRec,total,payMode);
   for(const item of sold){
     const fullProd=allProductsFull[item.prodId];
     const lightProd=allProducts.find(p=>p.id===item.prodId);
@@ -4859,8 +4917,14 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.6';
+const APP_VERSION='v5.7';
 const CHANGELOG=[
+  {v:'v5.7', date:'2026-08-30', notes:[
+    'Completing a sale no longer waits on the internet: the receipt now appears immediately instead of after a few seconds. Saving a sale used to re-read the whole shift from the server first, which on mobile data meant a full round-trip before the cashier could move on',
+    'The sale is now saved by telling the server exactly what to add (append this sale, add this much to the totals) rather than re-sending the whole shift, so it needs no read at all and still cannot overwrite cash-outs from another device or returns — the v5.6 protection is kept, and made stronger',
+    'Every other shift save (cash in/out, returns, manual sales) now gives up on the server read after 4 seconds and falls back to the local copy, so a weak signal can no longer freeze the tab',
+    'A shift save from one device can no longer drop a sale rung up on another device — the sales log is now merged the same way cash-outs and returns already were (the owner Reset still clears it outright)'],
+  },
   {v:'v5.6', date:'2026-08-27', notes:[
     'Two devices can now work the same open shift without erasing each other. Saving a shift used to write the whole thing from whatever that one device had in memory, so whoever saved last wiped any cash-out or return the other had added. It now merges with what is already saved and keeps both',
     'This was losing real entries: an open shift swallowed a PHP 487.73 delivery payment, and later the same evening an entire exchange record. Both were written while a till had the shift open',
