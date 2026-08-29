@@ -745,8 +745,9 @@ select option{background:var(--bg3)}
 <div class="modal-overlay" id="returnModal">
   <div class="modal" style="width:480px;max-width:96vw">
     <h3 style="color:var(--amber)"><i class="ti ti-arrow-back-up" style="margin-right:6px"></i>Return / Refund / Exchange</h3>
-    <div class="field" style="margin-top:12px"><label>Original sale (this shift)</label>
+    <div class="field" style="margin-top:12px"><label>Original sale (last 7 days)</label>
       <select id="retSaleSel" onchange="onRetSaleChange()"></select>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Receipts from the past week, newest first. The refund itself is always recorded on <strong style="color:var(--text2)">today's</strong> shift.</div>
     </div>
     <div style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.06em;margin:10px 0 6px">ITEMS BEING RETURNED</div>
     <div id="retReturnList"></div>
@@ -1773,7 +1774,11 @@ window.startSession=async function(){
     toast('Enter starting cash','err'); return;   // first login of the shift requires it
   }
   session={name:pendingUser.name,role:pendingUser.role,shift:loginShift,perms:pendingUser.perms||{}};
-  if(!s.cashier) s.cashier=session.name;
+  // Same reasoning as startCash above: an OWNER checking in is not the person manning the till.
+  // Logging in at midnight to look at reports was opening the next morning's shift with the owner
+  // recorded as its cashier, before that shift had even started. The cashier is left UNSET so the
+  // first actual CASHIER login claims it (and it stays editable in the Shift tab either way).
+  if(!s.cashier && !ownerLogin) s.cashier=session.name;
   if(!s.startCash && !isNaN(cash)) s.startCash=cash;   // never write NaN (owner login)
   await persistShift(curShift);
   await logAttendance('login',session.name,session.role,curShift);
@@ -2561,7 +2566,7 @@ async function renderReturns(){
     const modeTag=net!==0?`<span class="ptag pt-${r.mode||'cash'}">${MODE_LABEL[r.mode||'cash']}</span>`:'';
     return `<div class="ritem">`
       + `<div class="rhead">${typeTag}${modeTag}`
-      + `<span class="rmeta">${r.time||''}${r.cashier?' &middot; '+r.cashier:''}${r.origSaleId?' &middot; vs receipt':' &middot; no receipt'}</span>`
+      + `<span class="rmeta">${r.time||''}${r.cashier?' &middot; '+r.cashier:''}${r.origSaleId?(r.origSaleDate&&r.origSaleDate!==curDate()?' &middot; vs receipt '+r.origSaleDate:' &middot; vs receipt'):' &middot; no receipt'}</span>`
       + netTxt + `</div>`
       + leg(r.returnedItems,'in','BACK TO STOCK')
       + leg(r.newItems,'out','GIVEN OUT')
@@ -2570,16 +2575,43 @@ async function renderReturns(){
   }).join('');
 }
 
+// The receipt picker used to list only the CURRENT shift's sales, so anything a customer brought
+// back after their shift ended — which is most returns — could not be matched to its receipt at
+// all, and staff had to fall back to "no receipt" and re-type the item at today's price with no
+// sold-quantity cap. It now covers the last 7 days, both shifts, newest first.
+//
+// Cost is at most 14 shift documents, read cache-first and kept in shiftCache, so re-opening the
+// modal later in the session is free. Voided sales are skipped — there is nothing left to return.
+const RETURN_LOOKBACK_DAYS=7;
+let retSaleIndex={};   // option value -> {sale, date, shift}
+function dateMinus(dt,n){ const d=new Date(dt+'T00:00:00'); d.setDate(d.getDate()-n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 window.openReturn=async function(){
   if(!canRefund()){ toast('No permission for Returns/Exchange','err'); return; }
   retState={ sale:null, returnItems:[], newItems:[] };
-  const s=await getShift(curShift,curDate());
   const sel=document.getElementById('retSaleSel');
+  sel.innerHTML='<option value="manual">Loading receipts…</option>';
+  document.getElementById('returnModal').classList.add('show');
+  retSaleIndex={};
   const opts=['<option value="manual">No receipt — pick items manually</option>'];
-  (s.sales||[]).slice().reverse().forEach(sale=>{
-    const items=(sale.items||[]).map(it=>`${it.name}×${it.qty}`).join(', ');
-    opts.push(`<option value="${sale.id}">${sale.time||''} · ${fmtShort(sale.total)} · ${items.slice(0,40)}</option>`);
-  });
+  const base=curDate();
+  for(let i=0;i<RETURN_LOOKBACK_DAYS;i++){
+    const dt=dateMinus(base,i);
+    const dayOpts=[];
+    for(const sh of [2,1]){                       // evening first so the day reads newest-first
+      const ds=await getShift(sh,dt);
+      (ds.sales||[]).slice().reverse().forEach(sale=>{
+        if(sale.voided) return;                   // already reversed — nothing to return
+        const val=`${dt}|${sh}|${sale.id}`;
+        retSaleIndex[val]={sale,date:dt,shift:sh};
+        const items=(sale.items||[]).map(it=>`${it.name}×${it.qty}`).join(', ');
+        dayOpts.push(`<option value="${val}">${sale.time||''} · ${fmtShort(sale.total)} · ${items.slice(0,40)}</option>`);
+      });
+    }
+    if(dayOpts.length){
+      const lbl=i===0?`Today (${dt})`:i===1?`Yesterday (${dt})`:dt;
+      opts.push(`<optgroup label="${lbl}">${dayOpts.join('')}</optgroup>`);
+    }
+  }
   sel.innerHTML=opts.join('');
   sel.value='manual';
   document.getElementById('retExchange').checked=false;
@@ -2588,7 +2620,6 @@ window.openReturn=async function(){
   document.getElementById('retNewSearch').value=''; document.getElementById('retNewResults').innerHTML='';
   document.getElementById('retMode').value='cash';
   onRetSaleChange();
-  document.getElementById('returnModal').classList.add('show');
 };
 window.closeReturn=function(){ document.getElementById('returnModal').classList.remove('show'); };
 
@@ -2597,11 +2628,16 @@ window.onRetSaleChange=async function(){
   const manualWrap=document.getElementById('retManualSearchWrap');
   if(v==='manual'){
     retState.sale=null; retState.returnItems=[];
+    retState.saleDate=null; retState.saleShift=null;
     manualWrap.style.display='block';
   } else {
-    const s=await getShift(curShift,curDate());
-    const sale=(s.sales||[]).find(x=>x.id===v);
+    // Resolved from retSaleIndex, which spans the last 7 days — the sale may belong to another
+    // day or shift entirely. The item prices come from that ORIGINAL receipt, which is the point:
+    // a refund must be given at what the customer actually paid, not today's price.
+    const hit=retSaleIndex[v];
+    const sale=hit?hit.sale:null;
     retState.sale=sale||null;
+    retState.saleDate=hit?hit.date:null; retState.saleShift=hit?hit.shift:null;
     retState.returnItems=(sale?.items||[]).map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:0,max:it.qty}));
     manualWrap.style.display='none';
   }
@@ -2718,7 +2754,8 @@ window.confirmReturn=async function(){
   if(mk) s[mk]=Math.max(0,(s[mk]||0)+net);
   s.returns=s.returns||[];
   s.returns.push({ id:'ret_'+Date.now(), time:now, ts:Date.now(), type:exchange?'exchange':'refund', mode,
-    origSaleId:retState.sale?.id||null, cashier:session?.name||'',
+    origSaleId:retState.sale?.id||null, origSaleDate:retState.saleDate||null, origSaleShift:retState.saleShift||null,
+    cashier:session?.name||'',
     returnedItems:retItems.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty})),
     newItems:newItems.map(it=>({prodId:it.prodId,name:it.name,size:it.size||'',packaging:it.packaging||'',price:it.price,qty:it.qty})),
     returnValue, newValue, net });
@@ -4917,8 +4954,13 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.7';
+const APP_VERSION='v5.71';
 const CHANGELOG=[
+  {v:'v5.71', date:'2026-08-30', notes:[
+    'Logging in as the OWNER no longer makes you the shift cashier. Checking in at midnight was opening the next morning shift with the owner recorded as its cashier, before that shift had even started — now the cashier is left blank for the first real cashier login to claim (and is still editable in the Shift tab)',
+    'Returns & Exchange can now find the original receipt from the last 7 DAYS, not just the current shift. Receipts are grouped by day, newest first, so a customer coming back days later can still be matched to what they actually paid instead of being re-typed at today’s price with no sold-quantity cap',
+    'Voided sales no longer appear in the receipt picker, and a return matched to an earlier day now shows that date in the Returns list. The refund itself is still recorded on today’s shift, as before'],
+  },
   {v:'v5.7', date:'2026-08-30', notes:[
     'Completing a sale no longer waits on the internet: the receipt now appears immediately instead of after a few seconds. Saving a sale used to re-read the whole shift from the server first, which on mobile data meant a full round-trip before the cashier could move on',
     'The sale is now saved by telling the server exactly what to add (append this sale, add this much to the totals) rather than re-sending the whole shift, so it needs no read at all and still cannot overwrite cash-outs from another device or returns — the v5.6 protection is kept, and made stronger',
