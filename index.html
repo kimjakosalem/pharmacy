@@ -4545,7 +4545,12 @@ function payTargetAmount(){ return payingAmount||0; }
 window.addPayable=async function(){
   const amt=parseFloat(document.getElementById('payAmt').value)||0; if(!amt){toast('Enter amount','err');return;}
   const id='pay_'+Date.now();
-  await fsSet('payables',id,{date:document.getElementById('payDate').value||today(),category:document.getElementById('payCat').value,amount:amt,desc:document.getElementById('payDesc').value,createdAt:tnow(),by:session?.name||'',byRole:session?.role||'staff'});
+  // status:'unpaid' matters — without it payRowHtml() renders neither chip AND no Pay button
+  // (it tests `status==='unpaid'`), so a hand-added payable could never be settled from the UI and
+  // sat in the active list forever. Every manually-added payable up to 2026-09-03 was written
+  // status-less this way: 10 of them, PHP 229,118.96 of salaries/rent/tax/utilities that were all
+  // actually paid but still showed as owing.
+  await fsSet('payables',id,{date:document.getElementById('payDate').value||today(),category:document.getElementById('payCat').value,amount:amt,desc:document.getElementById('payDesc').value,status:'unpaid',createdAt:tnow(),by:session?.name||'',byRole:session?.role||'staff'});
   document.getElementById('payAmt').value=''; document.getElementById('payDesc').value='';
   toast('Payable saved','ok'); renderPayables();
 };
@@ -4560,7 +4565,10 @@ function payMatchesFilter(p){
   return textOk && dateOk;
 }
 function payRowHtml(p){
-  const unpaid=p.status==='unpaid', paid=p.status==='paid';
+  // Anything not explicitly 'paid' is still owing — matches how renderPayables() splits
+  // active from archive. Testing ==='unpaid' here left legacy status-less payables with no chip
+  // and, worse, no Pay button, so they could never be settled.
+  const paid=p.status==='paid', unpaid=!paid;
   const chip=unpaid?`<span class="chip chip-low">Unpaid</span>`:paid?`<span class="chip chip-ok">Paid</span>`:'';
   const term=p.payTerm?` · ${p.payTerm}`:'';
   const paidVia=paid&&p.paidVia?` · via ${p.paidVia}${p.paidBy?' ('+p.paidBy+')':''}`:'';
@@ -4989,8 +4997,12 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.73';
+const APP_VERSION='v5.74';
 const CHANGELOG=[
+  {v:'v5.74', date:'2026-09-03', notes:[
+    'Payables you add by hand (salaries, rent, utilities, a bill) can finally be marked PAID. They were being saved without a paid/unpaid state, so the row showed no chip and — the real problem — no Pay button at all, leaving them stuck in the active list forever with no way to settle them from the app',
+    'Older hand-added payables that were saved that way now show an Unpaid chip and a working Pay button too, so nothing has to be re-created to be settled'],
+  },
   {v:'v5.73', date:'2026-08-30', notes:[
     'Returns & Exchange can now reach back 30 days instead of 7, so a customer returning weeks later can still be matched to their original receipt and refunded at what they actually paid'],
   },
