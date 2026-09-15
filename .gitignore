@@ -25,3 +25,4 @@ pharmacy_products_backup_*.json
 # lives here only because this is the project folder. Contains a group chat id and staff Telegram
 # user ids (telegram_senders.json), which must never reach this PUBLIC repo.
 scripts/
+drafts/
