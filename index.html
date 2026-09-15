@@ -644,6 +644,7 @@ select option{background:var(--bg3)}
       <select id="payTerms" onchange="onPayTermsChange()">
         <option value="cod">Cash on Delivery</option>
         <option value="check">Check</option>
+        <option value="bank">Bank Transfer</option>
       </select>
     </div>
     <div class="field" id="paySubWrap" style="margin-top:8px">
@@ -4550,9 +4551,17 @@ window.addPayable=async function(){
   // sat in the active list forever. Every manually-added payable up to 2026-09-03 was written
   // status-less this way: 10 of them, PHP 229,118.96 of salaries/rent/tax/utilities that were all
   // actually paid but still showed as owing.
-  await fsSet('payables',id,{date:document.getElementById('payDate').value||today(),category:document.getElementById('payCat').value,amount:amt,desc:document.getElementById('payDesc').value,status:'unpaid',createdAt:tnow(),by:session?.name||'',byRole:session?.role||'staff'});
+  const cat=document.getElementById('payCat').value, date=document.getElementById('payDate').value||today();
+  const rec={date,category:cat,amount:amt,desc:document.getElementById('payDesc').value,status:'unpaid',createdAt:tnow(),by:session?.name||'',byRole:session?.role||'staff'};
+  // Rent and salaries are paid by the owner out of his own funds the moment he logs them — they are
+  // a record of money already spent, not a bill to settle later. Save them PAID straight into the
+  // archive (no drawer cash-out: this cash never came from the register). Anyone else's entry, and
+  // every other category (utilities, tax, a supplier bill), still lands in the open list to be paid.
+  const ownerSpent=session?.role==='owner' && (cat==='Rent'||cat==='Staff Salary');
+  if(ownerSpent) Object.assign(rec,{paidVia:"Owner's own funds",payTerm:"Owner's own funds",paidBy:session.name||'',paidByRole:'owner',paidDate:date,paidAt:tnow(),status:'paid'});
+  await fsSet('payables',id,rec);
   document.getElementById('payAmt').value=''; document.getElementById('payDesc').value='';
-  toast('Payable saved','ok'); renderPayables();
+  toast(ownerSpent?'Recorded as paid — archived':'Payable saved','ok'); renderPayables();
 };
 window.removePayable=async function(id){ if(session?.role!=='owner'){ toast('Only the owner can delete a payable','err'); return; } await fsDel('payables',id); renderPayables(); };
 let payFilter={q:'',from:'',to:''}, payArchiveOpen=false;
@@ -4564,6 +4573,8 @@ function payMatchesFilter(p){
   const dateOk=(!payFilter.from || (p.date||'')>=payFilter.from) && (!payFilter.to || (p.date||'')<=payFilter.to);
   return textOk && dateOk;
 }
+function payDueKey(p){ return p.dueDate||p.date||''; }
+function payDaysLeft(p){ const d=payDueKey(p); if(!d) return 0; return Math.round((new Date(d+'T00:00:00')-new Date(today()+'T00:00:00'))/86400000); }
 function payRowHtml(p){
   // Anything not explicitly 'paid' is still owing — matches how renderPayables() splits
   // active from archive. Testing ==='unpaid' here left legacy status-less payables with no chip
@@ -4572,7 +4583,15 @@ function payRowHtml(p){
   const chip=unpaid?`<span class="chip chip-low">Unpaid</span>`:paid?`<span class="chip chip-ok">Paid</span>`:'';
   const term=p.payTerm?` · ${p.payTerm}`:'';
   const paidVia=paid&&p.paidVia?` · via ${p.paidVia}${p.paidBy?' ('+p.paidBy+')':''}`:'';
-  return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''} ${chip}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}${term}${paidVia}</div></div><div style="display:flex;align-items:center;gap:6px">${unpaid?`<button class="btn btn-teal btn-xs" onclick="openPayModal('${p.id}')"><i class="ti ti-cash"></i> Pay</button>`:''}<span class="eval c-neg">-${fmt(p.amount)}</span>${session?.role==='owner'?`<button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button>`:''}</div></div>`;
+  // Open rows show how close the due date is: overdue / today / in N days. No due date = due on receipt.
+  let due='';
+  if(unpaid){
+    const days=payDaysLeft(p);
+    const cls=days<0?'chip-out':days<=7?'chip-low':'chip-ok';
+    const txt=!p.dueDate?'due on receipt':days<0?`overdue ${-days}d`:days===0?'due today':`due in ${days}d`;
+    due=` · <span class="chip ${cls}">${p.dueDate?p.dueDate+' · ':''}${txt}</span>`;
+  }
+  return `<div class="eitem"><div style="flex:1;min-width:0"><div class="el"><span class="tag-purple">${p.category}</span>${p.desc||''} ${chip}</div><div class="ed">${p.date}${p.by?' · '+p.by:''}${term}${paidVia}${due}</div></div><div style="display:flex;align-items:center;gap:6px">${unpaid?`<button class="btn btn-teal btn-xs" onclick="openPayModal('${p.id}')"><i class="ti ti-cash"></i> Pay</button>`:''}<span class="eval c-neg">-${fmt(p.amount)}</span>${session?.role==='owner'?`<button class="del-btn" onclick="removePayable('${p.id}')"><i class="ti ti-x"></i></button>`:''}</div></div>`;
 }
 // Read the filter inputs live (oninput calls renderPayables directly).
 function syncPayFilter(){ payFilter={q:(document.getElementById('payFilterQ')?.value||''), from:(document.getElementById('payFilterFrom')?.value||''), to:(document.getElementById('payFilterTo')?.value||'')}; }
@@ -4584,8 +4603,11 @@ window.renderPayables=async function(){
   if(session?.role!=='owner') list=list.filter(p=>p.byRole!=='owner');
   list=list.filter(payMatchesFilter);
   const sortFn=(a,b)=>(b.date||'').localeCompare(a.date||'');
+  // Open payables: nearest deadline first. A payable with no due date is due on receipt, so it
+  // sorts by its own date (already due, oldest first) ahead of anything with a later due date.
+  const dueSort=(a,b)=>payDueKey(a).localeCompare(payDueKey(b)) || (a.date||'').localeCompare(b.date||'');
   // Archive = paid transactions. Active = everything still open (unpaid).
-  const active=list.filter(p=>p.status!=='paid').sort(sortFn);
+  const active=list.filter(p=>p.status!=='paid').sort(dueSort);
   const archived=list.filter(p=>p.status==='paid').sort(sortFn);
   const cnt=document.getElementById('payListCount'); if(cnt) cnt.textContent=`${active.length} open · ${archived.length} archived`;
   el.innerHTML=active.length?active.map(payRowHtml).join(''):'<div class="empty"><i class="ti ti-building-bank"></i>No open payables</div>';
@@ -4610,7 +4632,8 @@ window.openPayModal=async function(id){
   onPayTermsChange();
   document.getElementById('payModal').classList.add('show');
 };
-// Payment Terms branches: Cash on Delivery → Take Home / Drawer Cash; Check → on delivery / 30 / 60 days.
+// Payment Terms branches: Cash on Delivery → Take Home / Drawer Cash; Check → on delivery / 30 / 60 days;
+// Bank Transfer → in advance / on delivery. Only the CASH branch touches the drawer.
 window.onPayTermsChange=function(){
   const terms=document.getElementById('payTerms').value;
   const sub=document.getElementById('paySub'); const lbl=document.getElementById('paySubLabel'); const hint=document.getElementById('payHint');
@@ -4618,6 +4641,10 @@ window.onPayTermsChange=function(){
     lbl.textContent='Check terms';
     sub.innerHTML=[['Check on Delivery','Check on Delivery'],['30 days','30 days (post-dated)'],['60 days','60 days (post-dated)']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
     hint.textContent='Recorded as a check payment (no drawer cash-out).';
+  } else if(terms==='bank'){
+    lbl.textContent='When paid';
+    sub.innerHTML=[['Paid in advance','Paid in advance'],['On delivery','On delivery']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+    hint.textContent='Money moves bank-to-bank, so no drawer cash-out is logged.';
   } else {
     lbl.textContent='Cash source';
     sub.innerHTML=[['Drawer Cash','Drawer Cash'],['Take Home','Take Home']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
@@ -4635,7 +4662,7 @@ window.closePayModal=function(){ document.getElementById('payModal').classList.r
 window.confirmPay=async function(){
   const list=await fsGetAll('payables'); const p=list.find(x=>x.id===payingId);
   if(!p){ closePayModal(); return; }
-  const terms=document.getElementById('payTerms').value;          // 'cod' | 'check'
+  const terms=document.getElementById('payTerms').value;          // 'cod' | 'check' | 'bank'
   const sub=document.getElementById('paySub').value;              // cash source OR check term
   const isCash=terms==='cod';
   const isTakeHome=isCash && sub==='Take Home';
@@ -4652,7 +4679,7 @@ window.confirmPay=async function(){
     if(!envResult.ok){ toast(envResult.msg,'err'); return; }
   }
   const envLabel=envResult?` (envelope${envResult.envelopes.length>1?'s':''} ${envResult.envelopes.map(e=>`${e.date} ${envShiftLabel(e.shift)}`).join(', ')})`:'';
-  const label=(isCash?'Cash on Delivery':'Check')+' — '+sub+envLabel;
+  const label=({cod:'Cash on Delivery',check:'Check',bank:'Bank Transfer'}[terms])+' — '+sub+envLabel;
   p.status='paid'; p.paidVia=label; p.payTerm=label; p.paidBy=session?.name||''; p.paidByRole=session?.role||'staff'; p.paidAt=tnow(); p.paidDate=today();
   if(envResult) p.envelopeIds=envResult.envelopes.map(e=>e.id);
   await fsSet('payables', p.id, p);
@@ -4997,8 +5024,20 @@ window.reorderAddGroupToOrder=function(gi){
 
 // ── Version & changelog ──
 // Bump APP_VERSION and prepend a CHANGELOG entry on every edit batch.
-const APP_VERSION='v5.74';
+const APP_VERSION='v5.77';
 const CHANGELOG=[
+  {v:'v5.77', date:'2026-09-15', notes:[
+    'Payables log: open payables are now sorted by DUE DATE with the nearest deadline at the top, instead of newest-entered first. Each open row shows its due date and a colour chip — red when overdue, amber when due within 7 days, green otherwise',
+    'A payable with no due date (a COD delivery, a bill) counts as due on receipt, so it sits at the top with the oldest first. The Paid archive still lists newest first'],
+  },
+  {v:'v5.76', date:'2026-09-15', notes:[
+    'Rent and Staff Salary entries the owner adds by hand are now saved as PAID and go straight to the archive. They record money the owner has already paid from his own funds, so they no longer sit in the open payables list waiting for a Pay tap (the September rent sat there as "unpaid" for a week). Entries by staff, and every other category, still land in the open list as before',
+    'No drawer cash-out is logged for them — that cash never passed through the register'],
+  },
+  {v:'v5.75', date:'2026-09-08', notes:[
+    'Payables → Pay: new "Bank Transfer" payment term, alongside Cash on Delivery and Check. Pick whether it was paid in advance or on delivery. Like a check, it does NOT log a drawer cash-out — the money moves bank-to-bank and never passes through the register, so the shift still reconciles',
+    'Added for prepaid suppliers like Medwiser, who ship from Manila and are paid by transfer before the goods leave; until now those payments had to be mislabelled as cash'],
+  },
   {v:'v5.74', date:'2026-09-03', notes:[
     'Payables you add by hand (salaries, rent, utilities, a bill) can finally be marked PAID. They were being saved without a paid/unpaid state, so the row showed no chip and — the real problem — no Pay button at all, leaving them stuck in the active list forever with no way to settle them from the app',
     'Older hand-added payables that were saved that way now show an Unpaid chip and a working Pay button too, so nothing has to be re-created to be settled'],
